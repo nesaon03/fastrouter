@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
+	"runtime/debug"
 	"strconv"
 	"syscall"
 	"time"
@@ -26,18 +28,28 @@ const usage = `fastrouter — local AI gateway
 Usage:
   fastrouter [serve] [--config path] [--host 127.0.0.1] [--port 20128]
   fastrouter import <9router-backup.json> [--config path]
-  fastrouter version
+  fastrouter service install|uninstall|status [--config path] [--host h] [--port n] [--dry-run]
+  fastrouter version | --version
 
 Config defaults to ~/.fastrouter/fastrouter.json (created on first run).
 Binding to anything but 127.0.0.1 is opt-in via --host or the config file.
 Send SIGHUP to reload the database after an import.
 `
 
+// Set at build time: -ldflags "-X main.commit=... -X main.date=...".
+// The version itself is server.Version (see scripts/build.sh).
+var (
+	commit = ""
+	date   = ""
+)
+
 func main() {
 	args := os.Args[1:]
 	cmd := "serve"
 	if len(args) > 0 && args[0] != "" && args[0][0] != '-' {
 		cmd, args = args[0], args[1:]
+	} else if len(args) > 0 && (args[0] == "--version" || args[0] == "-version" || args[0] == "-v") {
+		cmd = "version"
 	}
 	fs := flag.NewFlagSet(cmd, flag.ExitOnError)
 	fs.Usage = func() { fmt.Fprint(os.Stderr, usage) }
@@ -63,7 +75,9 @@ func main() {
 		}
 		err = runImport(*cfgPath, file)
 	case "version":
-		fmt.Println("fastrouter", server.Version)
+		fmt.Println(versionString())
+	case "service":
+		err = runService(fs, args)
 	default:
 		fs.Usage()
 		os.Exit(2)
@@ -152,4 +166,31 @@ func serve(cfgPath, host string, port int) error {
 		return err
 	}
 	return nil
+}
+
+func versionString() string {
+	c, d := commit, date
+	if bi, ok := debug.ReadBuildInfo(); ok && c == "" {
+		for _, s := range bi.Settings {
+			switch s.Key {
+			case "vcs.revision":
+				c = s.Value
+			case "vcs.time":
+				if d == "" {
+					d = s.Value
+				}
+			}
+		}
+	}
+	if len(c) > 12 {
+		c = c[:12]
+	}
+	if c == "" {
+		c = "unknown"
+	}
+	if d == "" {
+		d = "unknown"
+	}
+	return fmt.Sprintf("fastrouter %s (commit %s, built %s, %s %s/%s)",
+		server.Version, c, d, runtime.Version(), runtime.GOOS, runtime.GOARCH)
 }
