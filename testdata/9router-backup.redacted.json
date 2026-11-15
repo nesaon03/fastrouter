@@ -1,0 +1,1153 @@
+{
+  "settings": {
+    "ponytailEnabled": true,
+    "cavemanEnabled": true,
+    "cavemanLevel": "ultra",
+    "ponytailLevel": "ultra",
+    "headroomEnabled": true,
+    "headroomUrl": "http://localhost:8787",
+    "tunnelEnabled": true,
+    "tunnelUrl": "redacted-tunnelUrl",
+    "headroomCodeAware": true,
+    "comboStrategies": {
+      "my-combo-team": {
+        "fallbackStrategy": "round-robin"
+      }
+    },
+    "mitmRouterBaseUrl": "http://localhost:20128",
+    "quotaVisibility": {
+      "deepseek": {
+        "hidden": [
+          "Balance (USD)"
+        ]
+      }
+    },
+    "codexAutoPing": {
+      "enabled": false,
+      "connections": {
+        "51b5110d-2ee4-4ee2-9dac-34ce41899188": true,
+        "8515172d-ce3c-44b1-b156-11f29787fba7": true
+      }
+    },
+    "providerStrategies": {
+      "codex": {
+        "fallbackStrategy": "round-robin",
+        "stickyRoundRobinLimit": 1
+      },
+      "deepseek": {
+        "fallbackStrategy": "round-robin",
+        "stickyRoundRobinLimit": 1
+      },
+      "openrouter": {
+        "fallbackStrategy": "round-robin",
+        "stickyRoundRobinLimit": 1
+      },
+      "openai-compatible-chat-cefb4904-f3a5-4ca2-b45b-9ce3540dec22": {
+        "fallbackStrategy": "round-robin",
+        "stickyRoundRobinLimit": 1
+      },
+      "antigravity": {
+        "fallbackStrategy": "round-robin",
+        "stickyRoundRobinLimit": 1
+      },
+      "gemini": {
+        "fallbackStrategy": "round-robin",
+        "stickyRoundRobinLimit": 1
+      },
+      "openai-compatible-chat-b3326d2d-c3cf-4ec0-9069-dc31ce5f9305": {
+        "fallbackStrategy": "round-robin",
+        "stickyRoundRobinLimit": 1
+      },
+      "openai-compatible-chat-01d811be-80e6-4dcd-a62c-260764c4b950": {
+        "fallbackStrategy": "round-robin",
+        "stickyRoundRobinLimit": 1
+      },
+      "openai-compatible-chat-1c48b99a-158e-4957-9a85-dba07efc15ca": {
+        "fallbackStrategy": "round-robin",
+        "stickyRoundRobinLimit": 1
+      },
+      "openai-compatible-chat-6e3e7e6f-f856-48b0-8b06-d3b7f1623bcd": {
+        "fallbackStrategy": "round-robin",
+        "stickyRoundRobinLimit": 1
+      },
+      "openai-compatible-chat-c9ba3868-eea6-47fa-9f8b-c90b88eba072": {
+        "fallbackStrategy": "round-robin",
+        "stickyRoundRobinLimit": 1
+      }
+    },
+    "capacityAdapter": {
+      "vision": {
+        "enabled": true,
+        "roundRobin": true,
+        "models": [
+          "ag/gemini-3.8-flash-high",
+          "xmtp/mimo-v2.5-pro",
+          "oc/mimo-v2.6-flash-free",
+          "ag/claude-opus-4-6-thinking"
+        ]
+      },
+      "audioInput": {
+        "enabled": true,
+        "roundRobin": true,
+        "models": []
+      }
+    },
+    "providerThinking": {
+      "openai-compatible-chat-cefb4904-f3a5-4ca2-b45b-9ce3540dec22": {
+        "mode": "max"
+      },
+      "opencode": {
+        "mode": "max"
+      },
+      "deepseek": {
+        "mode": "max"
+      }
+    },
+    "password": "REDACTED-password-1",
+    "rtkEnabled": true,
+    "providerOverrides": {},
+    "customPromptEnabled": false
+  },
+  "providerConnections": [
+    {
+      "apiKey": "REDACTED-apiKey-2",
+      "testStatus": "unavailable",
+      "providerSpecificData": {
+        "connectionProxyEnabled": false,
+        "connectionProxyUrl": "",
+        "connectionNoProxy": ""
+      },
+      "modelLock_glm-5.2": null,
+      "errorCode": 401,
+      "backoffLevel": 0,
+      "modelLock_deepseek-v4-flash": null,
+      "modelLock_qwen3.7-max": null,
+      "modelLock_glm-5.3-flash": "2026-10-24T12:47:12.796Z",
+      "modelLock_deepseek-v4-pro": "2026-10-20T11:02:52.176Z",
+      "modelLock_minimax-m3": null,
+      "modelLock_kimi-k2.7-code": null,
+      "modelLock_mimo-v2.5-pro": null,
+      "modelLock_glm-5.1": null,
+      "modelLock_deepseek-v4-flash-vision-exp": null,
+      "modelLock_gpt-6-astra": null,
+      "modelLock_glm-5.3": null,
+      "modelLock_qwen3.8-max": null,
+      "modelLock_gpt-5.6-luna": null,
+      "modelLock_kimi-k3": null,
+      "modelLock_grok-4.7": null,
+      "modelLock_qwen3.8-flash": "2026-10-24T12:47:16.381Z",
+      "modelLock_mimo-v2.6-flash": null,
+      "modelLock_minimax-m2.7": null,
+      "modelLock_minimax-m2.5": null,
+      "modelLock_kimi-k2.6": null,
+      "modelLock_longcat-2.0": null,
+      "lastError": "redacted-lastError",
+      "lastErrorAt": "2026-10-24T12:45:19.816Z",
+      "modelLock_deepseek-flash": "2026-10-24T12:34:42.766Z",
+      "modelLock_deepseek-v4.1-flash": "2026-10-20T11:03:00.970Z",
+      "modelLock_gpt-6-luna": "2026-10-24T12:47:19.816Z",
+      "id": "71476afd-75ee-4c10-bb73-9942f6865aa7",
+      "provider": "opencode-go",
+      "authType": "apikey",
+      "name": "test",
+      "email": null,
+      "priority": 1,
+      "isActive": false,
+      "createdAt": "2026-07-31T11:04:35.824Z",
+      "updatedAt": "2026-11-06T14:31:39.399Z"
+    },
+    {
+      "apiKey": "REDACTED-apiKey-3",
+      "testStatus": "active",
+      "providerSpecificData": {
+        "connectionProxyEnabled": false,
+        "connectionProxyUrl": "",
+        "connectionNoProxy": ""
+      },
+      "modelLock_deepseek/deepseek-v4-flash:free": null,
+      "errorCode": null,
+      "backoffLevel": 0,
+      "modelLock_deepseek/deepseek-v4-flash": null,
+      "lastUsedAt": "2026-10-02T18:28:53.565Z",
+      "consecutiveUseCount": 1,
+      "modelLock_stealth/ox-alpha": null,
+      "modelLock_Ox Alpha": null,
+      "modelLock_openrouter/free": null,
+      "id": "c33d3102-ac16-4172-9321-f1f9e8ff32a4",
+      "provider": "openrouter",
+      "authType": "apikey",
+      "name": "deepseek",
+      "email": null,
+      "priority": 2,
+      "isActive": true,
+      "createdAt": "2026-07-31T11:08:39.389Z",
+      "updatedAt": "2026-10-02T18:28:54.671Z"
+    },
+    {
+      "apiKey": "REDACTED-apiKey-4",
+      "testStatus": "active",
+      "providerSpecificData": {
+        "connectionProxyEnabled": false,
+        "connectionProxyUrl": "",
+        "connectionNoProxy": ""
+      },
+      "modelLock_deepseek-v4-pro-max": null,
+      "errorCode": null,
+      "backoffLevel": 0,
+      "modelLock_deepseek-v4-flash": null,
+      "lastUsedAt": "2026-11-15T14:57:11.320Z",
+      "consecutiveUseCount": 1,
+      "modelLock_deepseek-v4-pro": null,
+      "modelLock_deepseek-v4-pro-none": null,
+      "modelLock_deepseek-v4-flash-vision-exp": null,
+      "modelLock_deepseek-chat": null,
+      "modelLock_deepseek-reasoner": null,
+      "modelLock_DeepSeek-V4.1-Flash": null,
+      "modelLock_deepseek-flash": null,
+      "modelLock_deepseek-v4.1-flash": null,
+      "lastError": null,
+      "lastErrorAt": null,
+      "rateLimitedUntil": null,
+      "id": "ee0bf4ac-d7e6-4e89-ba40-7854bd4300cb",
+      "provider": "deepseek",
+      "authType": "apikey",
+      "name": "deep seek",
+      "email": null,
+      "priority": 1,
+      "isActive": true,
+      "createdAt": "2026-07-31T11:11:33.056Z",
+      "updatedAt": "2026-11-15T14:57:12.373Z"
+    },
+    {
+      "apiKey": "REDACTED-apiKey-5",
+      "testStatus": "unavailable",
+      "providerSpecificData": {
+        "region": "sgp",
+        "connectionProxyEnabled": false,
+        "connectionProxyUrl": "",
+        "connectionNoProxy": ""
+      },
+      "modelLock_mimo-v2.5-pro-claude": "2026-10-24T12:47:43.731Z",
+      "errorCode": 401,
+      "backoffLevel": 0,
+      "modelLock_mimo-v2.5-pro": "2026-10-21T09:51:41.342Z",
+      "lastError": "redacted-lastError",
+      "lastErrorAt": "2026-10-24T12:45:43.731Z",
+      "modelLock_mimo-v2.5": "2026-09-22T08:53:06.698Z",
+      "id": "b266f3dd-efd8-437c-a0c3-75847a993730",
+      "provider": "xiaomi-tokenplan",
+      "authType": "apikey",
+      "name": "mimo",
+      "email": null,
+      "priority": 1,
+      "isActive": true,
+      "createdAt": "2026-08-01T15:06:11.563Z",
+      "updatedAt": "2026-10-24T12:45:43.731Z"
+    },
+    {
+      "apiKey": "REDACTED-apiKey-6",
+      "testStatus": "active",
+      "providerSpecificData": {
+        "connectionProxyEnabled": false,
+        "connectionProxyUrl": "",
+        "connectionNoProxy": ""
+      },
+      "modelLock_GPT-5.6 Luna": null,
+      "errorCode": null,
+      "backoffLevel": 0,
+      "modelLock_gpt-5.6-luna": null,
+      "modelLock_gpt-5.4": null,
+      "modelLock_qwencloud": null,
+      "modelLock_mimo-v2.5-pro": null,
+      "modelLock_glm-5.2": null,
+      "modelLock_research": null,
+      "id": "12d53839-fad6-48a0-b21d-bfffbafefc5d",
+      "provider": "openai",
+      "authType": "apikey",
+      "name": "ai",
+      "email": null,
+      "priority": 1,
+      "isActive": true,
+      "createdAt": "2026-08-07T13:42:36.278Z",
+      "updatedAt": "2026-10-24T12:45:50.808Z"
+    },
+    {
+      "accessToken": "REDACTED-accessToken-7",
+      "refreshToken": "REDACTED-refreshToken-8",
+      "expiresAt": "2026-11-15T15:54:04.269Z",
+      "scope": "https://www.googleapis.com/auth/cclog https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/experimentsandconfigs https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile openid",
+      "projectId": "redacted-projectId",
+      "testStatus": "unavailable",
+      "expiresIn": 3599,
+      "modelLock_claude-opus-4-6-thinking": null,
+      "errorCode": 403,
+      "backoffLevel": 0,
+      "lastUsedAt": "2026-11-15T14:54:04.533Z",
+      "consecutiveUseCount": 1,
+      "modelLock_gemini-3.6-flash-high": null,
+      "lastRefreshAt": "2026-11-15T12:56:52.182Z",
+      "modelLock_gemini-3.7-flash-high": null,
+      "modelLock_gemini-3.8-flash-high": "2026-11-15T14:56:05.919Z",
+      "modelLock_gemini-3.5-flash-high": null,
+      "modelLock_claude-opus-5-5-high": null,
+      "modelLock_claude-sonnet-5-5-high": null,
+      "modelLock_gemini-4-argon-high": null,
+      "modelLock_gemini-4-argon-medium": null,
+      "modelLock_gemini-4-argon-low": null,
+      "modelLock_gemini-4-carbon-high": null,
+      "lastError": "redacted-lastError",
+      "lastErrorAt": "2026-11-15T14:54:05.919Z",
+      "id": "5e96fb4f-8970-44e8-ba17-8a0ded0ed09e",
+      "provider": "antigravity",
+      "authType": "oauth",
+      "name": "account-9",
+      "email": "redacted-email",
+      "priority": 3,
+      "isActive": true,
+      "createdAt": "2026-08-10T10:07:05.107Z",
+      "updatedAt": "2026-11-15T14:54:05.919Z"
+    },
+    {
+      "apiKey": "REDACTED-apiKey-10",
+      "testStatus": "unavailable",
+      "providerSpecificData": {
+        "connectionProxyEnabled": false,
+        "connectionProxyUrl": "",
+        "connectionNoProxy": ""
+      },
+      "lastUsedAt": "2026-11-13T12:31:07.610Z",
+      "consecutiveUseCount": 1,
+      "modelLock_gemini-3.7-flash": null,
+      "errorCode": 429,
+      "backoffLevel": 9,
+      "modelLock_gemini-3.8-flash": "2026-11-07T14:22:29.089Z",
+      "modelLock_gemini-3.1-pro-preview": null,
+      "modelLock_gemini-3.1-flash-lite-preview": null,
+      "modelLock_gemini-3.6-flash": null,
+      "modelLock_gemini-3-flash-preview": null,
+      "modelLock_gemini-4-argon": "2026-11-13T12:36:08.013Z",
+      "lastError": "redacted-lastError",
+      "lastErrorAt": "2026-11-13T12:31:08.013Z",
+      "id": "a18eec83-d2df-4de4-9270-5b226cd64957",
+      "provider": "gemini",
+      "authType": "apikey",
+      "name": "nathan",
+      "email": null,
+      "priority": 1,
+      "isActive": true,
+      "createdAt": "2026-08-20T11:45:23.651Z",
+      "updatedAt": "2026-11-13T12:31:08.013Z"
+    },
+    {
+      "accessToken": "REDACTED-accessToken-11",
+      "refreshToken": "REDACTED-refreshToken-12",
+      "expiresAt": "2026-11-15T15:54:02.909Z",
+      "scope": "https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/cclog openid https://www.googleapis.com/auth/experimentsandconfigs https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/cloud-platform",
+      "projectId": "redacted-projectId",
+      "testStatus": "unavailable",
+      "expiresIn": 3599,
+      "lastUsedAt": "2026-11-15T14:57:38.213Z",
+      "consecutiveUseCount": 1,
+      "modelLock_gemini-3.7-flash-high": null,
+      "errorCode": 403,
+      "backoffLevel": 0,
+      "lastRefreshAt": "2026-11-15T12:56:38.873Z",
+      "modelLock_gemini-3.6-flash-high": null,
+      "modelLock_gemini-3.8-flash-high": "2026-11-15T14:56:04.533Z",
+      "modelLock_gemini-3.5-flash-high": null,
+      "modelLock_claude-opus-5-5-high": null,
+      "modelLock_claude-sonnet-5-5-high": null,
+      "modelLock_claude-opus-4-6-thinking": null,
+      "modelLock_gemini-4-argon-high": null,
+      "modelLock_gemini-4-argon-medium": null,
+      "modelLock_gemini-4-argon-low": null,
+      "modelLock_gemini-4-carbon-high": null,
+      "lastError": "redacted-lastError",
+      "lastErrorAt": "2026-11-15T14:54:04.533Z",
+      "id": "416deb5b-83f4-43d3-8793-1a5e9af2a88b",
+      "provider": "antigravity",
+      "authType": "oauth",
+      "name": "account-13",
+      "email": "redacted-email",
+      "priority": 2,
+      "isActive": true,
+      "createdAt": "2026-08-20T11:50:48.027Z",
+      "updatedAt": "2026-11-15T14:57:38.213Z"
+    },
+    {
+      "apiKey": "REDACTED-apiKey-14",
+      "testStatus": "unavailable",
+      "providerSpecificData": {
+        "connectionProxyEnabled": false,
+        "connectionProxyUrl": "",
+        "connectionNoProxy": ""
+      },
+      "modelLock_deepseek-ai/deepseek-v4-flash": "2026-09-10T17:49:12.358Z",
+      "lastError": "redacted-lastError",
+      "errorCode": 410,
+      "lastErrorAt": "2026-09-10T17:48:42.358Z",
+      "backoffLevel": 0,
+      "modelLock_minimaxai/minimax-m2.7": null,
+      "modelLock_deepseek-ai/deepseek-v4-pro": "2026-09-10T11:13:45.964Z",
+      "modelLock_moonshotai/kimi-k2.6": "2026-08-22T06:51:12.834Z",
+      "modelLock_z-ai/glm-5.2": "2026-09-10T14:25:04.468Z",
+      "modelLock_minimaxai/minimax-m3": "2026-09-10T04:59:47.051Z",
+      "modelLock_nemotron-3-ultra-550b-a55b": "2026-09-10T05:01:24.319Z",
+      "id": "f7cb39f0-8ba5-4b49-8e28-4754cd47570d",
+      "provider": "nvidia",
+      "authType": "apikey",
+      "name": "tester",
+      "email": null,
+      "priority": 1,
+      "isActive": true,
+      "createdAt": "2026-08-21T15:18:39.287Z",
+      "updatedAt": "2026-09-10T17:48:42.358Z"
+    },
+    {
+      "apiKey": "REDACTED-apiKey-15",
+      "testStatus": "active",
+      "providerSpecificData": {
+        "connectionProxyEnabled": false,
+        "connectionProxyUrl": "",
+        "connectionNoProxy": ""
+      },
+      "lastUsedAt": "2026-09-28T15:06:28.461Z",
+      "consecutiveUseCount": 1,
+      "modelLock_stealth/ox-alpha": null,
+      "errorCode": null,
+      "backoffLevel": 0,
+      "modelLock_Ox Alpha": null,
+      "modelLock_openrouter/free": null,
+      "id": "48d13f8c-12dc-464b-9813-09067972eabe",
+      "provider": "openrouter",
+      "authType": "apikey",
+      "name": "o alpha",
+      "email": null,
+      "priority": 1,
+      "isActive": true,
+      "createdAt": "2026-08-22T05:20:05.260Z",
+      "updatedAt": "2026-09-28T15:06:28.461Z"
+    },
+    {
+      "defaultModel": "heretic",
+      "apiKey": "REDACTED-apiKey-16",
+      "testStatus": "untested",
+      "providerSpecificData": {
+        "prefix": "vast",
+        "apiType": "chat",
+        "baseUrl": "http://50.35.57.149:9411/v1",
+        "nodeName": "Vast 4090 Heretic",
+        "connectionProxyEnabled": false,
+        "connectionProxyUrl": "",
+        "connectionNoProxy": ""
+      },
+      "lastUsedAt": null,
+      "consecutiveUseCount": 0,
+      "id": "52c34250-6e01-4bd9-b40d-4608ac544623",
+      "provider": "openai-compatible-chat",
+      "authType": "apikey",
+      "name": "Vast Heretic GPU",
+      "email": null,
+      "priority": 1,
+      "isActive": true,
+      "createdAt": "2026-08-25T12:41:32.000Z",
+      "updatedAt": "2026-08-25T12:41:32.000Z"
+    },
+    {
+      "defaultModel": "sure continue with that",
+      "apiKey": "REDACTED-apiKey-17",
+      "testStatus": "unavailable",
+      "providerSpecificData": {
+        "prefix": "modehub",
+        "apiType": "chat",
+        "baseUrl": "https://modelhub.my/v1",
+        "nodeName": "modelhub",
+        "connectionProxyEnabled": false,
+        "connectionProxyUrl": "",
+        "connectionNoProxy": ""
+      },
+      "lastUsedAt": "2026-11-03T16:04:42.774Z",
+      "consecutiveUseCount": 1,
+      "modelLock_glm-5.3": null,
+      "errorCode": 403,
+      "backoffLevel": 2,
+      "modelLock_gpt-6-astra": null,
+      "modelLock_claude-fable-5": null,
+      "modelLock_glm-5.3-flash": "2026-10-28T15:15:34.032Z",
+      "modelLock_glm-5.2": null,
+      "modelLock_gpt-6-astra-pro": null,
+      "modelLock_my-combo-team": null,
+      "modelLock_claude-sonnet-5": "2026-10-08T08:54:32.783Z",
+      "lastError": "redacted-lastError",
+      "lastErrorAt": "2026-11-03T16:04:48.451Z",
+      "modelLock_claude-opus-5": "2026-10-08T08:54:42.060Z",
+      "modelLock_gpt-6.1-sol": "2026-11-03T16:06:48.451Z",
+      "id": "19d4e5b5-a96c-4126-bab3-f43c50595555",
+      "provider": "openai-compatible-chat-b3326d2d-c3cf-4ec0-9069-dc31ce5f9305",
+      "authType": "apikey",
+      "name": "model hub",
+      "email": null,
+      "priority": 1,
+      "isActive": true,
+      "createdAt": "2026-09-05T16:26:31.507Z",
+      "updatedAt": "2026-11-03T16:04:48.451Z"
+    },
+    {
+      "defaultModel": "DeepSeek \u00b7 Deepseek V4.1 Flash",
+      "apiKey": "REDACTED-apiKey-18",
+      "testStatus": "unavailable",
+      "providerSpecificData": {
+        "prefix": "neokens",
+        "apiType": "chat",
+        "baseUrl": "https://api.v2.neokens.com/v1",
+        "nodeName": "neonNeokens",
+        "connectionProxyEnabled": false,
+        "connectionProxyUrl": "",
+        "connectionNoProxy": ""
+      },
+      "modelLock_DeepSeek \u00b7 Deepseek V4.1 Flash": null,
+      "errorCode": 402,
+      "backoffLevel": 0,
+      "lastUsedAt": "2026-10-07T15:20:57.189Z",
+      "consecutiveUseCount": 1,
+      "modelLock_gpt-6-astra": null,
+      "modelLock_glm-5.3-flash": "2026-10-07T15:22:57.465Z",
+      "modelLock_deepseek-v4.1-flash": "2026-10-07T15:22:58.074Z",
+      "lastError": "redacted-lastError",
+      "lastErrorAt": "2026-10-07T15:20:58.074Z",
+      "id": "2a36b6e8-ea42-4723-8f13-c3d03f77af41",
+      "provider": "openai-compatible-chat-1c48b99a-158e-4957-9a85-dba07efc15ca",
+      "authType": "apikey",
+      "name": "neoken test",
+      "email": null,
+      "priority": 1,
+      "isActive": true,
+      "createdAt": "2026-09-12T12:30:18.033Z",
+      "updatedAt": "2026-10-07T15:20:58.074Z"
+    },
+    {
+      "defaultModel": "DeepSeek-V4.1-Flash",
+      "apiKey": "REDACTED-apiKey-19",
+      "testStatus": "active",
+      "providerSpecificData": {
+        "prefix": "custom",
+        "apiType": "chat",
+        "baseUrl": "https://api.deepseek.com",
+        "nodeName": "deepseek",
+        "connectionProxyEnabled": false,
+        "connectionProxyUrl": "",
+        "connectionNoProxy": ""
+      },
+      "errorCode": null,
+      "backoffLevel": 0,
+      "modelLock_DeepSeek-V4.1-Flash": null,
+      "modelLock_GPT 6 Astra": null,
+      "modelLock_Deepseek V4.1 Flash": null,
+      "modelLock_Atria-Dawn-Preview": null,
+      "id": "818869c9-8684-4b04-8cfd-8421918357a0",
+      "provider": "openai-compatible-chat-8ac1501e-9733-4cb6-8a47-c2f5f35bbb8e",
+      "authType": "apikey",
+      "name": "deepseek v4.1",
+      "email": null,
+      "priority": 1,
+      "isActive": false,
+      "createdAt": "2026-09-12T15:09:58.587Z",
+      "updatedAt": "2026-11-02T08:50:33.704Z"
+    },
+    {
+      "defaultModel": "Deepseek V4.1 Flash",
+      "apiKey": "REDACTED-apiKey-20",
+      "testStatus": "unavailable",
+      "providerSpecificData": {
+        "prefix": "custom",
+        "apiType": "chat",
+        "baseUrl": "https://api.v2.neokens.com/v1",
+        "nodeName": "neon",
+        "connectionProxyEnabled": false,
+        "connectionProxyUrl": "",
+        "connectionNoProxy": ""
+      },
+      "lastUsedAt": "2026-09-30T02:35:22.409Z",
+      "consecutiveUseCount": 1,
+      "errorCode": 402,
+      "backoffLevel": 0,
+      "modelLock_GPT 6 Astra": "2026-09-30T02:37:20.103Z",
+      "lastError": "redacted-lastError",
+      "lastErrorAt": "2026-09-30T02:35:23.904Z",
+      "modelLock_Deepseek V4.1 Flash": "2026-09-30T02:37:23.904Z",
+      "id": "4bebe24a-8b5f-4a7c-b018-f4d1b03d27a0",
+      "provider": "openai-compatible-chat-6e3e7e6f-f856-48b0-8b06-d3b7f1623bcd",
+      "authType": "apikey",
+      "name": "neon key working",
+      "email": null,
+      "priority": 1,
+      "isActive": true,
+      "createdAt": "2026-09-13T09:51:50.782Z",
+      "updatedAt": "2026-09-30T02:35:23.904Z"
+    },
+    {
+      "defaultModel": "idk",
+      "apiKey": "REDACTED-apiKey-21",
+      "testStatus": "active",
+      "providerSpecificData": {
+        "prefix": "custom",
+        "apiType": "chat",
+        "baseUrl": "https://api.atria-asi.ai/v1",
+        "nodeName": "atria",
+        "connectionProxyEnabled": false,
+        "connectionProxyUrl": "",
+        "connectionNoProxy": ""
+      },
+      "errorCode": null,
+      "backoffLevel": 0,
+      "lastUsedAt": "2026-09-15T15:53:47.795Z",
+      "consecutiveUseCount": 1,
+      "id": "5f6a0745-221a-4631-b088-3cdb63983672",
+      "provider": "openai-compatible-chat-c9ba3868-eea6-47fa-9f8b-c90b88eba072",
+      "authType": "apikey",
+      "name": "atria model",
+      "email": null,
+      "priority": 1,
+      "isActive": true,
+      "createdAt": "2026-09-15T15:38:54.121Z",
+      "updatedAt": "2026-09-15T15:53:47.796Z"
+    },
+    {
+      "accessToken": "REDACTED-accessToken-22",
+      "refreshToken": "REDACTED-refreshToken-23",
+      "expiresAt": "2026-11-15T15:46:37.816Z",
+      "scope": "https://www.googleapis.com/auth/cclog https://www.googleapis.com/auth/cloud-platform https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/experimentsandconfigs https://www.googleapis.com/auth/userinfo.email openid",
+      "projectId": "redacted-projectId",
+      "testStatus": "unavailable",
+      "expiresIn": 3599,
+      "lastUsedAt": "2026-11-15T14:57:17.389Z",
+      "consecutiveUseCount": 1,
+      "modelLock_gemini-4-argon-high": null,
+      "errorCode": 429,
+      "backoffLevel": 15,
+      "lastRefreshAt": "2026-11-15T14:46:38.816Z",
+      "modelLock_gemini-4-carbon-high": null,
+      "modelLock_gemini-3.8-flash-high": "2026-11-15T15:02:38.212Z",
+      "lastError": "redacted-lastError",
+      "lastErrorAt": "2026-11-15T14:57:38.212Z",
+      "id": "bbf78358-64cb-4b73-9519-6a9bc5626b86",
+      "provider": "antigravity",
+      "authType": "oauth",
+      "name": "account-24",
+      "email": "redacted-email",
+      "priority": 1,
+      "isActive": true,
+      "createdAt": "2026-10-17T15:56:08.984Z",
+      "updatedAt": "2026-11-15T14:57:38.212Z"
+    },
+    {
+      "accessToken": "REDACTED-accessToken-25",
+      "refreshToken": "REDACTED-refreshToken-26",
+      "expiresAt": "2026-11-20T12:54:27.651Z",
+      "testStatus": "active",
+      "expiresIn": 864000,
+      "idToken": "REDACTED-idToken-27",
+      "lastRefreshAt": "2026-11-10T12:54:27.651Z",
+      "providerSpecificData": {
+        "chatgptAccountId": "redacted-chatgptAccountId",
+        "chatgptPlanType": "plus"
+      },
+      "lastUsedAt": "2026-11-15T14:55:59.213Z",
+      "consecutiveUseCount": 1,
+      "modelLock_gpt-6.1-sol": null,
+      "errorCode": null,
+      "backoffLevel": 0,
+      "modelLock_gpt-6.1-terra": null,
+      "lastError": null,
+      "lastErrorAt": null,
+      "rateLimitedUntil": null,
+      "id": "8b7d5daf-29dc-494f-82ee-c56494490dba",
+      "provider": "codex",
+      "authType": "oauth",
+      "name": "account-28",
+      "email": "redacted-email",
+      "priority": 1,
+      "isActive": true,
+      "createdAt": "2026-10-25T02:54:21.788Z",
+      "updatedAt": "2026-11-15T14:56:47.947Z"
+    },
+    {
+      "defaultModel": "deepseek-v4.1-flash-uncensored",
+      "apiKey": "REDACTED-apiKey-29",
+      "testStatus": "unavailable",
+      "providerSpecificData": {
+        "prefix": "explabs",
+        "apiType": "chat",
+        "baseUrl": "https://api.experientiallabs.ai/v1",
+        "nodeName": "experientiallabs",
+        "connectionProxyEnabled": false,
+        "connectionProxyUrl": "",
+        "connectionNoProxy": ""
+      },
+      "modelLock_deepseek-v4.1-flash-uncensored": "2026-11-13T10:52:57.827Z",
+      "lastError": "redacted-lastError",
+      "errorCode": 402,
+      "lastErrorAt": "2026-11-13T10:50:57.827Z",
+      "backoffLevel": 0,
+      "id": "e1ea9886-6347-4bf8-9da8-d234c222f683",
+      "provider": "openai-compatible-chat-30b2f536-86b4-49ec-a6e8-68a3c5d72b30",
+      "authType": "apikey",
+      "name": "account-30",
+      "email": null,
+      "priority": 1,
+      "isActive": true,
+      "createdAt": "2026-10-28T15:30:32.349Z",
+      "updatedAt": "2026-11-13T10:50:57.827Z"
+    },
+    {
+      "displayName": "redacted-displayName",
+      "accessToken": "REDACTED-accessToken-31",
+      "testStatus": "error",
+      "providerSpecificData": {
+        "authMethod": "cli_poll",
+        "username": "redacted-username",
+        "userId": "redacted-userId",
+        "zcodeJwtToken": "REDACTED-zcodeJwtToken-32",
+        "zaiBusinessToken": "REDACTED-zaiBusinessToken-33"
+      },
+      "modelLock_glm-5.3-flash": "2026-10-30T13:43:38.900Z",
+      "lastError": "redacted-lastError",
+      "errorCode": 429,
+      "lastErrorAt": "2026-10-30T13:43:39.430Z",
+      "backoffLevel": 1,
+      "id": "3cb497c0-68a8-45a5-aee4-6b23d63a8f6f",
+      "provider": "glm",
+      "authType": "oauth",
+      "name": "account-34",
+      "email": "redacted-email",
+      "priority": 1,
+      "isActive": false,
+      "createdAt": "2026-10-30T13:43:35.271Z",
+      "updatedAt": "2026-11-01T17:09:30.670Z"
+    },
+    {
+      "defaultModel": "deepseek/deepseek-v4.1-flash-ultrafast",
+      "apiKey": "REDACTED-apiKey-35",
+      "testStatus": "unavailable",
+      "providerSpecificData": {
+        "prefix": "custom",
+        "apiType": "chat",
+        "baseUrl": "https://apis.opengateway.ai/v1",
+        "nodeName": "deepseek ultr fast",
+        "connectionProxyEnabled": false,
+        "connectionProxyUrl": "",
+        "connectionNoProxy": ""
+      },
+      "errorCode": 402,
+      "backoffLevel": 0,
+      "modelLock_deepseek/deepseek-v4.1-flash-ultrafast": "2026-11-07T14:02:15.765Z",
+      "lastError": "redacted-lastError",
+      "lastErrorAt": "2026-11-07T14:00:15.765Z",
+      "id": "0cb25c0b-8d0c-4c18-962c-773122bcdef1",
+      "provider": "openai-compatible-chat-164daf06-8765-49a1-a1fd-4b1d1acc3f33",
+      "authType": "apikey",
+      "name": "fast",
+      "email": null,
+      "priority": 1,
+      "isActive": true,
+      "createdAt": "2026-10-31T03:35:56.649Z",
+      "updatedAt": "2026-11-07T14:00:15.765Z"
+    },
+    {
+      "apiKey": "REDACTED-apiKey-36",
+      "testStatus": "unavailable",
+      "providerSpecificData": {
+        "connectionProxyEnabled": false,
+        "connectionProxyUrl": "",
+        "connectionNoProxy": ""
+      },
+      "lastError": "redacted-lastError",
+      "lastErrorAt": "2026-11-07T14:27:14.982Z",
+      "errorCode": 402,
+      "backoffLevel": 0,
+      "modelLock_grok-4.7": "2026-11-07T14:29:14.982Z",
+      "id": "60d9f9dd-6015-4150-a519-79de7dbf432d",
+      "provider": "xai",
+      "authType": "apikey",
+      "name": "tester11",
+      "email": null,
+      "priority": 1,
+      "isActive": true,
+      "createdAt": "2026-11-02T11:57:28.281Z",
+      "updatedAt": "2026-11-07T14:27:14.982Z"
+    },
+    {
+      "accessToken": "REDACTED-accessToken-37",
+      "expiresAt": "2026-11-14T11:48:18.948Z",
+      "testStatus": "active",
+      "providerSpecificData": {
+        "machineId": "redacted-machineId",
+        "authMethod": "imported",
+        "provider": "Imported",
+        "userId": "redacted-userId"
+      },
+      "errorCode": null,
+      "backoffLevel": 0,
+      "id": "f5b1cd1c-490e-4cee-9a57-e4c9742aca70",
+      "provider": "cursor",
+      "authType": "oauth",
+      "name": "account-38",
+      "email": "redacted-email",
+      "priority": 1,
+      "isActive": true,
+      "createdAt": "2026-11-13T11:48:18.948Z",
+      "updatedAt": "2026-11-13T11:48:21.029Z"
+    }
+  ],
+  "providerNodes": [
+    {
+      "prefix": "modehub",
+      "apiType": "chat",
+      "baseUrl": "https://modelhub.my/v1",
+      "id": "openai-compatible-chat-b3326d2d-c3cf-4ec0-9069-dc31ce5f9305",
+      "type": "openai-compatible",
+      "name": "modelhub",
+      "createdAt": "2026-09-02T15:52:20.906Z",
+      "updatedAt": "2026-09-02T15:52:20.906Z"
+    },
+    {
+      "prefix": "neokens",
+      "apiType": "chat",
+      "baseUrl": "https://api.v2.neokens.com/v1",
+      "id": "openai-compatible-chat-1c48b99a-158e-4957-9a85-dba07efc15ca",
+      "type": "openai-compatible",
+      "name": "neonNeokens",
+      "createdAt": "2026-09-12T12:25:45.986Z",
+      "updatedAt": "2026-09-12T17:33:31.091Z"
+    },
+    {
+      "prefix": "custom",
+      "apiType": "chat",
+      "baseUrl": "https://api.deepseek.com",
+      "id": "openai-compatible-chat-8ac1501e-9733-4cb6-8a47-c2f5f35bbb8e",
+      "type": "openai-compatible",
+      "name": "deepseek",
+      "createdAt": "2026-09-12T15:09:26.441Z",
+      "updatedAt": "2026-09-12T15:09:26.441Z"
+    },
+    {
+      "prefix": "custom",
+      "apiType": "chat",
+      "baseUrl": "https://api.v2.neokens.com/v1",
+      "id": "openai-compatible-chat-6e3e7e6f-f856-48b0-8b06-d3b7f1623bcd",
+      "type": "openai-compatible",
+      "name": "neon",
+      "createdAt": "2026-09-13T09:51:06.048Z",
+      "updatedAt": "2026-09-13T09:51:06.048Z"
+    },
+    {
+      "prefix": "custom",
+      "apiType": "chat",
+      "baseUrl": "https://api.atria-asi.ai/v1",
+      "id": "openai-compatible-chat-c9ba3868-eea6-47fa-9f8b-c90b88eba072",
+      "type": "openai-compatible",
+      "name": "atria",
+      "createdAt": "2026-09-15T15:38:35.243Z",
+      "updatedAt": "2026-09-15T15:38:35.243Z"
+    },
+    {
+      "prefix": "explabs",
+      "apiType": "chat",
+      "baseUrl": "https://api.experientiallabs.ai/v1",
+      "id": "openai-compatible-chat-30b2f536-86b4-49ec-a6e8-68a3c5d72b30",
+      "type": "openai-compatible",
+      "name": "experientiallabs",
+      "createdAt": "2026-10-17T04:36:55.000Z",
+      "updatedAt": "2026-10-17T04:36:55.000Z"
+    },
+    {
+      "prefix": "og",
+      "apiType": "chat",
+      "baseUrl": "https://apis.opengateway.ai/v1",
+      "id": "openai-compatible-chat-164daf06-8765-49a1-a1fd-4b1d1acc3f33",
+      "type": "openai-compatible",
+      "name": "deepseek ultr fast",
+      "createdAt": "2026-10-31T03:35:39.374Z",
+      "updatedAt": "2026-11-02T10:58:13.703941Z"
+    }
+  ],
+  "proxyPools": [],
+  "apiKeys": [
+    {
+      "id": "fb7f49ab-dcd6-4f4c-a2ee-c6b9e366f1c9",
+      "key": "REDACTED-key-39",
+      "name": "my combo",
+      "machineId": "redacted-machineId",
+      "isActive": true,
+      "createdAt": "2026-07-31T11:22:35.196Z",
+      "access": {
+        "restricted": false,
+        "allow": []
+      }
+    }
+  ],
+  "combos": [
+    {
+      "id": "b7b865b3-9177-42a3-8627-1bb89dc52346",
+      "name": "my-combo-team",
+      "kind": null,
+      "models": [
+        "ds/deepseek-v4.1-flash",
+        "ag/gemini-3.8-flash-high",
+        "cx/gpt-6.1-terra"
+      ],
+      "createdAt": "2026-07-31T11:14:06.559Z",
+      "updatedAt": "2026-11-07T14:22:48.984Z"
+    },
+    {
+      "id": "fa6293ab-7308-4a89-8007-c68abbfbe8eb",
+      "name": "search-combo",
+      "kind": "webSearch",
+      "models": [],
+      "createdAt": "2026-08-10T08:24:25.618Z",
+      "updatedAt": "2026-08-10T08:24:25.618Z"
+    },
+    {
+      "id": "2f57bb77-8984-4132-acba-d5e90e228f3b",
+      "name": "research",
+      "kind": null,
+      "models": [
+        "ag/gemini-4-argon-high",
+        "ag/claude-opus-5-5-high",
+        "ag/gemini-3.8-flash-high",
+        "cx/gpt-6.1-terra"
+      ],
+      "createdAt": "2026-08-11T11:02:45.985Z",
+      "updatedAt": "2026-11-08T14:49:15.594Z"
+    },
+    {
+      "id": "76bf0123-ef7c-4ab4-b552-65165fa1b881",
+      "name": "zenstack",
+      "kind": null,
+      "models": [
+        "ds/deepseek-v4.1-flash"
+      ],
+      "createdAt": "2026-09-10T16:23:19.559Z",
+      "updatedAt": "2026-11-07T14:05:36.120Z"
+    }
+  ],
+  "modelAliases": {},
+  "customModels": [
+    {
+      "providerAlias": "oc",
+      "id": "big-pickle",
+      "type": "llm",
+      "name": "big-pickle"
+    },
+    {
+      "providerAlias": "oc",
+      "id": "deepseek-v4-flash-free",
+      "type": "llm",
+      "name": "deepseek-v4-flash-free"
+    },
+    {
+      "providerAlias": "oc",
+      "id": "mimo-v2.5-free",
+      "type": "llm",
+      "name": "mimo-v2.5-free"
+    },
+    {
+      "providerAlias": "oc",
+      "id": "laguna-s-2.1-free",
+      "type": "llm",
+      "name": "laguna-s-2.1-free"
+    },
+    {
+      "providerAlias": "openai-compatible-chat-cefb4904-f3a5-4ca2-b45b-9ce3540dec22",
+      "id": "qwen3.8-max",
+      "type": "llm",
+      "name": "qwen3.8-max"
+    },
+    {
+      "providerAlias": "openrouter",
+      "id": "Ox Alpha",
+      "type": "embedding",
+      "name": "Ox Alpha"
+    },
+    {
+      "providerAlias": "openai-compatible-chat-cefb4904-f3a5-4ca2-b45b-9ce3540dec22",
+      "id": "qwen3.8-max-0902",
+      "type": "llm",
+      "name": "qwen3.8-max-0902"
+    },
+    {
+      "providerAlias": "openai-compatible-chat-b3326d2d-c3cf-4ec0-9069-dc31ce5f9305",
+      "id": "gpt-6-astra",
+      "type": "llm",
+      "name": "gpt-6-astra"
+    },
+    {
+      "providerAlias": "openai-compatible-chat-b3326d2d-c3cf-4ec0-9069-dc31ce5f9305",
+      "id": "glm-5.3",
+      "type": "llm",
+      "name": "glm-5.3"
+    },
+    {
+      "providerAlias": "openai-compatible-chat-b3326d2d-c3cf-4ec0-9069-dc31ce5f9305",
+      "id": "claude-sonnet-5",
+      "type": "llm",
+      "name": "claude-sonnet-5"
+    },
+    {
+      "providerAlias": "openai-compatible-chat-bf646007-03b7-4ca6-9186-52061ad1d1d8",
+      "id": "glm-5.3-flash",
+      "type": "llm",
+      "name": "glm-5.3-flash"
+    },
+    {
+      "providerAlias": "openai-compatible-chat-01d811be-80e6-4dcd-a62c-260764c4b950",
+      "id": "glm-5.3",
+      "type": "llm",
+      "name": "glm-5.3"
+    },
+    {
+      "providerAlias": "openai-compatible-chat-01d811be-80e6-4dcd-a62c-260764c4b950",
+      "id": "gpt-6-astra",
+      "type": "llm",
+      "name": "gpt-6-astra"
+    },
+    {
+      "providerAlias": "openai-compatible-chat-01d811be-80e6-4dcd-a62c-260764c4b950",
+      "id": "seedance-2.5",
+      "type": "llm",
+      "name": "seedance-2.5"
+    },
+    {
+      "providerAlias": "openai-compatible-chat-50a932f2-4074-4675-97f8-41a840bb5481",
+      "id": "GPT 6 Astra",
+      "type": "llm",
+      "name": "GPT 6 Astra"
+    },
+    {
+      "providerAlias": "openai-compatible-chat-50a932f2-4074-4675-97f8-41a840bb5481",
+      "id": "Kimi K3",
+      "type": "llm",
+      "name": "Kimi K3"
+    },
+    {
+      "providerAlias": "openai-compatible-chat-b5d5ded8-6414-4e63-a00b-a8428751b9ae",
+      "id": "deepseek/deepseek-v4.1-flash",
+      "type": "llm",
+      "name": "deepseek/deepseek-v4.1-flash"
+    },
+    {
+      "providerAlias": "openai-compatible-chat-50a932f2-4074-4675-97f8-41a840bb5481",
+      "id": "Deepseek V4.1 Flash",
+      "type": "llm",
+      "name": "Deepseek V4.1 Flash"
+    },
+    {
+      "providerAlias": "openai-compatible-chat-1c48b99a-158e-4957-9a85-dba07efc15ca",
+      "id": "glm-5.3-flash",
+      "type": "llm",
+      "name": "glm-5.3-flash"
+    },
+    {
+      "providerAlias": "openai-compatible-chat-1c48b99a-158e-4957-9a85-dba07efc15ca",
+      "id": "deepseek-v4.1-flash",
+      "type": "llm",
+      "name": "deepseek-v4.1-flash"
+    },
+    {
+      "providerAlias": "openai-compatible-chat-8ac1501e-9733-4cb6-8a47-c2f5f35bbb8e",
+      "id": "DeepSeek-V4.1-Flash",
+      "type": "llm",
+      "name": "DeepSeek-V4.1-Flash"
+    },
+    {
+      "providerAlias": "openai-compatible-chat-6e3e7e6f-f856-48b0-8b06-d3b7f1623bcd",
+      "id": "Deepseek V4.1 Flash",
+      "type": "llm",
+      "name": "Deepseek V4.1 Flash"
+    },
+    {
+      "providerAlias": "openai-compatible-chat-c9ba3868-eea6-47fa-9f8b-c90b88eba072",
+      "id": "Atria-Dawn-Preview",
+      "type": "llm",
+      "name": "Atria-Dawn-Preview"
+    },
+    {
+      "providerAlias": "ds",
+      "id": "deepseek-flash",
+      "type": "llm",
+      "name": "deepseek-flash",
+      "caps": {
+        "vision": true,
+        "reasoning": true
+      }
+    },
+    {
+      "providerAlias": "openai-compatible-chat-30b2f536-86b4-49ec-a6e8-68a3c5d72b30",
+      "id": "claude-opus-5.5",
+      "type": "llm",
+      "name": "claude-opus-5.5"
+    },
+    {
+      "providerAlias": "oc",
+      "id": "beam-free",
+      "type": "llm",
+      "name": "Reflection Beam (Free)"
+    },
+    {
+      "providerAlias": "oc",
+      "id": "mimo-v2.6-flash-free",
+      "type": "llm",
+      "name": "MiMo V2.6 Flash (Free)"
+    },
+    {
+      "providerAlias": "oc",
+      "id": "nemotron-3.5-super-vl-free",
+      "type": "llm",
+      "name": "Nemotron 3.5 Super VL (Free)"
+    },
+    {
+      "providerAlias": "oc",
+      "id": "nemotron-3.5-lightning-free",
+      "type": "llm",
+      "name": "Nemotron 3.5 Lightning (Free)"
+    },
+    {
+      "providerAlias": "oc",
+      "id": "longcat-2.5-preview-free",
+      "type": "llm",
+      "name": "LongCat 2.5 Preview (Free)"
+    },
+    {
+      "providerAlias": "oc",
+      "id": "deepseek-v4.1-flash-free",
+      "type": "llm",
+      "name": "DeepSeek V4.1 Flash (Free)"
+    },
+    {
+      "providerAlias": "oc",
+      "id": "minimax-m3.1-flash-free",
+      "type": "llm",
+      "name": "MiniMax M3.1 Flash (Free)"
+    },
+    {
+      "providerAlias": "openai-compatible-chat-30b2f536-86b4-49ec-a6e8-68a3c5d72b30",
+      "id": "glm-5.3-uncensored",
+      "type": "llm",
+      "name": "glm-5.3-uncensored"
+    },
+    {
+      "providerAlias": "openai-compatible-chat-164daf06-8765-49a1-a1fd-4b1d1acc3f33",
+      "id": "deepseek/deepseek-v4.1-flash-ultrafast",
+      "type": "llm",
+      "name": "deepseek/deepseek-v4.1-flash-ultrafast"
+    },
+    {
+      "providerAlias": "openai-compatible-chat-30b2f536-86b4-49ec-a6e8-68a3c5d72b30",
+      "id": "deepseek-v4.1-flash-uncensored",
+      "type": "llm",
+      "name": "deepseek-v4.1-flash-uncensored"
+    }
+  ],
+  "mitmAlias": {},
+  "pricing": {}
+}

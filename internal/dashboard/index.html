@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>FastRouter</title>
+<style>
+  :root { color-scheme: light dark; --bg:#f6f7f9; --card:#fff; --fg:#111; --mut:#667; --line:#e3e5ea; --ok:#1a7f37; --warn:#b35900; --off:#888; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#0f1115; --card:#171a21; --fg:#e8eaf0; --mut:#99a; --line:#262a33; --ok:#3fb950; --warn:#e3a008; } }
+  body { margin:0; font:14px/1.45 system-ui,-apple-system,Segoe UI,sans-serif; background:var(--bg); color:var(--fg); }
+  header { padding:18px 24px; border-bottom:1px solid var(--line); display:flex; gap:16px; align-items:baseline; }
+  header h1 { margin:0; font-size:18px; } header span { color:var(--mut); }
+  main { padding:20px 24px; display:grid; gap:20px; max-width:1100px; }
+  section { background:var(--card); border:1px solid var(--line); border-radius:10px; padding:16px 18px; }
+  h2 { margin:0 0 10px; font-size:15px; }
+  table { width:100%; border-collapse:collapse; } td,th { text-align:left; padding:6px 8px; border-top:1px solid var(--line); vertical-align:top; }
+  th { color:var(--mut); font-weight:500; border-top:none; }
+  .pill { display:inline-block; padding:1px 8px; border-radius:99px; font-size:12px; border:1px solid currentColor; }
+  .ok { color:var(--ok); } .warn { color:var(--warn); } .off { color:var(--off); }
+  code { font:12px ui-monospace,Menlo,monospace; } .mut { color:var(--mut); }
+  .stats { display:flex; gap:28px; } .stats b { font-size:22px; display:block; }
+</style>
+</head>
+<body>
+<header><h1>FastRouter</h1><span id="meta">loading…</span></header>
+<main>
+  <section><div class="stats" id="stats"></div></section>
+  <section><h2>Providers &amp; accounts</h2><table id="providers"></table></section>
+  <section><h2>Combos</h2><table id="combos"></table></section>
+  <section><h2>Import warnings</h2><table id="warnings"></table></section>
+</main>
+<script>
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c]));
+const pill = (txt, cls) => `<span class="pill ${cls}">${esc(txt)}</span>`;
+async function load() {
+  const r = await fetch("/api/status", {credentials: "same-origin"});
+  const d = await r.json();
+  document.getElementById("meta").textContent = `v${d.version} · up ${Math.round(d.uptimeSec/60)} min · read-only`;
+  const accts = d.providers.reduce((n,p)=>n+p.Accounts.length,0);
+  const usable = d.providers.reduce((n,p)=>n+p.Usable,0);
+  document.getElementById("stats").innerHTML = [
+    ["Providers", d.providers.length], ["Accounts", accts], ["Usable in core", usable],
+    ["Combos", d.combos.length], ["Models", d.models.length], ["API keys", d.apiKeys], ["Warnings", d.warnings.length]
+  ].map(([k,v]) => `<div><b>${v}</b><span class="mut">${k}</span></div>`).join("");
+  document.getElementById("providers").innerHTML = "<tr><th>Provider</th><th>Prefix</th><th>Type</th><th>Accounts</th></tr>" +
+    d.providers.map(p => `<tr><td>${esc(p.Name)}</td><td><code>${esc(p.Prefix)}/</code></td>
+      <td>${esc(p.Kind)} ${p.Plugin ? pill("needs plugin","warn") : ""}</td>
+      <td>${p.Accounts.map(a => `${esc(a.Name)} <span class="mut">p${a.Priority}</span> ` +
+        (!a.Active ? pill("off","off") : a.Status !== "ok" ? pill(a.Status,"warn") : a.Cooling ? pill("cooling down","warn") : pill("ready","ok"))
+      ).join("<br>") || '<span class="mut">none</span>'}</td></tr>`).join("");
+  document.getElementById("combos").innerHTML = "<tr><th>Name</th><th>Strategy</th><th>Models</th></tr>" +
+    d.combos.map(c => `<tr><td>${esc(c.Name)} ${c.Kind ? pill(c.Kind,"off") : ""}</td><td>${esc(c.Strategy)}</td>
+      <td>${c.Models.map(m => `<code>${esc(m)}</code>`).join("<br>") || '<span class="mut">empty</span>'}</td></tr>`).join("");
+  document.getElementById("warnings").innerHTML = d.warnings.length ? "<tr><th>Kind</th><th>Message</th></tr>" +
+    d.warnings.map(w => `<tr><td>${pill(w.Kind,"warn")}</td><td>${esc(w.Message)}</td></tr>`).join("") : '<tr><td class="mut">No warnings</td></tr>';
+}
+load(); setInterval(load, 10000);
+</script>
+</body>
+</html>
