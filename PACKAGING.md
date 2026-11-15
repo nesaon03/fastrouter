@@ -40,6 +40,8 @@ goreleaser release --snapshot --clean     # into dist/; uploads nothing
 go run github.com/goreleaser/goreleaser/v2@v2.20.2 release --snapshot --clean
 ```
 
+In a repo with no git remote, GoReleaser has no git info. The config then leaves the commit and date flags unset, and the binary reports Go's embedded VCS revision and commit time instead.
+
 For a real version, tag first (`git tag v1.2.3`) and run `goreleaser release --clean`. Uploading stays disabled, so the output stays in `dist/`.
 
 ## Test
