@@ -1,0 +1,12 @@
+.git
+dist
+bin
+fastrouter
+fastrouter.exe
+*.db
+*.db-wal
+*.db-shm
+secret.key
+fastrouter.json
+*.env
+.env*
