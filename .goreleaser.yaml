@@ -24,9 +24,11 @@ builds:
     ldflags:
       - -s -w
       - -X github.com/zenpo/fastrouter/internal/server.Version={{ .Version }}
-      - -X main.commit={{ .ShortCommit }}
-      - -X main.date={{ .CommitDate }}
-    mod_timestamp: "{{ .CommitTimestamp }}"
+      # GoReleaser has no git info when the repo has no remote (ShortCommit is
+      # "none"); leave commit/date unset then so the binary falls back to Go's
+      # embedded VCS info (vcs.revision / vcs.time).
+      - '{{ if ne .ShortCommit "none" }}-X main.commit={{ .ShortCommit }} -X main.date={{ .CommitDate }}{{ end }}'
+    mod_timestamp: '{{ if ne .ShortCommit "none" }}{{ .CommitTimestamp }}{{ end }}'
 
 archives:
   - id: default
@@ -46,7 +48,7 @@ checksum:
   algorithm: sha256
 
 snapshot:
-  version_template: "{{ incpatch .Version }}-snapshot+{{ .ShortCommit }}"
+  version_template: "{{ incpatch .Version }}-snapshot"
 
 changelog:
   disable: true
