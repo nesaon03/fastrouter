@@ -1,0 +1,6 @@
+{"id":"chatcmpl-abc","object":"chat.completion","created":1700000000,"model":"deepseek-v4.1-flash",
+ "choices":[{"index":0,"message":{"role":"assistant","reasoning_content":"Need weather for two cities.","content":"Checking both.",
+   "tool_calls":[{"id":"call_1","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Paris\"}"}},
+                 {"id":"call_2","type":"function","function":{"name":"get_weather","arguments":"{\"city\":\"Tokyo\"}"}}]},
+   "finish_reason":"tool_calls"}],
+ "usage":{"prompt_tokens":120,"completion_tokens":45,"total_tokens":165,"prompt_tokens_details":{"cached_tokens":100},"completion_tokens_details":{"reasoning_tokens":20}}}

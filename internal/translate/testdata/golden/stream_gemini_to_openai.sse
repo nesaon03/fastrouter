@@ -1,0 +1,22 @@
+data: {"id":"chatcmpl-gresp-abc","object":"chat.completion.chunk","created":1700000000,"model":"gemini-3.8-flash","choices":[{"index":0,"delta":{"role":"assistant","content":""},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-gresp-abc","object":"chat.completion.chunk","created":1700000000,"model":"gemini-3.8-flash","choices":[{"index":0,"delta":{"reasoning_content":"Need weather "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-gresp-abc","object":"chat.completion.chunk","created":1700000000,"model":"gemini-3.8-flash","choices":[{"index":0,"delta":{"reasoning_content":"for two cities."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-gresp-abc","object":"chat.completion.chunk","created":1700000000,"model":"gemini-3.8-flash","choices":[{"index":0,"delta":{"content":"Checking "},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-gresp-abc","object":"chat.completion.chunk","created":1700000000,"model":"gemini-3.8-flash","choices":[{"index":0,"delta":{"content":"both."},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-gresp-abc","object":"chat.completion.chunk","created":1700000000,"model":"gemini-3.8-flash","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"id":"call_gen5","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-gresp-abc","object":"chat.completion.chunk","created":1700000000,"model":"gemini-3.8-flash","choices":[{"index":0,"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\"city\":\"Paris\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-gresp-abc","object":"chat.completion.chunk","created":1700000000,"model":"gemini-3.8-flash","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"id":"call_gen6","type":"function","function":{"name":"get_weather","arguments":""}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-gresp-abc","object":"chat.completion.chunk","created":1700000000,"model":"gemini-3.8-flash","choices":[{"index":0,"delta":{"tool_calls":[{"index":1,"function":{"arguments":"{\"city\":\"Tokyo\"}"}}]},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-gresp-abc","object":"chat.completion.chunk","created":1700000000,"model":"gemini-3.8-flash","choices":[{"index":0,"delta":{},"finish_reason":"tool_calls"}],"usage":{"prompt_tokens":120,"completion_tokens":45,"total_tokens":165,"prompt_tokens_details":{"cached_tokens":100},"completion_tokens_details":{"reasoning_tokens":20}}}
+
+data: [DONE]
+

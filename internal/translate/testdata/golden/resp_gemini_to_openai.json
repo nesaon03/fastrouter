@@ -1,0 +1,46 @@
+{
+  "id": "chatcmpl-gresp-abc",
+  "object": "chat.completion",
+  "created": 1700000000,
+  "model": "gemini-3.8-flash",
+  "choices": [
+    {
+      "finish_reason": "tool_calls",
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "Checking both.",
+        "reasoning_content": "Need weather for two cities.",
+        "tool_calls": [
+          {
+            "id": "call_get_weather_0",
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"Paris\"}"
+            }
+          },
+          {
+            "id": "call_get_weather_1",
+            "type": "function",
+            "function": {
+              "name": "get_weather",
+              "arguments": "{\"city\":\"Tokyo\"}"
+            }
+          }
+        ]
+      }
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 120,
+    "completion_tokens": 45,
+    "total_tokens": 165,
+    "prompt_tokens_details": {
+      "cached_tokens": 100
+    },
+    "completion_tokens_details": {
+      "reasoning_tokens": 20
+    }
+  }
+}

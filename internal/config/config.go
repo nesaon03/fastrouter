@@ -37,6 +37,21 @@ type Config struct {
 	IdleTimeout      Duration `json:"idleTimeout"`      // max gap between streamed chunks
 	CooldownBase     Duration `json:"cooldownBase"`     // account cooldown after a failure
 	MaxIdleConnsPer  int      `json:"maxIdleConnsPerHost"`
+
+	// EmptyResponseWait is how long a stream is held back waiting for its first
+	// real content, so an empty answer can fail over to the next account
+	// (9Router behaviour). After this the stream is passed on regardless.
+	EmptyResponseWait Duration `json:"emptyResponseWait"`
+
+	// KeyLimits are optional per-key limits, keyed by local API key name or id.
+	// Empty (the default) means no limits beyond 9Router's own access lists.
+	KeyLimits map[string]KeyLimit `json:"keyLimits,omitempty"`
+}
+
+// KeyLimit limits one local API key.
+type KeyLimit struct {
+	RPM    int      `json:"rpm"`    // requests per minute, 0 = unlimited
+	Models []string `json:"models"` // allowed models/combos ("*" globs allowed); empty = all
 }
 
 // Default returns the built-in defaults.
@@ -49,6 +64,8 @@ func Default() Config {
 		IdleTimeout:      Duration(90 * time.Second),
 		CooldownBase:     Duration(30 * time.Second),
 		MaxIdleConnsPer:  64,
+
+		EmptyResponseWait: Duration(45 * time.Second),
 	}
 }
 

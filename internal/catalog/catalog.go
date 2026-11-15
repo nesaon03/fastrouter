@@ -2,13 +2,26 @@
 // URLs and aliases follow 9Router's provider registry (MIT, decolua/9router).
 package catalog
 
-// Provider describes a built-in upstream.
+// Provider describes a built-in upstream and the wire formats it accepts.
 type Provider struct {
 	ID      string
 	Aliases []string // model prefixes, e.g. "ds" for deepseek
-	ChatURL string   // OpenAI-format chat completions endpoint
-	// MessagesURL is an Anthropic-format endpoint, if the provider has one.
-	MessagesURL string
+
+	ChatURL      string // OpenAI Chat Completions endpoint
+	MessagesURL  string // Anthropic Messages endpoint
+	ResponsesURL string // OpenAI Responses endpoint
+	GeminiURL    string // generateContent base (…/v1beta/models)
+
+	// PreferNative makes translated requests use the provider's native format
+	// (Gemini) instead of its OpenAI-compatible endpoint.
+	PreferNative bool
+	// Official marks api.openai.com-style strictness: max_completion_tokens,
+	// no vendor reasoning fields.
+	Official bool
+	// CacheControl forwards Anthropic cache_control inside OpenAI-format bodies
+	// (gateways that front Claude, e.g. OpenRouter).
+	CacheControl bool
+
 	// Regions maps a region id to a base URL (chat URL = base + /chat/completions).
 	Regions map[string]string
 	// Plugin is true for logins that core does not support (deferred to a plugin).
@@ -18,7 +31,7 @@ type Provider struct {
 var builtins = []Provider{
 	{ID: "deepseek", Aliases: []string{"ds"}, ChatURL: "https://api.deepseek.com/chat/completions",
 		MessagesURL: "https://api.deepseek.com/anthropic/v1/messages"},
-	{ID: "openrouter", ChatURL: "https://openrouter.ai/api/v1/chat/completions"},
+	{ID: "openrouter", ChatURL: "https://openrouter.ai/api/v1/chat/completions", CacheControl: true},
 	{ID: "opencode-go", Aliases: []string{"ocg"}, ChatURL: "https://opencode.ai/inference/go/openai/v1/chat/completions"},
 	{ID: "xiaomi-tokenplan", Aliases: []string{"xmtp"}, ChatURL: "https://token-plan-sgp.xiaomimimo.com/v1/chat/completions",
 		Regions: map[string]string{
@@ -26,9 +39,9 @@ var builtins = []Provider{
 			"cn":  "https://token-plan-cn.xiaomimimo.com/v1",
 			"ams": "https://token-plan-ams.xiaomimimo.com/v1",
 		}},
-	{ID: "openai", ChatURL: "https://api.openai.com/v1/chat/completions"},
-	// Gemini's OpenAI-compatible endpoint, so it can use the passthrough path.
-	{ID: "gemini", ChatURL: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions"},
+	{ID: "openai", ChatURL: "https://api.openai.com/v1/chat/completions", ResponsesURL: "https://api.openai.com/v1/responses", Official: true},
+	{ID: "gemini", ChatURL: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
+		GeminiURL: "https://generativelanguage.googleapis.com/v1beta/models", PreferNative: true, Official: true},
 	{ID: "nvidia", ChatURL: "https://integrate.api.nvidia.com/v1/chat/completions"},
 	{ID: "xai", ChatURL: "https://api.x.ai/v1/chat/completions"},
 	{ID: "anthropic", Aliases: []string{"claude"}, MessagesURL: "https://api.anthropic.com/v1/messages"},

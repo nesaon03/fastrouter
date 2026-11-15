@@ -226,7 +226,7 @@ func TestClientDisconnectCancelsUpstream(t *testing.T) {
 	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "text/event-stream")
 		for {
-			if _, err := io.WriteString(w, "data: {}\n\n"); err != nil {
+			if _, err := io.WriteString(w, "data: {\"choices\":[{\"index\":0,\"delta\":{\"content\":\"x\"}}]}\n\n"); err != nil {
 				break
 			}
 			w.(http.Flusher).Flush()

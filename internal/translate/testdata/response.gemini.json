@@ -1,0 +1,8 @@
+{"candidates":[{"content":{"role":"model","parts":[
+   {"text":"Need weather for two cities.","thought":true},
+   {"text":"Checking both."},
+   {"functionCall":{"name":"get_weather","args":{"city":"Paris"}},"thoughtSignature":"gsig-1"},
+   {"functionCall":{"name":"get_weather","args":{"city":"Tokyo"}}}]},
+  "finishReason":"STOP","index":0}],
+ "usageMetadata":{"promptTokenCount":120,"candidatesTokenCount":25,"totalTokenCount":165,"cachedContentTokenCount":100,"thoughtsTokenCount":20},
+ "modelVersion":"gemini-3.8-flash","responseId":"gresp-abc"}

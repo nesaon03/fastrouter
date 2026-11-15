@@ -1,0 +1,91 @@
+{
+  "model": "upstream-model",
+  "input": [
+    {
+      "type": "message",
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "What's the weather in Paris and Tokyo?"
+        },
+        {
+          "type": "input_image",
+          "image_url": "data:image/png;base64,iVBORw0KGgo=",
+          "detail": "auto"
+        }
+      ]
+    },
+    {
+      "type": "message",
+      "role": "assistant",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "Checking both."
+        }
+      ]
+    },
+    {
+      "type": "function_call",
+      "call_id": "call_get_weather_0",
+      "name": "get_weather",
+      "arguments": "{\"city\": \"Paris\"}"
+    },
+    {
+      "type": "function_call",
+      "call_id": "call_get_weather_1",
+      "name": "get_weather",
+      "arguments": "{\"city\": \"Tokyo\"}"
+    },
+    {
+      "type": "function_call_output",
+      "call_id": "call_get_weather_0",
+      "output": "18C sunny"
+    },
+    {
+      "type": "function_call_output",
+      "call_id": "call_get_weather_1",
+      "output": "22C cloudy"
+    },
+    {
+      "type": "message",
+      "role": "user",
+      "content": [
+        {
+          "type": "input_text",
+          "text": "Thanks! Summarize."
+        }
+      ]
+    }
+  ],
+  "instructions": "You are a weather bot.",
+  "tools": [
+    {
+      "type": "function",
+      "name": "get_weather",
+      "description": "Current weather for a city",
+      "parameters": {
+        "properties": {
+          "city": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "city"
+        ],
+        "type": "object"
+      },
+      "strict": false
+    }
+  ],
+  "tool_choice": "auto",
+  "max_output_tokens": 1024,
+  "temperature": 0.2,
+  "stream": true,
+  "reasoning": {
+    "effort": "low",
+    "summary": "auto"
+  },
+  "store": false
+}

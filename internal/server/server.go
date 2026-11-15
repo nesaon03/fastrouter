@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json"
+	"log"
 	"net"
 	"net/http"
 	"strings"
@@ -14,13 +15,15 @@ import (
 
 	"github.com/zenpo/fastrouter/internal/config"
 	"github.com/zenpo/fastrouter/internal/dashboard"
+	"github.com/zenpo/fastrouter/internal/pricing"
 	"github.com/zenpo/fastrouter/internal/router"
 	"github.com/zenpo/fastrouter/internal/store"
+	tr "github.com/zenpo/fastrouter/internal/translate"
 	"golang.org/x/crypto/bcrypt"
 )
 
 // Version is set at build time with -ldflags "-X .../server.Version=..."
-var Version = "0.1.0-phase1"
+var Version = "0.2.0-phase2"
 
 // Server routes client requests to upstreams.
 type Server struct {
@@ -29,7 +32,9 @@ type Server struct {
 	rec    *recorder
 	start  time.Time
 
-	cfgFirstByte, cfgIdle, cfgCooldown time.Duration
+	cfgFirstByte, cfgIdle, cfgCooldown, cfgEmptyWait time.Duration
+	keyLimits                                        map[string]config.KeyLimit
+	st                                               *store.Store
 
 	pwOK sync.Map // sha256(user:pass) -> true, so bcrypt runs once per credential
 }
@@ -43,8 +48,11 @@ func New(cfg config.Config, snap *store.Snapshot, st *store.Store) *Server {
 		cfgFirstByte: time.Duration(cfg.FirstByteTimeout),
 		cfgIdle:      time.Duration(cfg.IdleTimeout),
 		cfgCooldown:  time.Duration(cfg.CooldownBase),
+		cfgEmptyWait: time.Duration(cfg.EmptyResponseWait),
+		keyLimits:    cfg.KeyLimits,
+		st:           st,
 	}
-	s.state.Store(router.Build(snap))
+	s.Reload(snap)
 	return s
 }
 
@@ -67,7 +75,15 @@ func NewTransport(cfg config.Config) *http.Transport {
 }
 
 // Reload swaps in a new routing table atomically (in-flight requests keep the old one).
-func (s *Server) Reload(snap *store.Snapshot) { s.state.Store(router.Build(snap)) }
+func (s *Server) Reload(snap *store.Snapshot) {
+	s.state.Store(router.Build(snap, s.keyLimits))
+	t, err := pricing.New(snap.Settings["backup.pricing"])
+	if err != nil {
+		log.Printf("imported pricing overrides ignored: %v", err)
+		t, _ = pricing.New(nil)
+	}
+	s.rec.prices.Store(t)
+}
 
 // Close flushes background writes.
 func (s *Server) Close() { s.rec.close() }
@@ -75,12 +91,17 @@ func (s *Server) Close() { s.rec.close() }
 // Handler returns the HTTP routes.
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
-	mux.Handle("POST /v1/chat/completions", s.auth(formatOpenAI, s.handleProxy(formatOpenAI)))
-	mux.Handle("POST /v1/messages", s.auth(formatAnthropic, s.handleProxy(formatAnthropic)))
-	mux.Handle("GET /v1/models", s.auth(formatOpenAI, http.HandlerFunc(s.handleModels)))
+	mux.Handle("POST /v1/chat/completions", s.auth(tr.OpenAI, s.handleProxy(tr.OpenAI)))
+	mux.Handle("POST /v1/messages", s.auth(tr.Anthropic, s.handleProxy(tr.Anthropic)))
+	mux.Handle("POST /v1/responses", s.auth(tr.Responses, s.handleProxy(tr.Responses)))
+	mux.Handle("POST /v1/messages/count_tokens", s.auth(tr.Anthropic, http.HandlerFunc(s.handleCountTokens)))
+	mux.Handle("POST /v1beta/models/{rest...}", s.auth(tr.Gemini, s.handleProxy(tr.Gemini)))
+	mux.Handle("GET /v1beta/models", s.auth(tr.Gemini, http.HandlerFunc(s.handleGeminiModels)))
+	mux.Handle("GET /v1/models", s.auth(tr.OpenAI, http.HandlerFunc(s.handleModels)))
 	mux.HandleFunc("GET /health", s.handleHealth)
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.Handle("GET /api/status", s.dashAuth(http.HandlerFunc(s.handleStatus)))
+	mux.Handle("GET /api/usage", s.dashAuth(http.HandlerFunc(s.handleUsage)))
 	mux.Handle("GET /dashboard", s.dashAuth(dashboard.Handler()))
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/dashboard", http.StatusFound)
@@ -89,7 +110,7 @@ func (s *Server) Handler() http.Handler {
 }
 
 // auth checks the local API key. With no keys configured, only loopback clients are allowed.
-func (s *Server) auth(f apiFormat, next http.Handler) http.Handler {
+func (s *Server) auth(f tr.Format, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		st := s.state.Load()
 		if !st.HasAPIKeys() {
@@ -107,11 +128,18 @@ func (s *Server) auth(f apiFormat, next http.Handler) http.Handler {
 		if a := r.Header.Get("Authorization"); key == "" && len(a) > 7 && strings.EqualFold(a[:7], "bearer ") {
 			key = a[7:]
 		}
-		if key == "" || !st.CheckAPIKey(key) {
+		if key == "" && f == tr.Gemini {
+			key = r.URL.Query().Get("key") // Gemini SDKs may pass ?key=
+		}
+		ki := (*router.KeyInfo)(nil)
+		if key != "" {
+			ki = st.CheckAPIKey(key)
+		}
+		if ki == nil {
 			writeError(w, f, http.StatusUnauthorized, "authentication_error", "invalid or missing API key")
 			return
 		}
-		next.ServeHTTP(w, r)
+		next.ServeHTTP(w, r.WithContext(withKey(r.Context(), ki)))
 	})
 }
 

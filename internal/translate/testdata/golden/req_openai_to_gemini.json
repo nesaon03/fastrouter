@@ -1,0 +1,112 @@
+{
+  "contents": [
+    {
+      "role": "user",
+      "parts": [
+        {
+          "text": "What's the weather in Paris and Tokyo?"
+        },
+        {
+          "inlineData": {
+            "mimeType": "image/png",
+            "data": "iVBORw0KGgo="
+          }
+        }
+      ]
+    },
+    {
+      "role": "model",
+      "parts": [
+        {
+          "text": "Need two lookups.",
+          "thought": true
+        },
+        {
+          "text": "Checking both."
+        },
+        {
+          "thoughtSignature": "skip_thought_signature_validator",
+          "functionCall": {
+            "name": "get_weather",
+            "args": {
+              "city": "Paris"
+            }
+          }
+        },
+        {
+          "functionCall": {
+            "name": "get_weather",
+            "args": {
+              "city": "Tokyo"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "parts": [
+        {
+          "functionResponse": {
+            "name": "get_weather",
+            "response": {
+              "output": "18C sunny"
+            }
+          }
+        },
+        {
+          "functionResponse": {
+            "name": "get_weather",
+            "response": {
+              "output": "22C cloudy"
+            }
+          }
+        },
+        {
+          "text": "Thanks! Summarize."
+        }
+      ]
+    }
+  ],
+  "systemInstruction": {
+    "parts": [
+      {
+        "text": "You are a weather bot."
+      }
+    ]
+  },
+  "tools": [
+    {
+      "functionDeclarations": [
+        {
+          "name": "get_weather",
+          "description": "Current weather for a city",
+          "parameters": {
+            "properties": {
+              "city": {
+                "type": "string"
+              }
+            },
+            "required": [
+              "city"
+            ],
+            "type": "object"
+          }
+        }
+      ]
+    }
+  ],
+  "toolConfig": {
+    "functionCallingConfig": {
+      "mode": "AUTO"
+    }
+  },
+  "generationConfig": {
+    "maxOutputTokens": 1024,
+    "temperature": 0.2,
+    "thinkingConfig": {
+      "thinkingBudget": 4096,
+      "includeThoughts": true
+    }
+  }
+}

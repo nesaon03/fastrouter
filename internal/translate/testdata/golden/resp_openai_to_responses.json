@@ -1,0 +1,64 @@
+{
+  "created_at": 1700000000,
+  "error": null,
+  "id": "resp_abc",
+  "incomplete_details": null,
+  "model": "deepseek-v4.1-flash",
+  "object": "response",
+  "output": [
+    {
+      "type": "reasoning",
+      "id": "rs_gen1",
+      "summary": [
+        {
+          "type": "summary_text",
+          "text": "Need weather for two cities."
+        }
+      ]
+    },
+    {
+      "type": "message",
+      "id": "msg_gen2",
+      "role": "assistant",
+      "status": "completed",
+      "content": [
+        {
+          "type": "output_text",
+          "text": "Checking both.",
+          "annotations": []
+        }
+      ]
+    },
+    {
+      "type": "function_call",
+      "id": "fc_gen3",
+      "status": "completed",
+      "call_id": "call_1",
+      "name": "get_weather",
+      "arguments": "{\"city\":\"Paris\"}"
+    },
+    {
+      "type": "function_call",
+      "id": "fc_gen4",
+      "status": "completed",
+      "call_id": "call_2",
+      "name": "get_weather",
+      "arguments": "{\"city\":\"Tokyo\"}"
+    }
+  ],
+  "parallel_tool_calls": true,
+  "status": "completed",
+  "tool_choice": "auto",
+  "tools": [],
+  "usage": {
+    "input_tokens": 120,
+    "input_tokens_details": {
+      "cached_tokens": 100
+    },
+    "output_tokens": 45,
+    "output_tokens_details": {
+      "reasoning_tokens": 20
+    },
+    "total_tokens": 165
+  }
+}

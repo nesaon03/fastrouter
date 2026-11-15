@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/zenpo/fastrouter/internal/secret"
 	_ "modernc.org/sqlite"
@@ -98,6 +97,10 @@ func Open(dataDir string) (*Store, error) {
 	}
 	db.SetMaxOpenConns(1) // one writer; reads happen once at startup
 	if _, err := db.Exec(schema); err != nil {
+		db.Close()
+		return nil, err
+	}
+	if err := migrate(db); err != nil {
 		db.Close()
 		return nil, err
 	}
@@ -319,39 +322,6 @@ func (s *Store) Load() (*Snapshot, error) {
 	}
 	rows.Close()
 	return snap, rows.Err()
-}
-
-// UsageEvent is one finished upstream attempt.
-type UsageEvent struct {
-	At           time.Time
-	ConnectionID string
-	Model        string
-	Status       int // HTTP status, or 0 for a transport error
-	Latency      time.Duration
-}
-
-// WriteUsage records a batch of events in one transaction.
-func (s *Store) WriteUsage(events []UsageEvent) error {
-	tx, err := s.db.Begin()
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback()
-	for _, e := range events {
-		ts := e.At.UTC().Format(time.RFC3339Nano)
-		fail := 0
-		if e.Status < 200 || e.Status > 299 {
-			fail = 1
-		}
-		if _, err := tx.Exec(`INSERT INTO usage VALUES (?,?,?,?,?)`, ts, e.ConnectionID, e.Model, e.Status, e.Latency.Milliseconds()); err != nil {
-			return err
-		}
-		if _, err := tx.Exec(`UPDATE connections SET last_used_at=?, last_status=?, uses=uses+1, failures=failures+? WHERE id=?`,
-			ts, e.Status, fail, e.ConnectionID); err != nil {
-			return err
-		}
-	}
-	return tx.Commit()
 }
 
 // RawDB exposes the database for tests.

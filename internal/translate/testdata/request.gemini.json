@@ -1,0 +1,24 @@
+{
+  "systemInstruction": {"parts": [{"text": "You are a weather bot."}]},
+  "contents": [
+    {"role": "user", "parts": [
+      {"text": "What's the weather in Paris and Tokyo?"},
+      {"inlineData": {"mimeType": "image/png", "data": "iVBORw0KGgo="}}
+    ]},
+    {"role": "model", "parts": [
+      {"text": "Need two lookups.", "thought": true},
+      {"text": "Checking both."},
+      {"functionCall": {"name": "get_weather", "args": {"city": "Paris"}}, "thoughtSignature": "gsig-1"},
+      {"functionCall": {"name": "get_weather", "args": {"city": "Tokyo"}}}
+    ]},
+    {"role": "user", "parts": [
+      {"functionResponse": {"name": "get_weather", "response": {"output": "18C sunny"}}},
+      {"functionResponse": {"name": "get_weather", "response": {"output": "22C cloudy"}}}
+    ]},
+    {"role": "user", "parts": [{"text": "Thanks! Summarize."}]}
+  ],
+  "tools": [{"functionDeclarations": [{"name": "get_weather", "description": "Current weather for a city",
+    "parameters": {"type": "OBJECT", "properties": {"city": {"type": "STRING"}}, "required": ["city"]}}]}],
+  "toolConfig": {"functionCallingConfig": {"mode": "AUTO"}},
+  "generationConfig": {"maxOutputTokens": 1024, "temperature": 0.2, "thinkingConfig": {"thinkingBudget": 2048, "includeThoughts": true}}
+}

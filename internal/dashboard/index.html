@@ -25,6 +25,10 @@
 <header><h1>FastRouter</h1><span id="meta">loading…</span></header>
 <main>
   <section><div class="stats" id="stats"></div></section>
+  <section><h2>Usage <select id="win"><option>24h</option><option>7d</option><option>30d</option><option>all</option></select>
+    <span class="mut" id="usagetotal"></span></h2>
+    <table id="usage-accounts"></table><h2 style="margin-top:14px">By model</h2><table id="usage-models"></table>
+    <p class="mut">Token counts come from upstream usage fields; cost is an estimate from 9Router's price table.</p></section>
   <section><h2>Providers &amp; accounts</h2><table id="providers"></table></section>
   <section><h2>Combos</h2><table id="combos"></table></section>
   <section><h2>Import warnings</h2><table id="warnings"></table></section>
@@ -54,7 +58,24 @@ async function load() {
   document.getElementById("warnings").innerHTML = d.warnings.length ? "<tr><th>Kind</th><th>Message</th></tr>" +
     d.warnings.map(w => `<tr><td>${pill(w.Kind,"warn")}</td><td>${esc(w.Message)}</td></tr>`).join("") : '<tr><td class="mut">No warnings</td></tr>';
 }
-load(); setInterval(load, 10000);
+const n = v => Number(v||0).toLocaleString();
+const usd = v => "$" + Number(v||0).toFixed(v >= 1 ? 2 : 4);
+const usageRows = (rows, label) => `<tr><th>${label}</th><th>Requests</th><th>Failed</th><th>Input</th><th>Cached</th><th>Output</th><th>Reasoning</th><th>Cost</th><th>Avg ms</th></tr>` +
+  (rows.length ? rows.map(r => `<tr><td>${esc(r.name || r.key || "(none)")} ${r.provider && r.name ? `<span class="mut">${esc(r.provider)}</span>` : ""}</td>
+    <td>${n(r.requests)}</td><td>${r.failures ? pill(n(r.failures),"warn") : 0}</td><td>${n(r.input_tokens)}</td><td>${n(r.cache_read_tokens)}</td>
+    <td>${n(r.output_tokens)}</td><td>${n(r.reasoning_tokens)}</td><td>${usd(r.cost_usd)}</td><td>${n(r.avg_latency_ms)}</td></tr>`).join("")
+    : '<tr><td class="mut" colspan="9">No requests in this window</td></tr>');
+async function loadUsage() {
+  const r = await fetch("/api/usage?window=" + document.getElementById("win").value, {credentials: "same-origin"});
+  const d = await r.json();
+  if (!d.accounts) return;
+  document.getElementById("usage-accounts").innerHTML = usageRows(d.accounts, "Account");
+  document.getElementById("usage-models").innerHTML = usageRows(d.models, "Model");
+  const t = d.accounts.reduce((a,r)=>({req:a.req+r.requests, cost:a.cost+r.cost_usd}), {req:0,cost:0});
+  document.getElementById("usagetotal").textContent = `${n(t.req)} requests · ${usd(t.cost)}`;
+}
+document.getElementById("win").onchange = loadUsage;
+load(); loadUsage(); setInterval(() => { load(); loadUsage(); }, 10000);
 </script>
 </body>
 </html>

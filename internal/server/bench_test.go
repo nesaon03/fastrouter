@@ -79,6 +79,10 @@ func benchRouter(b *testing.B, up string) string {
 	return hs.URL + "/v1/chat/completions"
 }
 
+func benchMessagesURL(chatURL string) string {
+	return strings.TrimSuffix(chatURL, "/v1/chat/completions") + "/v1/messages"
+}
+
 var benchStreamReq = strings.Replace(benchReq, `"max_tokens"`, `"stream":true,"max_tokens"`, 1)
 
 // Serial benchmarks: ns/op is per-request latency. Router minus Direct = added latency.
@@ -97,6 +101,22 @@ func BenchmarkDirectStream(b *testing.B) {
 
 func BenchmarkViaRouterStream(b *testing.B) {
 	doBench(b, benchRouter(b, benchUpstream(b).URL), benchStreamReq, true, false)
+	reportHeap(b)
+}
+
+// Translated: an Anthropic-format client against an OpenAI-format upstream.
+func BenchmarkViaRouterTranslated(b *testing.B) {
+	doBench(b, benchMessagesURL(benchRouter(b, benchUpstream(b).URL)), benchReq, true, false)
+	reportHeap(b)
+}
+
+func BenchmarkViaRouterStreamTranslated(b *testing.B) {
+	doBench(b, benchMessagesURL(benchRouter(b, benchUpstream(b).URL)), benchStreamReq, true, false)
+	reportHeap(b)
+}
+
+func BenchmarkViaRouterStreamTranslatedParallel(b *testing.B) {
+	doBench(b, benchMessagesURL(benchRouter(b, benchUpstream(b).URL)), benchStreamReq, true, true)
 	reportHeap(b)
 }
 

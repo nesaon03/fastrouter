@@ -1,0 +1,115 @@
+{
+  "model": "upstream-model",
+  "messages": [
+    {
+      "role": "system",
+      "content": [
+        {
+          "type": "text",
+          "text": "You are a weather bot.",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "What's the weather in Paris and Tokyo?"
+        },
+        {
+          "type": "image_url",
+          "image_url": {
+            "url": "data:image/png;base64,iVBORw0KGgo="
+          }
+        }
+      ]
+    },
+    {
+      "role": "assistant",
+      "content": "Checking both.",
+      "tool_calls": [
+        {
+          "id": "call_1",
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "arguments": "{\"city\": \"Paris\"}"
+          }
+        },
+        {
+          "id": "call_2",
+          "type": "function",
+          "function": {
+            "name": "get_weather",
+            "arguments": "{\"city\": \"Tokyo\"}"
+          }
+        }
+      ],
+      "reasoning_content": "Need two lookups.",
+      "reasoning_details": [
+        {
+          "type": "reasoning.text",
+          "text": "Need two lookups.",
+          "signature": "sig-abc"
+        }
+      ]
+    },
+    {
+      "role": "tool",
+      "content": "18C sunny",
+      "tool_call_id": "call_1"
+    },
+    {
+      "role": "tool",
+      "content": "22C cloudy",
+      "tool_call_id": "call_2"
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "text",
+          "text": "Thanks! Summarize.",
+          "cache_control": {
+            "type": "ephemeral"
+          }
+        }
+      ]
+    }
+  ],
+  "tools": [
+    {
+      "type": "function",
+      "function": {
+        "name": "get_weather",
+        "description": "Current weather for a city",
+        "parameters": {
+          "type": "object",
+          "properties": {
+            "city": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "city"
+          ]
+        }
+      }
+    }
+  ],
+  "tool_choice": "auto",
+  "max_tokens": 1024,
+  "temperature": 0.2,
+  "stream": true,
+  "stream_options": {
+    "include_usage": true
+  },
+  "reasoning_effort": "low",
+  "thinking": {
+    "type": "enabled"
+  }
+}

@@ -11,7 +11,13 @@ go build -o fastrouter ./cmd/fastrouter
 ./fastrouter                                # serve on http://127.0.0.1:20128
 ```
 
-- API: `http://127.0.0.1:20128/v1` (`/v1/chat/completions`, `/v1/messages`, `/v1/models`). Use your existing 9Router local API key.
+- API: `http://127.0.0.1:20128`. Use your existing 9Router local API key.
+  - OpenAI Chat: `/v1/chat/completions`
+  - OpenAI Responses: `/v1/responses`
+  - Anthropic Messages: `/v1/messages`, plus `/v1/messages/count_tokens` (a local estimate)
+  - Gemini: `/v1beta/models/{model}:generateContent` and `:streamGenerateContent` (key in `x-goog-api-key` or `?key=`)
+  - Model lists: `/v1/models`, `/v1beta/models`
+- Usage: `/api/usage?window=24h|7d|30d|all` (also shown on the dashboard).
 - Dashboard (read-only): `http://127.0.0.1:20128/dashboard`. Log in with your 9Router dashboard password (any username).
 - Health: `/health`.
 - Config: `~/.fastrouter/fastrouter.json` (created on first run). Use `--config` to pick another file, and `--host`/`--port` to override it. Listening on `0.0.0.0` is opt-in.
@@ -31,6 +37,41 @@ Model names are `prefix/model`, for example `ds/deepseek-v4.1-flash`, or a combo
 - **Timeouts:** There is a first-byte timeout and an idle timeout between chunks. A client disconnect cancels the upstream request.
 - **Secrets:** API keys, tokens and the dashboard password are AES-256-GCM encrypted in SQLite, using `secret.key` (0600) in the data dir. Logs pass through a redactor.
 
+## Formats and translation
+
+Any client format can call any provider. When the client and provider speak the same format the body is passed through untouched (only `model` is swapped). Otherwise the request is decoded once into a shared in-memory form and encoded once for the provider, with no intermediate JSON. Answers and streams are translated back the same way, event by event.
+
+- Covered: text, system prompts, tools and parallel tool calls, tool results, images, thinking/reasoning blocks and their signatures, redacted thinking, `cache_control`, stop/finish reasons and token usage (including cache and reasoning tokens).
+- Thinking:
+  - Effort levels and token budgets convert both ways (minimal 1024, low 4096, medium 10000, high 24576, max 32000).
+  - For Anthropic, thinking is switched off when the history would be rejected (a tool turn with no signed thinking block), and unsigned thinking is dropped.
+  - Signatures are only replayed to the provider family that issued them. Gemini gets its documented placeholder signature on tool calls that have none.
+- Gemini tool schemas are cleaned of keywords Gemini rejects.
+- If a provider streams when the client wanted JSON (or the other way round), the answer is folded or replayed in the client's mode.
+- Errors from a translated upstream come back in the client format's error shape.
+
+Which endpoint a provider uses: built-ins know their OpenAI, Anthropic, Responses and Gemini endpoints (e.g. DeepSeek takes Anthropic natively; Gemini prefers its native API). Custom endpoints use their 9Router type (`anthropic-compatible`, or `apiType: responses`).
+
+## Imported 9Router behaviour
+
+- **Thinking modes (`providerThinking`):** when the client didn't choose a thinking setting, the provider's mode is applied. `on` means a 10000-token budget, `off` disables thinking, and any other value is an effort level (your DeepSeek and OpenCode are set to `max`).
+- **Vision fallback (`capacityAdapter.vision`):** a request with images whose models can't read images is routed to your vision list first (round-robin if set). Vision support comes from custom-model caps, then the model name.
+- **Claude Code housekeeping:** for `claude-cli` clients, warmup, `count` and title-extraction calls are answered locally, as 9Router does. Topic naming is also answered locally if `ccFilterNaming` is on.
+- **Empty-answer failover:** a stream is held back until its first real content, for up to `emptyResponseWait` (45 s). An empty answer moves on to the next account or model. A content-filter stop is not retried.
+- **Per-key access:** 9Router's `access.restricted` allow-lists are enforced.
+
+## Usage and limits
+
+- Every attempt records account, model, key, status, latency and token counts (input, cached, cache-write, output, reasoning) from the provider's usage fields.
+  - It is written in the background and batched once a second.
+  - Cost is estimated from 9Router's price table plus your imported `pricing` overrides.
+  - Reasoning tokens are not charged twice.
+- Optional per-key limits in the config file. They are off by default:
+
+  ```json
+  "keyLimits": { "my combo": { "rpm": 60, "models": ["ds/*", "my-combo-team"] } }
+  ```
+
 ## Importer
 
 `fastrouter import <backup.json>` brings in:
@@ -48,7 +89,8 @@ Custom models whose provider no longer exists are flagged, not imported. Login-b
 ## Tests and benchmarks
 
 ```sh
-go test ./...                                          # importer, passthrough, fallback, auth, cancel
+go test ./...      # importer, translators + goldens, passthrough, translated paths, fallback, usage, limits
+go test ./internal/translate -update   # regenerate golden files after an intended change
 go test -run '^$' -bench . -benchtime 3s ./internal/server/
 ```
 
@@ -56,4 +98,4 @@ go test -run '^$' -bench . -benchtime 3s ./internal/server/
 
 ## Credits
 
-Provider endpoints and aliases follow [9Router](https://github.com/decolua/9router) (MIT, © decolua). No 9Router code is included.
+Behaviour follows [9Router](https://github.com/decolua/9router) (MIT, Copyright (c) 2024-2026 decolua and contributors): provider endpoints and aliases, translator behaviour (used as a reference; the Go translators are written fresh), the bypass rules, vision name patterns and pricing lookup order. The default price table in `internal/pricing/pricing_9router.json` is 9Router's data; its MIT licence is kept in `internal/pricing/LICENSE-9router`.

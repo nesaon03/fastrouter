@@ -1,0 +1,6 @@
+{"id":"resp_abc","object":"response","created_at":1700000000,"status":"completed","model":"gpt-6.1",
+ "output":[{"type":"reasoning","id":"rs_1","summary":[{"type":"summary_text","text":"Need weather for two cities."}],"encrypted_content":"enc-xyz"},
+           {"type":"message","id":"msg_1","role":"assistant","status":"completed","content":[{"type":"output_text","text":"Checking both.","annotations":[]}]},
+           {"type":"function_call","id":"fc_1","call_id":"call_1","name":"get_weather","arguments":"{\"city\":\"Paris\"}","status":"completed"},
+           {"type":"function_call","id":"fc_2","call_id":"call_2","name":"get_weather","arguments":"{\"city\":\"Tokyo\"}","status":"completed"}],
+ "usage":{"input_tokens":120,"input_tokens_details":{"cached_tokens":100},"output_tokens":45,"output_tokens_details":{"reasoning_tokens":20},"total_tokens":165}}

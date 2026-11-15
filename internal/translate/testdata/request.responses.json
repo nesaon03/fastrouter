@@ -1,0 +1,24 @@
+{
+  "model": "openai/gpt-6.1",
+  "stream": true,
+  "instructions": "You are a weather bot.",
+  "max_output_tokens": 1024,
+  "temperature": 0.2,
+  "reasoning": {"effort": "low", "summary": "auto"},
+  "input": [
+    {"type": "message", "role": "user", "content": [
+      {"type": "input_text", "text": "What's the weather in Paris and Tokyo?"},
+      {"type": "input_image", "image_url": "data:image/png;base64,iVBORw0KGgo=", "detail": "auto"}
+    ]},
+    {"type": "reasoning", "id": "rs_1", "summary": [{"type": "summary_text", "text": "Need two lookups."}], "encrypted_content": "enc-abc"},
+    {"type": "message", "role": "assistant", "content": [{"type": "output_text", "text": "Checking both."}]},
+    {"type": "function_call", "call_id": "call_1", "name": "get_weather", "arguments": "{\"city\":\"Paris\"}"},
+    {"type": "function_call", "call_id": "call_2", "name": "get_weather", "arguments": "{\"city\":\"Tokyo\"}"},
+    {"type": "function_call_output", "call_id": "call_1", "output": "18C sunny"},
+    {"type": "function_call_output", "call_id": "call_2", "output": "22C cloudy"},
+    {"role": "user", "content": "Thanks! Summarize."}
+  ],
+  "tools": [{"type": "function", "name": "get_weather", "description": "Current weather for a city",
+    "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}}],
+  "tool_choice": "auto"
+}

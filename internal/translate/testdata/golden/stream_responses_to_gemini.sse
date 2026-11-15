@@ -1,0 +1,14 @@
+data: {"candidates":[{"content":{"role":"model","parts":[{"text":"Need weather ","thought":true}]},"index":0}],"modelVersion":"gpt-6.1","responseId":"resp_abc"}
+
+data: {"candidates":[{"content":{"role":"model","parts":[{"text":"for two cities.","thought":true}]},"index":0}],"modelVersion":"gpt-6.1","responseId":"resp_abc"}
+
+data: {"candidates":[{"content":{"role":"model","parts":[{"thought":true,"thoughtSignature":"enc-xyz"}]},"index":0}],"modelVersion":"gpt-6.1","responseId":"resp_abc"}
+
+data: {"candidates":[{"content":{"role":"model","parts":[{"text":"Checking "}]},"index":0}],"modelVersion":"gpt-6.1","responseId":"resp_abc"}
+
+data: {"candidates":[{"content":{"role":"model","parts":[{"text":"both."}]},"index":0}],"modelVersion":"gpt-6.1","responseId":"resp_abc"}
+
+data: {"candidates":[{"content":{"role":"model","parts":[{"functionCall":{"id":"call_1","name":"get_weather","args":{"city":"Paris"}}},{"functionCall":{"id":"call_2","name":"get_weather","args":{"city":"Tokyo"}}}]},"index":0}],"modelVersion":"gpt-6.1","responseId":"resp_abc"}
+
+data: {"candidates":[{"content":{"role":"model","parts":[]},"finishReason":"STOP","index":0}],"modelVersion":"gpt-6.1","responseId":"resp_abc","usageMetadata":{"promptTokenCount":120,"candidatesTokenCount":25,"totalTokenCount":165,"cachedContentTokenCount":100,"thoughtsTokenCount":20}}
+

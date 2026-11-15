@@ -1,0 +1,47 @@
+{
+  "candidates": [
+    {
+      "content": {
+        "role": "model",
+        "parts": [
+          {
+            "text": "Need weather for two cities.",
+            "thought": true
+          },
+          {
+            "text": "Checking both."
+          },
+          {
+            "functionCall": {
+              "id": "call_1",
+              "name": "get_weather",
+              "args": {
+                "city": "Paris"
+              }
+            }
+          },
+          {
+            "functionCall": {
+              "id": "call_2",
+              "name": "get_weather",
+              "args": {
+                "city": "Tokyo"
+              }
+            }
+          }
+        ]
+      },
+      "finishReason": "STOP",
+      "index": 0
+    }
+  ],
+  "modelVersion": "deepseek-v4.1-flash",
+  "responseId": "chatcmpl-abc",
+  "usageMetadata": {
+    "promptTokenCount": 120,
+    "candidatesTokenCount": 25,
+    "totalTokenCount": 165,
+    "cachedContentTokenCount": 100,
+    "thoughtsTokenCount": 20
+  }
+}
