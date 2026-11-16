@@ -308,7 +308,7 @@ const NAV = [
   { id: "quota", label: "Quota Tracker", icon: "data_usage", title: "Quota Tracker", sub: "Track and manage your API quota limits" },
   { id: "keys", label: "API Keys", icon: "vpn_key", title: "API Keys", sub: "Local keys your tools use to call FastRouter" },
   { id: "token-saver", label: "Token Saver", icon: "savings", title: "Token Saver", sub: "Compress prompts and outputs to save tokens" },
-  { id: "cli", label: "CLI Tools", icon: "code_blocks", title: "CLI Tools", sub: "Copy-paste setup for coding agents and SDKs" },
+  { id: "cli", label: "CLI Tools", icon: "code_blocks", title: "CLI Tools", sub: "Point your coding agents at FastRouter" },
 ];
 const SYSTEM = [
   { id: "skills", label: "Skills", icon: "extension", title: "Agent Skills", sub: "Copy a link and paste to your AI to use FastRouter — no install needed" },
@@ -1316,53 +1316,144 @@ function KeyForm({ data, k, onClose, onSaved }) {
 }
 
 /* ----------------------------------------------------------- cli tools */
-// Snippets never contain a real key: paste your own in place of the placeholder.
+// Ported from 9Router's CLI Tools page: a grid of tools, each with its own setup
+// page. Status comes from reading each tool's config (read-only); files change only
+// when Apply / Reset is clicked, and the server backs every file up first.
+// API keys never reach the browser: the page sends a key id and the server resolves it.
 const KEY = "YOUR_FASTROUTER_KEY";
-const TOOLS = [
-  { id: "claude", name: "Claude Code", logo: "claude", note: "Anthropic format. Add to ~/.claude/settings.json or export in your shell.",
-    files: (o, m) => [["~/.claude/settings.json", `{\n  "env": {\n    "ANTHROPIC_BASE_URL": "${o}",\n    "ANTHROPIC_AUTH_TOKEN": "${KEY}",\n    "ANTHROPIC_MODEL": "${m}",\n    "ANTHROPIC_SMALL_FAST_MODEL": "${m}"\n  }\n}`],
-      ["Shell", `export ANTHROPIC_BASE_URL="${o}"\nexport ANTHROPIC_AUTH_TOKEN="${KEY}"\nclaude --model ${m}`]] },
-  { id: "codex", name: "OpenAI Codex CLI", logo: "codex", note: "Responses API. Add a provider to ~/.codex/config.toml.",
-    files: (o, m) => [["~/.codex/config.toml", `model = "${m}"\nmodel_provider = "fastrouter"\n\n[model_providers.fastrouter]\nname = "FastRouter"\nbase_url = "${o}/v1"\nenv_key = "FASTROUTER_API_KEY"\nwire_api = "responses"`],
-      ["Shell", `export FASTROUTER_API_KEY="${KEY}"\ncodex`]] },
-  { id: "opencode", name: "OpenCode", logo: "opencode", note: "OpenAI-compatible provider in opencode.json.",
-    files: (o, m) => [["~/.config/opencode/opencode.json", `{\n  "$schema": "https://opencode.ai/config.json",\n  "provider": {\n    "fastrouter": {\n      "npm": "@ai-sdk/openai-compatible",\n      "name": "FastRouter",\n      "options": { "baseURL": "${o}/v1", "apiKey": "${KEY}" },\n      "models": { "${m}": { "name": "${m}" } }\n    }\n  },\n  "model": "fastrouter/${m}"\n}`]] },
-  { id: "cline", name: "Cline", logo: "cline", note: "Settings → API Provider → OpenAI Compatible.", form: true },
-  { id: "roo", name: "Roo Code", logo: "roo", note: "Settings → Providers → OpenAI Compatible.", form: true },
-  { id: "kilocode", name: "Kilo Code", logo: "kilocode", note: "Settings → API Provider → OpenAI Compatible.", form: true },
-  { id: "continue", name: "Continue", logo: "continue", note: "Add a model to ~/.continue/config.yaml.",
-    files: (o, m) => [["~/.continue/config.yaml", `models:\n  - name: FastRouter ${m}\n    provider: openai\n    model: ${m}\n    apiBase: ${o}/v1\n    apiKey: ${KEY}\n    roles: [chat, edit, apply]`]] },
-  { id: "droid", name: "Factory Droid", logo: "droid", note: "Custom model in ~/.factory/config.json.",
-    files: (o, m) => [["~/.factory/config.json", `{\n  "custom_models": [\n    {\n      "model_display_name": "FastRouter ${m}",\n      "model": "${m}",\n      "base_url": "${o}/v1",\n      "api_key": "${KEY}",\n      "provider": "generic-chat-completion-api"\n    }\n  ]\n}`]] },
-  { id: "cursor", name: "Cursor", logo: "cursor", note: "Settings → Models → override the OpenAI base URL. Cursor needs a public HTTPS address (e.g. a tunnel).", form: true },
-  { id: "curl", name: "cURL", icon: "terminal", note: "Quick test from any shell.",
-    files: (o, m) => [["Shell", `curl ${o}/v1/chat/completions \\\n  -H "Authorization: Bearer ${KEY}" \\\n  -H "Content-Type: application/json" \\\n  -d '{"model":"${m}","messages":[{"role":"user","content":"Hello"}]}'`]] },
-  { id: "python", name: "OpenAI SDK", logo: "openai", note: "Python; the Node SDK takes the same baseURL and apiKey.",
-    files: (o, m) => [["main.py", `from openai import OpenAI\n\nclient = OpenAI(base_url="${o}/v1", api_key="${KEY}")\nr = client.chat.completions.create(\n    model="${m}",\n    messages=[{"role": "user", "content": "Hello"}],\n)\nprint(r.choices[0].message.content)`]] },
-  { id: "anthropic-sdk", name: "Anthropic SDK", logo: "anthropic", note: "Python; works with any Anthropic-format client.",
-    files: (o, m) => [["main.py", `import anthropic\n\nclient = anthropic.Anthropic(base_url="${o}", api_key="${KEY}")\nr = client.messages.create(\n    model="${m}",\n    max_tokens=1024,\n    messages=[{"role": "user", "content": "Hello"}],\n)\nprint(r.content[0].text)`]] },
-];
-function CliPage({ data }) {
-  const names = [...data.combos.map((c) => c.name), ...data.models.filter((m) => !data.combos.some((c) => c.name === m))];
-  const [tool, setTool] = useState("claude");
-  const [model, setModel] = useState(names[0] || "ds/deepseek-v4.1-flash");
-  const [copied, copy] = useCopy();
-  const t = TOOLS.find((x) => x.id === tool);
-  const o = location.origin;
-  const files = t.form ? [["Fields", `Base URL:  ${o}/v1\nAPI key:   ${KEY}\nModel ID:  ${model}`]] : t.files(o, model);
+function cliPill(t) {
+  const s = t.status || {};
+  if (t.kind === "guide") return html`<${Badge} kind="info" icon="menu_book">Guide</${Badge}>`;
+  if (!s.installed) return html`<${Badge} dot>Not installed</${Badge}>`;
+  if (s.connected) return html`<${Badge} kind="success" dot>Connected</${Badge}>`;
+  return html`<${Badge} kind="warning" dot>Not configured</${Badge}>`;
+}
+function ToolLogo({ t, lg }) {
+  const [bad, setBad] = useState(false);
+  return html`<div class="logo ${lg ? "lg" : ""}">${bad ? html`<div class="logo-fallback" style="background:var(--primary)">${t.name.slice(0, 2).toUpperCase()}</div>`
+    : html`<img src=${"logos/" + t.logo} alt="" onError=${() => setBad(true)} />`}</div>`;
+}
+function useCliTools() {
+  const [cli, setCli] = useState(null);
+  const load = useCallback(() => api("GET", "/api/admin/cli-tools").then(setCli, (e) => setCli({ error: e.message })), []);
+  useEffect(() => { load(); }, []);
+  return [cli, load];
+}
+function CliPage({ data, go, query }) {
+  const [cli, load] = useCliTools();
+  if (!cli) return html`<div class="skeleton"></div><div class="skeleton"></div>`;
+  if (cli.error) return html`<div class="notice err"><${Icon} n="error" />${cli.error}</div>`;
+  const n = cli.tools.filter((t) => t.status && t.status.connected).length;
   return html`
-    <div class="tool-grid">${TOOLS.map((x) => html`<button class="card xs hover tool ${x.id === tool ? "on" : ""}" style="text-align:left" onClick=${() => setTool(x.id)}>
-      ${x.logo ? html`<div class="logo"><img src=${"logos/" + x.logo + ".png"} alt="" /></div>` : html`<div class="saver-icon"><${Icon} n=${x.icon} /></div>`}
-      <div class="grow"><div class="medium">${x.name}</div><div class="small muted">${x.form ? "Settings form" : "Config file"}</div></div>
-      ${x.id === tool && html`<${Icon} n="check_circle" fill style="color:var(--primary)" />`}</button>`)}</div>
-    <div class="card">
-      <div class="card-title"><div><h2><${Icon} n="terminal" />${t.name}</h2><p>${t.note}</p></div>
-        <div class="field" style="min-width:280px"><label>Model</label><select class="input mono" value=${model} onChange=${(e) => setModel(e.target.value)}>
-          ${names.map((n) => html`<option value=${n}>${n}</option>`)}</select></div></div>
-      <div class="col" style="gap:14px">${files.map(([f, body], i) => html`<div><div class="small muted mono" style="margin-bottom:6px">${f}</div>
-        <pre class="code">${body}<${CopyBtn} text=${body} id=${"f" + i} copied=${copied} copy=${copy} /></pre></div>`)}</div>
-      <div class="notice info" style="margin-top:16px"><${Icon} n="key" />Replace <code>${KEY}</code> with a key from <a href="#/keys">API Keys</a>${data.keys.length ? "" : " (or leave any value: with no keys, local clients are allowed)"}.</div>
-    </div>`;
+    <div class="row between" style="margin-bottom:14px"><p class="muted small">Point your coding tools at FastRouter. Each tool's config is read to show its status; nothing is written until you click Apply on its page.</p>
+      <div class="row" style="gap:8px"><${Badge} kind="success">${n} connected</${Badge}><button class="btn ghost sm" onClick=${load}><${Icon} n="refresh" />Refresh</button></div></div>
+    <div class="tool-grid">${cli.tools.map((t) => html`<a class="card xs hover tool cli-card" href=${"#/cli/" + t.id} key=${t.id}>
+      <${ToolLogo} t=${t} />
+      <div class="grow" style="min-width:0"><div class="medium">${t.name}</div>${cliPill(t)}</div>
+      <${Icon} n="chevron_right" cls="muted" /></a>`)}</div>`;
+}
+const fill = (s, v) => (s || "").replaceAll("{{baseUrl}}", v.baseUrl).replaceAll("{{apiKey}}", v.apiKey).replaceAll("{{model}}", v.model || "MODEL_ID");
+function CopyRow({ value, id, copied, copy }) {
+  return html`<div class="copy-row"><code class="mono">${value}</code><${CopyBtn} text=${value} id=${id} copied=${copied} copy=${copy} /></div>`;
+}
+function CliToolPage({ data, id, go }) {
+  const [cli, load] = useCliTools();
+  const [ep, setEp] = useState("");
+  const [keyId, setKeyId] = useState(null);
+  const [model, setModel] = useState(null);
+  const [roles, setRoles] = useState(null);
+  const [audioOn, setAudioOn] = useState(null);
+  const [audioModel, setAudioModel] = useState(null);
+  const [rolesOpen, setRolesOpen] = useState(null);
+  const [busy, setBusy] = useState(false);
+  const [done, setDone] = useState(null);
+  const [confirm, setConfirm] = useState(false);
+  const [copied, copy] = useCopy();
+  const back = html`<div class="crumbs"><a href="#/cli"><${Icon} n="arrow_back" /> Back to CLI Tools</a></div>`;
+  if (!cli) return html`${back}<div class="skeleton"></div>`;
+  if (cli.error) return html`${back}<div class="notice err"><${Icon} n="error" />${cli.error}</div>`;
+  const t = cli.tools.find((x) => x.id === id);
+  if (!t) return html`${back}<div class="card empty"><p>Unknown tool.</p></div>`;
+  const s = t.status || {};
+  const endpoint = ep || cli.endpoints[0];
+  const keys = cli.keys || [];
+  const kid = keyId ?? (keys[0] ? keys[0].id : "");
+  const mdl = model ?? (s.connected ? s.model || "" : "");
+  const rl = roles ?? (s.connected ? { ...(s.roles || {}) } : {});
+  const aOn = audioOn ?? !!s.audio;
+  const aModel = audioModel ?? (s.audio || "");
+  const showRoles = rolesOpen ?? !!t.rolesOpen;
+  const reset = () => { setModel(null); setRoles(null); setAudioOn(null); setAudioModel(null); setKeyId(null); };
+  const apply = async () => {
+    setBusy(true);
+    try {
+      const body = { endpoint, keyId: kid, model: mdl, roles: rl };
+      if (t.audio) body.audio = { enabled: aOn, model: aOn ? aModel : "" };
+      const r = await run(() => api("POST", `/api/admin/cli-tools/${t.id}/apply`, body));
+      toast(r.written.length ? `${t.name} now uses FastRouter` : "Already up to date");
+      setDone(r); reset(); await load();
+    } catch (e) {} finally { setBusy(false); }
+  };
+  const doReset = async () => {
+    const r = await run(() => api("POST", `/api/admin/cli-tools/${t.id}/reset`, {}));
+    toast(r.written.length ? `Removed FastRouter from ${t.name}` : "Nothing to reset");
+    setDone(r); reset(); await load();
+  };
+  const vals = { baseUrl: endpoint + "/v1", apiKey: KEY, model: mdl };
+  const keySelect = html`<select class="input mono" value=${kid} onChange=${(e) => setKeyId(e.target.value)}>
+    ${keys.length === 0 && html`<option value="">No API keys (local clients allowed without one)</option>`}
+    ${keys.map((k) => html`<option value=${k.id}>${k.name || "key"} · ${k.masked}</option>`)}</select>`;
+  const head = html`<div class="row" style="gap:14px;margin-bottom:16px"><${ToolLogo} t=${t} lg />
+    <div class="grow"><h2 style="margin:0">${t.name}</h2><p class="muted small" style="margin:2px 0 0">${t.description}</p></div>
+    ${t.docs && html`<a class="btn ghost sm" href=${t.docs} target="_blank" rel="noopener noreferrer"><${Icon} n="open_in_new" />Docs</a>`}</div>`;
+  const notes = (t.notes || []).map((n) => html`<div class="notice ${n.type === "warning" ? "warn" : n.type === "error" ? "err" : "info"}"><${Icon} n=${n.type === "info" ? "info" : "warning"} /><span>${n.text}</span></div>`);
+  const statusCard = html`<div class="card">
+    <div class="row between"><div class="row" style="gap:10px"><span class="medium">Status</span>${cliPill(t)}
+      ${s.other && html`<${Badge} kind="warning" icon="warning">Points at ${s.other}</${Badge}>`}</div>
+      <button class="icon-btn" title="Re-check" onClick=${load}><${Icon} n="refresh" /></button></div>
+    ${s.configPath && html`<div class="small muted mono" style="margin-top:8px;word-break:break-all"><${Icon} n="folder" style="font-size:14px;vertical-align:-2px" /> ${s.configPath}</div>`}
+    ${t.kind === "config" && !s.installed && html`<div class="notice warn" style="margin-top:10px"><${Icon} n="warning" /><span>${t.name} was not found on this computer. You can still apply the config now and install it later.</span></div>`}
+    ${t.install && !s.installed && html`<div style="margin-top:10px"><div class="small muted" style="margin-bottom:4px">Install</div><${CopyRow} value=${t.install} id="inst" copied=${copied} copy=${copy} /></div>`}
+    ${notes.length > 0 && html`<div class="col" style="gap:8px;margin-top:12px">${notes}</div>`}
+  </div>`;
+  if (t.kind === "guide") {
+    let n = 0;
+    return html`${back}${head}${statusCard}
+      <div class="card"><div class="card-title"><div><h2><${Icon} n="menu_book" />Setup guide</h2><p>Follow these steps in ${t.name}.</p></div>
+        <div class="field" style="min-width:240px;margin:0"><label>Endpoint</label><select class="input mono" value=${endpoint} onChange=${(e) => setEp(e.target.value)}>${cli.endpoints.map((u) => html`<option value=${u}>${u}</option>`)}</select></div></div>
+        <ol class="steps">${(t.steps || []).map((st, i) => html`<li key=${i}><span class="step-n">${++n}</span><div class="grow">
+          <div class="medium">${st.title}</div>${st.desc && html`<div class="small muted">${st.desc}</div>`}
+          ${st.value && html`<${CopyRow} value=${fill(st.value, vals)} id=${"s" + i} copied=${copied} copy=${copy} />`}
+          ${st.type === "apiKey" && html`<div class="small muted" style="margin:6px 0 4px">Use one of your FastRouter keys (shown once when created, see <a href="#/keys">API Keys</a>)${keys.length ? "" : "; with no keys any value works locally"}.</div>`}
+          ${st.type === "model" && html`<div style="margin-top:6px"><${ModelSelect} data=${data} value=${mdl} onChange=${setModel} placeholder="Select a model" /></div>
+            ${mdl && html`<${CopyRow} value=${mdl} id=${"m" + i} copied=${copied} copy=${copy} />`}`}
+        </div></li>`)}</ol>
+        ${t.code && html`<pre class="code" style="margin-top:12px">${fill(t.code, vals)}<${CopyBtn} text=${fill(t.code, vals)} id="code" copied=${copied} copy=${copy} /></pre>
+          ${t.code.includes("{{apiKey}}") && html`<div class="small muted" style="margin-top:6px">Replace <code>${KEY}</code> with your key.</div>`}`}
+      </div>`;
+  }
+  return html`${back}${head}${statusCard}
+    <div class="card cli-form">
+      <${Field} label="Select Endpoint"><select class="input mono" value=${endpoint} onChange=${(e) => setEp(e.target.value)}>${cli.endpoints.map((u) => html`<option value=${u}>${u}</option>`)}</select></${Field}>
+      <div class="small muted cli-current">Current: ${s.baseUrl ? html`<code class="mono">${s.baseUrl}</code>` : "not set"}${s.model ? html` · model <code class="mono">${s.model}</code>` : ""}</div>
+      <${Field} label="API Key" hint="The key is written into the tool's config by FastRouter; it is never sent to this page.">${keySelect}</${Field}>
+      <${Field} label=${t.needsModel ? "Default Model" : "Default Model (optional)"}><${ModelSelect} data=${data} value=${mdl} onChange=${setModel} placeholder="Select a model" /></${Field}>
+      ${t.audio && html`<div class="field"><label class="check"><input type="checkbox" checked=${aOn} onChange=${(e) => setAudioOn(e.target.checked)} /> Audio STT (speech-to-text through FastRouter)</label>
+        ${aOn && html`<div style="margin-top:8px"><${ModelSelect} data=${data} value=${aModel} onChange=${setAudioModel} placeholder="Select a transcription model" /></div>`}</div>`}
+      ${(t.roles || []).length > 0 && html`<div class="roles">
+        <button type="button" class="roles-head" onClick=${() => setRolesOpen(!showRoles)}><${Icon} n=${showRoles ? "expand_less" : "expand_more"} /><span class="medium">${t.rolesTitle || "Model Roles (optional)"}</span>
+          <span class="small muted">${Object.values(rl).filter(Boolean).length} set</span></button>
+        ${showRoles && html`<div class="roles-body">${t.roles.map((r) => html`<div class="role-row" key=${r.id}><div class="small medium">${r.label}</div>
+          <${ModelSelect} data=${data} value=${rl[r.id] || ""} onChange=${(v) => setRoles({ ...rl, [r.id]: v })} placeholder="inherit default" /></div>`)}</div>`}</div>`}
+      <div class="row" style="justify-content:flex-end;gap:8px;margin-top:16px">
+        <button class="btn outline" disabled=${busy || (!s.connected && !s.configPath)} onClick=${() => setConfirm(true)}><${Icon} n="restart_alt" />Reset</button>
+        <button class="btn primary" disabled=${busy || (t.needsModel && !mdl) || (t.audio && aOn && !aModel)} onClick=${apply}><${Icon} n="check" />Apply</button></div>
+      ${done && (done.written.length > 0 || done.backups.length > 0) && html`<div class="notice ok" style="margin-top:12px"><${Icon} n="backup" /><div>
+        <div>Wrote ${done.written.map((f, i) => html`${i ? ", " : ""}<code class="mono">${f}</code>`)}</div>
+        ${done.backups.length > 0 && html`<div>Originals backed up to ${done.backups.map((f, i) => html`${i ? ", " : ""}<code class="mono">${f}</code>`)}</div>`}
+        <div class="small">Restart ${t.name} to pick up the change.</div></div></div>`}
+    </div>
+    ${confirm && html`<${Confirm} title=${"Reset " + t.name + "?"} text="Removes FastRouter's entries from this tool's config. The current file is backed up first." label="Reset" onYes=${doReset} onClose=${() => setConfirm(false)} />`}`;
 }
 
 /* ------------------------------------------------------------ settings */
@@ -1629,6 +1720,7 @@ function App() {
   const props = { data, reload, go, query, relogin: check };
   let body;
   if (!data) body = err ? html`<div class="notice err"><${Icon} n="error" />${err}</div>` : html`<div class="skeleton"></div><div class="skeleton"></div>`;
+  else if (page === "cli" && sub) body = html`<${CliToolPage} ...${props} id=${decodeURIComponent(sub)} />`;
   else if (page === "providers" && sub) body = html`<${ProviderDetail} ...${props} id=${decodeURIComponent(sub)} />`;
   else { const Page = PAGES[meta.id]; body = html`<${Page} ...${props} />`; }
   return html`<div class="shell">

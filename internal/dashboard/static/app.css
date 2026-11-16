@@ -2,7 +2,7 @@
    globals.css and components (MIT, decolua/9router; see NOTICE.txt). */
 
 @font-face { font-family: "Inter"; font-style: normal; font-weight: 400 700; font-display: swap; src: url(fonts/inter-latin.woff2) format("woff2"); }
-@font-face { font-family: "Material Symbols Outlined"; font-style: normal; font-weight: 400; font-display: block; src: url(fonts/material-symbols.woff2?v=7cc001c) format("woff2"); }
+@font-face { font-family: "Material Symbols Outlined"; font-style: normal; font-weight: 400; font-display: block; src: url(fonts/material-symbols.woff2?v=f86c08f2) format("woff2"); }
 
 :root {
   --brand-50:#fdf1ed; --brand-100:#fadccf; --brand-200:#f4b59c; --brand-300:#ee8d6a; --brand-400:#ea7855;
@@ -527,3 +527,21 @@ textarea.input { height:auto; padding:10px 12px; resize:vertical; line-height:1.
 .devcode { display:flex; align-items:center; justify-content:center; gap:10px; padding:14px; border-radius:12px; background:var(--bg); border:1px dashed var(--border); }
 .devcode .mono { font-size:26px; font-weight:700; letter-spacing:.18em; }
 textarea.input { height:auto; padding:10px 12px; resize:vertical; font-size:12px; }
+/* cli tools */
+.cli-card { text-decoration:none; color:inherit; }
+.cli-card .badge { margin-top:4px; }
+.copy-row { display:flex; align-items:center; gap:6px; margin-top:6px; background:var(--bg); border:1px solid var(--border-subtle); border-radius:8px; padding:4px 4px 4px 10px; }
+.copy-row code { flex:1; min-width:0; font-size:12px; word-break:break-all; }
+.steps { list-style:none; margin:0; padding:0; display:flex; flex-direction:column; gap:14px; }
+.steps li { display:flex; gap:12px; align-items:flex-start; }
+.step-n { flex:none; width:24px; height:24px; border-radius:50%; display:grid; place-items:center; font-size:12px; font-weight:600; background:rgba(229,106,74,.12); color:var(--brand-600); }
+.dark .step-n { color:var(--brand-300); }
+.cli-form .field { margin-bottom:14px; }
+.cli-current { margin:-8px 0 14px; }
+.check { display:flex; align-items:center; gap:8px; cursor:pointer; font-weight:500; }
+.roles { border:1px solid var(--border-subtle); border-radius:10px; margin-top:4px; }
+.roles-head { width:100%; display:flex; align-items:center; gap:8px; padding:10px 12px; background:none; border:0; color:inherit; cursor:pointer; text-align:left; font:inherit; }
+.roles-head .small { margin-left:auto; }
+.roles-body { border-top:1px solid var(--border-subtle); padding:10px 12px; display:flex; flex-direction:column; gap:10px; }
+.role-row { display:grid; grid-template-columns:200px 1fr; gap:12px; align-items:center; }
+@media (max-width:700px) { .role-row { grid-template-columns:1fr; } }

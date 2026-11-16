@@ -58,6 +58,9 @@ type Server struct {
 	sticky stickyStore // smart-combo session picks
 
 	hr *saver.HeadroomCtl // Token Saver page: install / start / stop Headroom
+
+	dataDir string // CLI Tools backups live under dataDir/cli-backups
+	port    int
 }
 
 // New builds a server from config and a loaded snapshot. st may be nil (tests).
@@ -78,6 +81,8 @@ func New(cfg config.Config, snap *store.Snapshot, st *store.Store) *Server {
 		tsCfg:        cfg.TokenSavers,
 		allowedHosts: map[string]bool{},
 		hr:           newHeadroomCtl(cfg.DataDir),
+		dataDir:      cfg.DataDir,
+		port:         cfg.Port,
 	}
 	for _, h := range cfg.AllowedHosts {
 		s.allowedHosts[strings.ToLower(strings.TrimSpace(h))] = true
@@ -188,6 +193,10 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/admin/headroom/start", s.adminWrite(s.handleHeadroomStart))
 	mux.Handle("POST /api/admin/headroom/stop", s.adminWrite(s.handleHeadroomStop))
 	mux.Handle("POST /api/admin/headroom/restart", s.adminWrite(s.handleHeadroomRestart))
+	mux.Handle("GET /api/admin/cli-tools", s.adminRead(s.handleCLITools))
+	mux.Handle("GET /api/admin/cli-tools/{id}", s.adminRead(s.handleCLITool))
+	mux.Handle("POST /api/admin/cli-tools/{id}/apply", s.adminWrite(s.handleCLIApply))
+	mux.Handle("POST /api/admin/cli-tools/{id}/reset", s.adminWrite(s.handleCLIReset))
 	mux.Handle("GET /api/admin/skills", s.adminRead(s.handleSkillList))
 	mux.HandleFunc("GET /skills/{name}/SKILL.md", s.handleSkill)
 
