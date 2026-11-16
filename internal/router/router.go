@@ -108,13 +108,14 @@ func (p *Pool) Size() int { return len(p.accounts) }
 // Provider is a resolved upstream (built-in or custom endpoint).
 type Provider struct {
 	ID, Name, Prefix string
-	URLs             [4]string // endpoint per translate.Format ("" = not supported)
-	PreferNative     bool      // translate into the native (Gemini) format, not OpenAI-compatible
-	Official         bool      // strict OpenAI-style API (no vendor reasoning fields)
-	CacheControl     bool      // forward cache_control inside OpenAI bodies
-	ThinkingMode     string    // imported providerThinking mode ("" = auto)
-	Plugin           bool      // login provider deferred to a plugin
-	Login            string    // official-login plugin ("codex", "glm") or ""
+	URLs             [4]string         // endpoint per translate.Format ("" = not supported)
+	PreferNative     bool              // translate into the native (Gemini) format, not OpenAI-compatible
+	Official         bool              // strict OpenAI-style API (no vendor reasoning fields)
+	CacheControl     bool              // forward cache_control inside OpenAI bodies
+	ThinkingMode     string            // imported providerThinking mode ("" = auto)
+	Plugin           bool              // login provider deferred to a plugin
+	Login            string            // official-login plugin ("codex", "glm") or ""
+	Upstream         map[string]string // catalog model id -> served id
 	Pool             *Pool
 }
 
@@ -203,7 +204,7 @@ func Build(snap *store.Snapshot, limits map[string]KeyLimit) *State {
 		if !ok {
 			return nil
 		}
-		p := &Provider{ID: c.ID, Name: c.ID, Prefix: c.PrimaryAlias(), Plugin: c.Plugin, Login: c.Login, Pool: &Pool{},
+		p := &Provider{ID: c.ID, Name: c.ID, Prefix: c.PrimaryAlias(), Plugin: c.Plugin, Login: c.Login, Upstream: c.Upstream, Pool: &Pool{},
 			PreferNative: c.PreferNative, Official: c.Official, CacheControl: c.CacheControl}
 		p.URLs[translate.OpenAI], p.URLs[translate.Anthropic] = c.ChatURL, c.MessagesURL
 		p.URLs[translate.Responses], p.URLs[translate.Gemini] = c.ResponsesURL, c.GeminiURL
@@ -405,6 +406,9 @@ func (s *State) resolve(model string, depth int) ([]Target, error) {
 	p := s.providers[prefix]
 	if p == nil {
 		return nil, fmt.Errorf("%w: unknown provider prefix %q", ErrModelNotFound, prefix)
+	}
+	if up, ok := p.Upstream[name]; ok {
+		name = up
 	}
 	return []Target{{Provider: p, Model: name, Label: model}}, nil
 }

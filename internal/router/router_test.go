@@ -51,3 +51,17 @@ func TestReloadCarriesOverHealth(t *testing.T) {
 		t.Fatal("healthy account should stay healthy")
 	}
 }
+
+// DeepSeek's API rejects "deepseek-v4.1-flash" (HTTP 400, seen in the live
+// test); like 9Router, send the served id "deepseek-flash" instead.
+func TestUpstreamModelID(t *testing.T) {
+	st := Build(&store.Snapshot{Connections: []store.Connection{
+		{ID: "a", Provider: "deepseek", Active: true, Status: "ok", Priority: 1, Secrets: map[string]string{"apiKey": "k1"}},
+	}}, nil)
+	for in, want := range map[string]string{"ds/deepseek-v4.1-flash": "deepseek-flash", "ds/deepseek-v4-pro-max": "deepseek-v4-pro", "ds/deepseek-v4-flash": "deepseek-v4-flash"} {
+		ts, err := st.Resolve(in)
+		if err != nil || ts[0].Model != want || ts[0].Label != in {
+			t.Errorf("%s -> %+v %v", in, ts, err)
+		}
+	}
+}

@@ -22,6 +22,10 @@ type Provider struct {
 	// (gateways that front Claude, e.g. OpenRouter).
 	CacheControl bool
 
+	// Upstream maps a catalog model id to the id the API actually serves
+	// (9Router's upstreamModelId), e.g. DeepSeek rejects "deepseek-v4.1-flash".
+	Upstream map[string]string
+
 	// Regions maps a region id to a base URL (chat URL = base + /chat/completions).
 	Regions map[string]string
 	// Plugin is true for logins that core does not support (deferred to a plugin).
@@ -33,7 +37,8 @@ type Provider struct {
 
 var builtins = []Provider{
 	{ID: "deepseek", Aliases: []string{"ds"}, ChatURL: "https://api.deepseek.com/chat/completions",
-		MessagesURL: "https://api.deepseek.com/anthropic/v1/messages"},
+		MessagesURL: "https://api.deepseek.com/anthropic/v1/messages",
+		Upstream:    map[string]string{"deepseek-v4.1-flash": "deepseek-flash", "deepseek-v4-pro-max": "deepseek-v4-pro", "deepseek-v4-pro-none": "deepseek-v4-pro"}},
 	{ID: "openrouter", ChatURL: "https://openrouter.ai/api/v1/chat/completions", CacheControl: true},
 	{ID: "opencode-go", Aliases: []string{"ocg"}, ChatURL: "https://opencode.ai/inference/go/openai/v1/chat/completions"},
 	{ID: "xiaomi-tokenplan", Aliases: []string{"xmtp"}, ChatURL: "https://token-plan-sgp.xiaomimimo.com/v1/chat/completions",
