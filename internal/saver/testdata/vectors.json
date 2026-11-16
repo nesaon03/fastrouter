@@ -1,0 +1,654 @@
+{
+ "rtk": [
+  {
+   "name": "gitLog",
+   "in": "commit f4240abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 0\n\n    longer body text that should be dropped 0\n\ncommit f4241abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 1\n\n    longer body text that should be dropped 1\n\ncommit f4242abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 2\n\n    longer body text that should be dropped 2\n\ncommit f4243abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 3\n\n    longer body text that should be dropped 3\n\ncommit f4244abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 4\n\n    longer body text that should be dropped 4\n\ncommit f4245abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 5\n\n    longer body text that should be dropped 5\n\ncommit f4246abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 6\n\n    longer body text that should be dropped 6\n\ncommit f4247abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 7\n\n    longer body text that should be dropped 7\n\ncommit f4248abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 8\n\n    longer body text that should be dropped 8\n\ncommit f4249abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 9\n\n    longer body text that should be dropped 9\n\ncommit f424aabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 10\n\n    longer body text that should be dropped 10\n\ncommit f424babcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 11\n\n    longer body text that should be dropped 11\n\ncommit f424cabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 12\n\n    longer body text that should be dropped 12\n\ncommit f424dabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 13\n\n    longer body text that should be dropped 13\n\ncommit f424eabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 14\n\n    longer body text that should be dropped 14\n\ncommit f424fabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 15\n\n    longer body text that should be dropped 15\n\ncommit f4250abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 16\n\n    longer body text that should be dropped 16\n\ncommit f4251abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 17\n\n    longer body text that should be dropped 17\n\ncommit f4252abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 18\n\n    longer body text that should be dropped 18\n\ncommit f4253abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 19\n\n    longer body text that should be dropped 19\n\ncommit f4254abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 20\n\n    longer body text that should be dropped 20\n\ncommit f4255abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 21\n\n    longer body text that should be dropped 21\n\ncommit f4256abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 22\n\n    longer body text that should be dropped 22\n\ncommit f4257abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 23\n\n    longer body text that should be dropped 23\n\ncommit f4258abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 24\n\n    longer body text that should be dropped 24\n\ncommit f4259abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 25\n\n    longer body text that should be dropped 25\n\ncommit f425aabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 26\n\n    longer body text that should be dropped 26\n\ncommit f425babcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 27\n\n    longer body text that should be dropped 27\n\ncommit f425cabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 28\n\n    longer body text that should be dropped 28\n\ncommit f425dabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 29\n\n    longer body text that should be dropped 29\n\ncommit f425eabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 30\n\n    longer body text that should be dropped 30\n\ncommit f425fabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 31\n\n    longer body text that should be dropped 31\n\ncommit f4260abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 32\n\n    longer body text that should be dropped 32\n\ncommit f4261abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 33\n\n    longer body text that should be dropped 33\n\ncommit f4262abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 34\n\n    longer body text that should be dropped 34\n\ncommit f4263abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 35\n\n    longer body text that should be dropped 35\n\ncommit f4264abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 36\n\n    longer body text that should be dropped 36\n\ncommit f4265abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 37\n\n    longer body text that should be dropped 37\n\ncommit f4266abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 38\n\n    longer body text that should be dropped 38\n\ncommit f4267abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 39\n\n    longer body text that should be dropped 39\n\ncommit f4268abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 40\n\n    longer body text that should be dropped 40\n\ncommit f4269abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 41\n\n    longer body text that should be dropped 41\n\ncommit f426aabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 42\n\n    longer body text that should be dropped 42\n\ncommit f426babcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 43\n\n    longer body text that should be dropped 43\n\ncommit f426cabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 44\n\n    longer body text that should be dropped 44\n\ncommit f426dabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 45\n\n    longer body text that should be dropped 45\n\ncommit f426eabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 46\n\n    longer body text that should be dropped 46\n\ncommit f426fabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 47\n\n    longer body text that should be dropped 47\n\ncommit f4270abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 48\n\n    longer body text that should be dropped 48\n\ncommit f4271abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 49\n\n    longer body text that should be dropped 49\n\ncommit f4272abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 50\n\n    longer body text that should be dropped 50\n\ncommit f4273abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 51\n\n    longer body text that should be dropped 51\n\ncommit f4274abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 52\n\n    longer body text that should be dropped 52\n\ncommit f4275abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 53\n\n    longer body text that should be dropped 53\n\ncommit f4276abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 54\n\n    longer body text that should be dropped 54\n\ncommit f4277abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 55\n\n    longer body text that should be dropped 55\n\ncommit f4278abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 56\n\n    longer body text that should be dropped 56\n\ncommit f4279abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 57\n\n    longer body text that should be dropped 57\n\ncommit f427aabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 58\n\n    longer body text that should be dropped 58\n\ncommit f427babcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 59\n\n    longer body text that should be dropped 59\n\ncommit f427cabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 60\n\n    longer body text that should be dropped 60\n\ncommit f427dabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 61\n\n    longer body text that should be dropped 61\n\ncommit f427eabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 62\n\n    longer body text that should be dropped 62\n\ncommit f427fabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 63\n\n    longer body text that should be dropped 63\n\ncommit f4280abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 64\n\n    longer body text that should be dropped 64\n\ncommit f4281abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 65\n\n    longer body text that should be dropped 65\n\ncommit f4282abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 66\n\n    longer body text that should be dropped 66\n\ncommit f4283abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 67\n\n    longer body text that should be dropped 67\n\ncommit f4284abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 68\n\n    longer body text that should be dropped 68\n\ncommit f4285abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 69\n\n    longer body text that should be dropped 69\n\ncommit f4286abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 70\n\n    longer body text that should be dropped 70\n\ncommit f4287abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 71\n\n    longer body text that should be dropped 71\n\ncommit f4288abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 72\n\n    longer body text that should be dropped 72\n\ncommit f4289abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 73\n\n    longer body text that should be dropped 73\n\ncommit f428aabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 74\n\n    longer body text that should be dropped 74\n\ncommit f428babcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 75\n\n    longer body text that should be dropped 75\n\ncommit f428cabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 76\n\n    longer body text that should be dropped 76\n\ncommit f428dabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 77\n\n    longer body text that should be dropped 77\n\ncommit f428eabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 78\n\n    longer body text that should be dropped 78\n\ncommit f428fabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n\n    Change number 79\n\n    longer body text that should be dropped 79\n",
+   "out": "commit f4240abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 0\ncommit f4241abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 1\ncommit f4242abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 2\ncommit f4243abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 3\ncommit f4244abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 4\ncommit f4245abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 5\ncommit f4246abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 6\ncommit f4247abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 7\ncommit f4248abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 8\ncommit f4249abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 9\ncommit f424aabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 10\ncommit f424babcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 11\ncommit f424cabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 12\ncommit f424dabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 13\ncommit f424eabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 14\ncommit f424fabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 15\ncommit f4250abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 16\ncommit f4251abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 17\ncommit f4252abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 18\ncommit f4253abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 19\ncommit f4254abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 20\ncommit f4255abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 21\ncommit f4256abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 22\ncommit f4257abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 23\ncommit f4258abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 24\ncommit f4259abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 25\ncommit f425aabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 26\ncommit f425babcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 27\ncommit f425cabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 28\ncommit f425dabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 29\ncommit f425eabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 30\ncommit f425fabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 31\ncommit f4260abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 32\ncommit f4261abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 33\ncommit f4262abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 34\ncommit f4263abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 35\ncommit f4264abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 36\ncommit f4265abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 37\ncommit f4266abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 38\ncommit f4267abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 39\ncommit f4268abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 40\ncommit f4269abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 41\ncommit f426aabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 42\ncommit f426babcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 43\ncommit f426cabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 44\ncommit f426dabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 45\ncommit f426eabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 46\ncommit f426fabcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 47\ncommit f4270abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 48\ncommit f4271abcdef0\nAuthor: Dev <dev@example.com>\nDate:   Mon Jan 1 00:00:00 2026\n  Subject: Change number 49\n... (120 more lines)"
+  },
+  {
+   "name": "gitDiff",
+   "in": "diff --git a/x.go b/x.go\nindex 1..2 100644\n--- a/x.go\n+++ b/x.go\n@@ -1,3 +1,300 @@\n line 0\n+line 1\n+line 2\n line 3\n+line 4\n+line 5\n line 6\n+line 7\n+line 8\n line 9\n+line 10\n+line 11\n line 12\n+line 13\n+line 14\n line 15\n+line 16\n+line 17\n line 18\n+line 19\n+line 20\n line 21\n+line 22\n+line 23\n line 24\n+line 25\n+line 26\n line 27\n+line 28\n+line 29\n line 30\n+line 31\n+line 32\n line 33\n+line 34\n+line 35\n line 36\n+line 37\n+line 38\n line 39\n+line 40\n+line 41\n line 42\n+line 43\n+line 44\n line 45\n+line 46\n+line 47\n line 48\n+line 49\n+line 50\n line 51\n+line 52\n+line 53\n line 54\n+line 55\n+line 56\n line 57\n+line 58\n+line 59\n line 60\n+line 61\n+line 62\n line 63\n+line 64\n+line 65\n line 66\n+line 67\n+line 68\n line 69\n+line 70\n+line 71\n line 72\n+line 73\n+line 74\n line 75\n+line 76\n+line 77\n line 78\n+line 79\n+line 80\n line 81\n+line 82\n+line 83\n line 84\n+line 85\n+line 86\n line 87\n+line 88\n+line 89\n line 90\n+line 91\n+line 92\n line 93\n+line 94\n+line 95\n line 96\n+line 97\n+line 98\n line 99\n+line 100\n+line 101\n line 102\n+line 103\n+line 104\n line 105\n+line 106\n+line 107\n line 108\n+line 109\n+line 110\n line 111\n+line 112\n+line 113\n line 114\n+line 115\n+line 116\n line 117\n+line 118\n+line 119\n line 120\n+line 121\n+line 122\n line 123\n+line 124\n+line 125\n line 126\n+line 127\n+line 128\n line 129\n+line 130\n+line 131\n line 132\n+line 133\n+line 134\n line 135\n+line 136\n+line 137\n line 138\n+line 139\n+line 140\n line 141\n+line 142\n+line 143\n line 144\n+line 145\n+line 146\n line 147\n+line 148\n+line 149\n line 150\n+line 151\n+line 152\n line 153\n+line 154\n+line 155\n line 156\n+line 157\n+line 158\n line 159\n+line 160\n+line 161\n line 162\n+line 163\n+line 164\n line 165\n+line 166\n+line 167\n line 168\n+line 169\n+line 170\n line 171\n+line 172\n+line 173\n line 174\n+line 175\n+line 176\n line 177\n+line 178\n+line 179\n line 180\n+line 181\n+line 182\n line 183\n+line 184\n+line 185\n line 186\n+line 187\n+line 188\n line 189\n+line 190\n+line 191\n line 192\n+line 193\n+line 194\n line 195\n+line 196\n+line 197\n line 198\n+line 199\n+line 200\n line 201\n+line 202\n+line 203\n line 204\n+line 205\n+line 206\n line 207\n+line 208\n+line 209\n line 210\n+line 211\n+line 212\n line 213\n+line 214\n+line 215\n line 216\n+line 217\n+line 218\n line 219\n+line 220\n+line 221\n line 222\n+line 223\n+line 224\n line 225\n+line 226\n+line 227\n line 228\n+line 229\n+line 230\n line 231\n+line 232\n+line 233\n line 234\n+line 235\n+line 236\n line 237\n+line 238\n+line 239\n line 240\n+line 241\n+line 242\n line 243\n+line 244\n+line 245\n line 246\n+line 247\n+line 248\n line 249\n+line 250\n+line 251\n line 252\n+line 253\n+line 254\n line 255\n+line 256\n+line 257\n line 258\n+line 259\n+line 260\n line 261\n+line 262\n+line 263\n line 264\n+line 265\n+line 266\n line 267\n+line 268\n+line 269\n line 270\n+line 271\n+line 272\n line 273\n+line 274\n+line 275\n line 276\n+line 277\n+line 278\n line 279\n+line 280\n+line 281\n line 282\n+line 283\n+line 284\n line 285\n+line 286\n+line 287\n line 288\n+line 289\n+line 290\n line 291\n+line 292\n+line 293\n line 294\n+line 295\n+line 296\n line 297\n+line 298\n+line 299\ndiff --git a/y.go b/y.go\n@@ -1 +1 @@\n-old\n+new\n\\ No newline at end of file",
+   "out": "\nx.go\n  @@ -1,3 +1,300 @@\n  +line 1\n  +line 2\n   line 3\n  +line 4\n  +line 5\n   line 6\n  +line 7\n  +line 8\n   line 9\n  +line 10\n  +line 11\n   line 12\n  +line 13\n  +line 14\n   line 15\n  +line 16\n  +line 17\n   line 18\n  +line 19\n  +line 20\n   line 21\n  +line 22\n  +line 23\n   line 24\n  +line 25\n  +line 26\n   line 27\n  +line 28\n  +line 29\n   line 30\n  +line 31\n  +line 32\n   line 33\n  +line 34\n  +line 35\n   line 36\n  +line 37\n  +line 38\n   line 39\n  +line 40\n  +line 41\n   line 42\n  +line 43\n  +line 44\n   line 45\n  +line 46\n  +line 47\n   line 48\n  +line 49\n  +line 50\n   line 51\n  +line 52\n  +line 53\n   line 54\n  +line 55\n  +line 56\n   line 57\n  +line 58\n  +line 59\n   line 60\n  +line 61\n  +line 62\n   line 63\n  +line 64\n  +line 65\n   line 66\n  +line 67\n  +line 68\n   line 69\n  +line 70\n  +line 71\n   line 72\n  +line 73\n  +line 74\n   line 75\n  +line 76\n  +line 77\n   line 78\n  +line 79\n  +line 80\n   line 81\n  +line 82\n  +line 83\n   line 84\n  +line 85\n  +line 86\n   line 87\n  +line 88\n  +line 89\n   line 90\n  +line 91\n  +line 92\n   line 93\n  +line 94\n  +line 95\n   line 96\n  +line 97\n  +line 98\n   line 99\n  +line 100\n  ... (133 lines truncated)\n  +200 -0\n\ny.go\n  @@ -1 +1 @@\n  -old\n  +new\n  +1 -1\n[full diff: rtk git diff --no-compact]"
+  },
+  {
+   "name": "gitStatus",
+   "in": "On branch main\nChanges not staged for commit:\n\tmodified:   src/file0.go\n\tmodified:   src/file1.go\n\tmodified:   src/file2.go\n\tmodified:   src/file3.go\n\tmodified:   src/file4.go\n\tmodified:   src/file5.go\n\tmodified:   src/file6.go\n\tmodified:   src/file7.go\n\tmodified:   src/file8.go\n\tmodified:   src/file9.go\n\tmodified:   src/file10.go\n\tmodified:   src/file11.go\n\tmodified:   src/file12.go\n\tmodified:   src/file13.go\n\tmodified:   src/file14.go\n\tmodified:   src/file15.go\n\tmodified:   src/file16.go\n\tmodified:   src/file17.go\n\tmodified:   src/file18.go\n\tmodified:   src/file19.go\n\tmodified:   src/file20.go\n\tmodified:   src/file21.go\n\tmodified:   src/file22.go\n\tmodified:   src/file23.go\n\tmodified:   src/file24.go\n\tmodified:   src/file25.go\n\tmodified:   src/file26.go\n\tmodified:   src/file27.go\n\tmodified:   src/file28.go\n\tmodified:   src/file29.go\nUntracked files:\n\tfoo.txt\n",
+   "out": "* main\n~ Modified: 30 files\n   src/file0.go\n   src/file1.go\n   src/file2.go\n   src/file3.go\n   src/file4.go\n   src/file5.go\n   src/file6.go\n   src/file7.go\n   src/file8.go\n   src/file9.go\n   ... +20 more"
+  },
+  {
+   "name": "porcelain",
+   "in": "## main...origin/main\n M path/to/file0.txt\nA  path/to/file1.txt\n?? path/to/file2.txt\nMM path/to/file3.txt\nUU path/to/file4.txt\n M path/to/file5.txt\nA  path/to/file6.txt\n?? path/to/file7.txt\nMM path/to/file8.txt\nUU path/to/file9.txt\n M path/to/file10.txt\nA  path/to/file11.txt\n?? path/to/file12.txt\nMM path/to/file13.txt\nUU path/to/file14.txt\n M path/to/file15.txt\nA  path/to/file16.txt\n?? path/to/file17.txt\nMM path/to/file18.txt\nUU path/to/file19.txt\n M path/to/file20.txt\nA  path/to/file21.txt\n?? path/to/file22.txt\nMM path/to/file23.txt\nUU path/to/file24.txt\n M path/to/file25.txt\nA  path/to/file26.txt\n?? path/to/file27.txt\nMM path/to/file28.txt\nUU path/to/file29.txt\n M path/to/file30.txt\nA  path/to/file31.txt\n?? path/to/file32.txt\nMM path/to/file33.txt\nUU path/to/file34.txt\n M path/to/file35.txt\nA  path/to/file36.txt\n?? path/to/file37.txt\nMM path/to/file38.txt\nUU path/to/file39.txt",
+   "out": "* main...origin/main\n+ Staged: 16 files\n   path/to/file1.txt\n   path/to/file3.txt\n   path/to/file6.txt\n   path/to/file8.txt\n   path/to/file11.txt\n   path/to/file13.txt\n   path/to/file16.txt\n   path/to/file18.txt\n   path/to/file21.txt\n   path/to/file23.txt\n   ... +6 more\n~ Modified: 16 files\n   path/to/file0.txt\n   path/to/file3.txt\n   path/to/file5.txt\n   path/to/file8.txt\n   path/to/file10.txt\n   path/to/file13.txt\n   path/to/file15.txt\n   path/to/file18.txt\n   path/to/file20.txt\n   path/to/file23.txt\n   ... +6 more\n? Untracked: 8 files\n   path/to/file2.txt\n   path/to/file7.txt\n   path/to/file12.txt\n   path/to/file17.txt\n   path/to/file22.txt\n   path/to/file27.txt\n   path/to/file32.txt\n   path/to/file37.txt\nconflicts: 8 files"
+  },
+  {
+   "name": "build",
+   "in": "   Compiling crate0 v0.1.0\n   Compiling crate1 v0.1.1\n   Compiling crate2 v0.1.2\n   Compiling crate3 v0.1.3\n   Compiling crate4 v0.1.4\n   Compiling crate5 v0.1.5\n   Compiling crate6 v0.1.6\n   Compiling crate7 v0.1.7\n   Compiling crate8 v0.1.8\n   Compiling crate9 v0.1.9\n   Compiling crate10 v0.1.10\n   Compiling crate11 v0.1.11\n   Compiling crate12 v0.1.12\n   Compiling crate13 v0.1.13\n   Compiling crate14 v0.1.14\n   Compiling crate15 v0.1.15\n   Compiling crate16 v0.1.16\n   Compiling crate17 v0.1.17\n   Compiling crate18 v0.1.18\n   Compiling crate19 v0.1.19\n   Compiling crate20 v0.1.20\n   Compiling crate21 v0.1.21\n   Compiling crate22 v0.1.22\n   Compiling crate23 v0.1.23\n   Compiling crate24 v0.1.24\n   Compiling crate25 v0.1.25\n   Compiling crate26 v0.1.26\n   Compiling crate27 v0.1.27\n   Compiling crate28 v0.1.28\n   Compiling crate29 v0.1.29\n   Compiling crate30 v0.1.30\n   Compiling crate31 v0.1.31\n   Compiling crate32 v0.1.32\n   Compiling crate33 v0.1.33\n   Compiling crate34 v0.1.34\n   Compiling crate35 v0.1.35\n   Compiling crate36 v0.1.36\n   Compiling crate37 v0.1.37\n   Compiling crate38 v0.1.38\n   Compiling crate39 v0.1.39\nwarning: unused variable `x`\n --> src/main.rs:3:9\n  |\n3 |     let x = 1;\n\nerror[E0425]: cannot find value\n --> src/lib.rs:1:1\n\n    Finished dev [unoptimized] target(s) in 3.2s\nnpm warn deprecated pkg0@1.0.0: old\nnpm warn deprecated pkg1@1.0.0: old\nnpm warn deprecated pkg2@1.0.0: old\nnpm warn deprecated pkg3@1.0.0: old\nnpm warn deprecated pkg4@1.0.0: old\nnpm warn deprecated pkg5@1.0.0: old",
+   "out": "npm warn deprecated pkg0@1.0.0: old\nnpm warn deprecated pkg1@1.0.0: old\nnpm warn deprecated pkg2@1.0.0: old\n... +3 more deprecated packages\nCompiled 40 packages\n --> src/main.rs:3:9\n  |\n3 |     let x = 1;\nerror[E0425]: cannot find value\n --> src/lib.rs:1:1\nwarning: unused variable `x`\n    Finished dev [unoptimized] target(s) in 3.2s"
+  },
+  {
+   "name": "grep",
+   "in": "src/file0.go:1:    match here 0\nsrc/file1.go:2:    match here 1\nsrc/file2.go:3:    match here 2\nsrc/file3.go:4:    match here 3\nsrc/file0.go:5:    match here 4\nsrc/file1.go:6:    match here 5\nsrc/file2.go:7:    match here 6\nsrc/file3.go:8:    match here 7\nsrc/file0.go:9:    match here 8\nsrc/file1.go:10:    match here 9\nsrc/file2.go:11:    match here 10\nsrc/file3.go:12:    match here 11\nsrc/file0.go:13:    match here 12\nsrc/file1.go:14:    match here 13\nsrc/file2.go:15:    match here 14\nsrc/file3.go:16:    match here 15\nsrc/file0.go:17:    match here 16\nsrc/file1.go:18:    match here 17\nsrc/file2.go:19:    match here 18\nsrc/file3.go:20:    match here 19\nsrc/file0.go:21:    match here 20\nsrc/file1.go:22:    match here 21\nsrc/file2.go:23:    match here 22\nsrc/file3.go:24:    match here 23\nsrc/file0.go:25:    match here 24\nsrc/file1.go:26:    match here 25\nsrc/file2.go:27:    match here 26\nsrc/file3.go:28:    match here 27\nsrc/file0.go:29:    match here 28\nsrc/file1.go:30:    match here 29\nsrc/file2.go:31:    match here 30\nsrc/file3.go:32:    match here 31\nsrc/file0.go:33:    match here 32\nsrc/file1.go:34:    match here 33\nsrc/file2.go:35:    match here 34\nsrc/file3.go:36:    match here 35\nsrc/file0.go:37:    match here 36\nsrc/file1.go:38:    match here 37\nsrc/file2.go:39:    match here 38\nsrc/file3.go:40:    match here 39\nsrc/file0.go:41:    match here 40\nsrc/file1.go:42:    match here 41\nsrc/file2.go:43:    match here 42\nsrc/file3.go:44:    match here 43\nsrc/file0.go:45:    match here 44\nsrc/file1.go:46:    match here 45\nsrc/file2.go:47:    match here 46\nsrc/file3.go:48:    match here 47\nsrc/file0.go:49:    match here 48\nsrc/file1.go:50:    match here 49\nsrc/file2.go:51:    match here 50\nsrc/file3.go:52:    match here 51\nsrc/file0.go:53:    match here 52\nsrc/file1.go:54:    match here 53\nsrc/file2.go:55:    match here 54\nsrc/file3.go:56:    match here 55\nsrc/file0.go:57:    match here 56\nsrc/file1.go:58:    match here 57\nsrc/file2.go:59:    match here 58\nsrc/file3.go:60:    match here 59",
+   "out": "60 matches in 4F:\n\n[file] src/file0.go (15):\n     1: match here 0\n     5: match here 4\n     9: match here 8\n    13: match here 12\n    17: match here 16\n    21: match here 20\n    25: match here 24\n    29: match here 28\n    33: match here 32\n    37: match here 36\n  +5\n\n[file] src/file1.go (15):\n     2: match here 1\n     6: match here 5\n    10: match here 9\n    14: match here 13\n    18: match here 17\n    22: match here 21\n    26: match here 25\n    30: match here 29\n    34: match here 33\n    38: match here 37\n  +5\n\n[file] src/file2.go (15):\n     3: match here 2\n     7: match here 6\n    11: match here 10\n    15: match here 14\n    19: match here 18\n    23: match here 22\n    27: match here 26\n    31: match here 30\n    35: match here 34\n    39: match here 38\n  +5\n\n[file] src/file3.go (15):\n     4: match here 3\n     8: match here 7\n    12: match here 11\n    16: match here 15\n    20: match here 19\n    24: match here 23\n    28: match here 27\n    32: match here 31\n    36: match here 35\n    40: match here 39\n  +5\n\n"
+  },
+  {
+   "name": "find",
+   "in": "./dir0/sub/file0.txt\n./dir1/sub/file1.txt\n./dir2/sub/file2.txt\n./dir3/sub/file3.txt\n./dir4/sub/file4.txt\n./dir5/sub/file5.txt\n./dir6/sub/file6.txt\n./dir7/sub/file7.txt\n./dir8/sub/file8.txt\n./dir9/sub/file9.txt\n./dir10/sub/file10.txt\n./dir11/sub/file11.txt\n./dir12/sub/file12.txt\n./dir13/sub/file13.txt\n./dir14/sub/file14.txt\n./dir15/sub/file15.txt\n./dir16/sub/file16.txt\n./dir17/sub/file17.txt\n./dir18/sub/file18.txt\n./dir19/sub/file19.txt\n./dir20/sub/file20.txt\n./dir21/sub/file21.txt\n./dir22/sub/file22.txt\n./dir23/sub/file23.txt\n./dir24/sub/file24.txt\n./dir0/sub/file25.txt\n./dir1/sub/file26.txt\n./dir2/sub/file27.txt\n./dir3/sub/file28.txt\n./dir4/sub/file29.txt\n./dir5/sub/file30.txt\n./dir6/sub/file31.txt\n./dir7/sub/file32.txt\n./dir8/sub/file33.txt\n./dir9/sub/file34.txt\n./dir10/sub/file35.txt\n./dir11/sub/file36.txt\n./dir12/sub/file37.txt\n./dir13/sub/file38.txt\n./dir14/sub/file39.txt\n./dir15/sub/file40.txt\n./dir16/sub/file41.txt\n./dir17/sub/file42.txt\n./dir18/sub/file43.txt\n./dir19/sub/file44.txt\n./dir20/sub/file45.txt\n./dir21/sub/file46.txt\n./dir22/sub/file47.txt\n./dir23/sub/file48.txt\n./dir24/sub/file49.txt\n./dir0/sub/file50.txt\n./dir1/sub/file51.txt\n./dir2/sub/file52.txt\n./dir3/sub/file53.txt\n./dir4/sub/file54.txt\n./dir5/sub/file55.txt\n./dir6/sub/file56.txt\n./dir7/sub/file57.txt\n./dir8/sub/file58.txt\n./dir9/sub/file59.txt\n./dir10/sub/file60.txt\n./dir11/sub/file61.txt\n./dir12/sub/file62.txt\n./dir13/sub/file63.txt\n./dir14/sub/file64.txt\n./dir15/sub/file65.txt\n./dir16/sub/file66.txt\n./dir17/sub/file67.txt\n./dir18/sub/file68.txt\n./dir19/sub/file69.txt\n./dir20/sub/file70.txt\n./dir21/sub/file71.txt\n./dir22/sub/file72.txt\n./dir23/sub/file73.txt\n./dir24/sub/file74.txt\n./dir0/sub/file75.txt\n./dir1/sub/file76.txt\n./dir2/sub/file77.txt\n./dir3/sub/file78.txt\n./dir4/sub/file79.txt",
+   "out": "80 files in 25 dirs:\n\n./dir0/sub/  (4)\n  file0.txt\n  file25.txt\n  file50.txt\n  file75.txt\n./dir1/sub/  (4)\n  file1.txt\n  file26.txt\n  file51.txt\n  file76.txt\n./dir10/sub/  (3)\n  file10.txt\n  file35.txt\n  file60.txt\n./dir11/sub/  (3)\n  file11.txt\n  file36.txt\n  file61.txt\n./dir12/sub/  (3)\n  file12.txt\n  file37.txt\n  file62.txt\n./dir13/sub/  (3)\n  file13.txt\n  file38.txt\n  file63.txt\n./dir14/sub/  (3)\n  file14.txt\n  file39.txt\n  file64.txt\n./dir15/sub/  (3)\n  file15.txt\n  file40.txt\n  file65.txt\n./dir16/sub/  (3)\n  file16.txt\n  file41.txt\n  file66.txt\n./dir17/sub/  (3)\n  file17.txt\n  file42.txt\n  file67.txt\n./dir18/sub/  (3)\n  file18.txt\n  file43.txt\n  file68.txt\n./dir19/sub/  (3)\n  file19.txt\n  file44.txt\n  file69.txt\n./dir2/sub/  (4)\n  file2.txt\n  file27.txt\n  file52.txt\n  file77.txt\n./dir20/sub/  (3)\n  file20.txt\n  file45.txt\n  file70.txt\n./dir21/sub/  (3)\n  file21.txt\n  file46.txt\n  file71.txt\n./dir22/sub/  (3)\n  file22.txt\n  file47.txt\n  file72.txt\n./dir23/sub/  (3)\n  file23.txt\n  file48.txt\n  file73.txt\n./dir24/sub/  (3)\n  file24.txt\n  file49.txt\n  file74.txt\n./dir3/sub/  (4)\n  file3.txt\n  file28.txt\n  file53.txt\n  file78.txt\n./dir4/sub/  (4)\n  file4.txt\n  file29.txt\n  file54.txt\n  file79.txt\n\n+5 more dirs\n"
+  },
+  {
+   "name": "tree",
+   "in": ".\n├── dir0\n│   └── file0.go\n├── dir1\n│   └── file1.go\n├── dir2\n│   └── file2.go\n├── dir3\n│   └── file3.go\n├── dir4\n│   └── file4.go\n├── dir5\n│   └── file5.go\n├── dir6\n│   └── file6.go\n├── dir7\n│   └── file7.go\n├── dir8\n│   └── file8.go\n├── dir9\n│   └── file9.go\n├── dir10\n│   └── file10.go\n├── dir11\n│   └── file11.go\n├── dir12\n│   └── file12.go\n├── dir13\n│   └── file13.go\n├── dir14\n│   └── file14.go\n├── dir15\n│   └── file15.go\n├── dir16\n│   └── file16.go\n├── dir17\n│   └── file17.go\n├── dir18\n│   └── file18.go\n├── dir19\n│   └── file19.go\n├── dir20\n│   └── file20.go\n├── dir21\n│   └── file21.go\n├── dir22\n│   └── file22.go\n├── dir23\n│   └── file23.go\n├── dir24\n│   └── file24.go\n├── dir25\n│   └── file25.go\n├── dir26\n│   └── file26.go\n├── dir27\n│   └── file27.go\n├── dir28\n│   └── file28.go\n├── dir29\n│   └── file29.go\n├── dir30\n│   └── file30.go\n├── dir31\n│   └── file31.go\n├── dir32\n│   └── file32.go\n├── dir33\n│   └── file33.go\n├── dir34\n│   └── file34.go\n├── dir35\n│   └── file35.go\n├── dir36\n│   └── file36.go\n├── dir37\n│   └── file37.go\n├── dir38\n│   └── file38.go\n├── dir39\n│   └── file39.go\n├── dir40\n│   └── file40.go\n├── dir41\n│   └── file41.go\n├── dir42\n│   └── file42.go\n├── dir43\n│   └── file43.go\n├── dir44\n│   └── file44.go\n├── dir45\n│   └── file45.go\n├── dir46\n│   └── file46.go\n├── dir47\n│   └── file47.go\n├── dir48\n│   └── file48.go\n├── dir49\n│   └── file49.go\n├── dir50\n│   └── file50.go\n├── dir51\n│   └── file51.go\n├── dir52\n│   └── file52.go\n├── dir53\n│   └── file53.go\n├── dir54\n│   └── file54.go\n├── dir55\n│   └── file55.go\n├── dir56\n│   └── file56.go\n├── dir57\n│   └── file57.go\n├── dir58\n│   └── file58.go\n├── dir59\n│   └── file59.go\n├── dir60\n│   └── file60.go\n├── dir61\n│   └── file61.go\n├── dir62\n│   └── file62.go\n├── dir63\n│   └── file63.go\n├── dir64\n│   └── file64.go\n├── dir65\n│   └── file65.go\n├── dir66\n│   └── file66.go\n├── dir67\n│   └── file67.go\n├── dir68\n│   └── file68.go\n├── dir69\n│   └── file69.go\n├── dir70\n│   └── file70.go\n├── dir71\n│   └── file71.go\n├── dir72\n│   └── file72.go\n├── dir73\n│   └── file73.go\n├── dir74\n│   └── file74.go\n├── dir75\n│   └── file75.go\n├── dir76\n│   └── file76.go\n├── dir77\n│   └── file77.go\n├── dir78\n│   └── file78.go\n├── dir79\n│   └── file79.go\n├── dir80\n│   └── file80.go\n├── dir81\n│   └── file81.go\n├── dir82\n│   └── file82.go\n├── dir83\n│   └── file83.go\n├── dir84\n│   └── file84.go\n├── dir85\n│   └── file85.go\n├── dir86\n│   └── file86.go\n├── dir87\n│   └── file87.go\n├── dir88\n│   └── file88.go\n├── dir89\n│   └── file89.go\n├── dir90\n│   └── file90.go\n├── dir91\n│   └── file91.go\n├── dir92\n│   └── file92.go\n├── dir93\n│   └── file93.go\n├── dir94\n│   └── file94.go\n├── dir95\n│   └── file95.go\n├── dir96\n│   └── file96.go\n├── dir97\n│   └── file97.go\n├── dir98\n│   └── file98.go\n├── dir99\n│   └── file99.go\n├── dir100\n│   └── file100.go\n├── dir101\n│   └── file101.go\n├── dir102\n│   └── file102.go\n├── dir103\n│   └── file103.go\n├── dir104\n│   └── file104.go\n├── dir105\n│   └── file105.go\n├── dir106\n│   └── file106.go\n├── dir107\n│   └── file107.go\n├── dir108\n│   └── file108.go\n├── dir109\n│   └── file109.go\n├── dir110\n│   └── file110.go\n├── dir111\n│   └── file111.go\n├── dir112\n│   └── file112.go\n├── dir113\n│   └── file113.go\n├── dir114\n│   └── file114.go\n├── dir115\n│   └── file115.go\n├── dir116\n│   └── file116.go\n├── dir117\n│   └── file117.go\n├── dir118\n│   └── file118.go\n├── dir119\n│   └── file119.go\n├── dir120\n│   └── file120.go\n├── dir121\n│   └── file121.go\n├── dir122\n│   └── file122.go\n├── dir123\n│   └── file123.go\n├── dir124\n│   └── file124.go\n├── dir125\n│   └── file125.go\n├── dir126\n│   └── file126.go\n├── dir127\n│   └── file127.go\n├── dir128\n│   └── file128.go\n├── dir129\n│   └── file129.go\n├── dir130\n│   └── file130.go\n├── dir131\n│   └── file131.go\n├── dir132\n│   └── file132.go\n├── dir133\n│   └── file133.go\n├── dir134\n│   └── file134.go\n├── dir135\n│   └── file135.go\n├── dir136\n│   └── file136.go\n├── dir137\n│   └── file137.go\n├── dir138\n│   └── file138.go\n├── dir139\n│   └── file139.go\n├── dir140\n│   └── file140.go\n├── dir141\n│   └── file141.go\n├── dir142\n│   └── file142.go\n├── dir143\n│   └── file143.go\n├── dir144\n│   └── file144.go\n├── dir145\n│   └── file145.go\n├── dir146\n│   └── file146.go\n├── dir147\n│   └── file147.go\n├── dir148\n│   └── file148.go\n├── dir149\n│   └── file149.go\n├── dir150\n│   └── file150.go\n├── dir151\n│   └── file151.go\n├── dir152\n│   └── file152.go\n├── dir153\n│   └── file153.go\n├── dir154\n│   └── file154.go\n├── dir155\n│   └── file155.go\n├── dir156\n│   └── file156.go\n├── dir157\n│   └── file157.go\n├── dir158\n│   └── file158.go\n├── dir159\n│   └── file159.go\n├── dir160\n│   └── file160.go\n├── dir161\n│   └── file161.go\n├── dir162\n│   └── file162.go\n├── dir163\n│   └── file163.go\n├── dir164\n│   └── file164.go\n├── dir165\n│   └── file165.go\n├── dir166\n│   └── file166.go\n├── dir167\n│   └── file167.go\n├── dir168\n│   └── file168.go\n├── dir169\n│   └── file169.go\n├── dir170\n│   └── file170.go\n├── dir171\n│   └── file171.go\n├── dir172\n│   └── file172.go\n├── dir173\n│   └── file173.go\n├── dir174\n│   └── file174.go\n├── dir175\n│   └── file175.go\n├── dir176\n│   └── file176.go\n├── dir177\n│   └── file177.go\n├── dir178\n│   └── file178.go\n├── dir179\n│   └── file179.go\n├── dir180\n│   └── file180.go\n├── dir181\n│   └── file181.go\n├── dir182\n│   └── file182.go\n├── dir183\n│   └── file183.go\n├── dir184\n│   └── file184.go\n├── dir185\n│   └── file185.go\n├── dir186\n│   └── file186.go\n├── dir187\n│   └── file187.go\n├── dir188\n│   └── file188.go\n├── dir189\n│   └── file189.go\n├── dir190\n│   └── file190.go\n├── dir191\n│   └── file191.go\n├── dir192\n│   └── file192.go\n├── dir193\n│   └── file193.go\n├── dir194\n│   └── file194.go\n├── dir195\n│   └── file195.go\n├── dir196\n│   └── file196.go\n├── dir197\n│   └── file197.go\n├── dir198\n│   └── file198.go\n├── dir199\n│   └── file199.go\n├── dir200\n│   └── file200.go\n├── dir201\n│   └── file201.go\n├── dir202\n│   └── file202.go\n├── dir203\n│   └── file203.go\n├── dir204\n│   └── file204.go\n├── dir205\n│   └── file205.go\n├── dir206\n│   └── file206.go\n├── dir207\n│   └── file207.go\n├── dir208\n│   └── file208.go\n├── dir209\n│   └── file209.go\n├── dir210\n│   └── file210.go\n├── dir211\n│   └── file211.go\n├── dir212\n│   └── file212.go\n├── dir213\n│   └── file213.go\n├── dir214\n│   └── file214.go\n├── dir215\n│   └── file215.go\n├── dir216\n│   └── file216.go\n├── dir217\n│   └── file217.go\n├── dir218\n│   └── file218.go\n├── dir219\n│   └── file219.go\n├── dir220\n│   └── file220.go\n├── dir221\n│   └── file221.go\n├── dir222\n│   └── file222.go\n├── dir223\n│   └── file223.go\n├── dir224\n│   └── file224.go\n├── dir225\n│   └── file225.go\n├── dir226\n│   └── file226.go\n├── dir227\n│   └── file227.go\n├── dir228\n│   └── file228.go\n├── dir229\n│   └── file229.go\n├── dir230\n│   └── file230.go\n├── dir231\n│   └── file231.go\n├── dir232\n│   └── file232.go\n├── dir233\n│   └── file233.go\n├── dir234\n│   └── file234.go\n├── dir235\n│   └── file235.go\n├── dir236\n│   └── file236.go\n├── dir237\n│   └── file237.go\n├── dir238\n│   └── file238.go\n├── dir239\n│   └── file239.go\n├── dir240\n│   └── file240.go\n├── dir241\n│   └── file241.go\n├── dir242\n│   └── file242.go\n├── dir243\n│   └── file243.go\n├── dir244\n│   └── file244.go\n├── dir245\n│   └── file245.go\n├── dir246\n│   └── file246.go\n├── dir247\n│   └── file247.go\n├── dir248\n│   └── file248.go\n├── dir249\n│   └── file249.go\n\n250 directories, 250 files\n",
+   "out": ".\n├── dir0\n│   └── file0.go\n├── dir1\n│   └── file1.go\n├── dir2\n│   └── file2.go\n├── dir3\n│   └── file3.go\n├── dir4\n│   └── file4.go\n├── dir5\n│   └── file5.go\n├── dir6\n│   └── file6.go\n├── dir7\n│   └── file7.go\n├── dir8\n│   └── file8.go\n├── dir9\n│   └── file9.go\n├── dir10\n│   └── file10.go\n├── dir11\n│   └── file11.go\n├── dir12\n│   └── file12.go\n├── dir13\n│   └── file13.go\n├── dir14\n│   └── file14.go\n├── dir15\n│   └── file15.go\n├── dir16\n│   └── file16.go\n├── dir17\n│   └── file17.go\n├── dir18\n│   └── file18.go\n├── dir19\n│   └── file19.go\n├── dir20\n│   └── file20.go\n├── dir21\n│   └── file21.go\n├── dir22\n│   └── file22.go\n├── dir23\n│   └── file23.go\n├── dir24\n│   └── file24.go\n├── dir25\n│   └── file25.go\n├── dir26\n│   └── file26.go\n├── dir27\n│   └── file27.go\n├── dir28\n│   └── file28.go\n├── dir29\n│   └── file29.go\n├── dir30\n│   └── file30.go\n├── dir31\n│   └── file31.go\n├── dir32\n│   └── file32.go\n├── dir33\n│   └── file33.go\n├── dir34\n│   └── file34.go\n├── dir35\n│   └── file35.go\n├── dir36\n│   └── file36.go\n├── dir37\n│   └── file37.go\n├── dir38\n│   └── file38.go\n├── dir39\n│   └── file39.go\n├── dir40\n│   └── file40.go\n├── dir41\n│   └── file41.go\n├── dir42\n│   └── file42.go\n├── dir43\n│   └── file43.go\n├── dir44\n│   └── file44.go\n├── dir45\n│   └── file45.go\n├── dir46\n│   └── file46.go\n├── dir47\n│   └── file47.go\n├── dir48\n│   └── file48.go\n├── dir49\n│   └── file49.go\n├── dir50\n│   └── file50.go\n├── dir51\n│   └── file51.go\n├── dir52\n│   └── file52.go\n├── dir53\n│   └── file53.go\n├── dir54\n│   └── file54.go\n├── dir55\n│   └── file55.go\n├── dir56\n│   └── file56.go\n├── dir57\n│   └── file57.go\n├── dir58\n│   └── file58.go\n├── dir59\n│   └── file59.go\n├── dir60\n│   └── file60.go\n├── dir61\n│   └── file61.go\n├── dir62\n│   └── file62.go\n├── dir63\n│   └── file63.go\n├── dir64\n│   └── file64.go\n├── dir65\n│   └── file65.go\n├── dir66\n│   └── file66.go\n├── dir67\n│   └── file67.go\n├── dir68\n│   └── file68.go\n├── dir69\n│   └── file69.go\n├── dir70\n│   └── file70.go\n├── dir71\n│   └── file71.go\n├── dir72\n│   └── file72.go\n├── dir73\n│   └── file73.go\n├── dir74\n│   └── file74.go\n├── dir75\n│   └── file75.go\n├── dir76\n│   └── file76.go\n├── dir77\n│   └── file77.go\n├── dir78\n│   └── file78.go\n├── dir79\n│   └── file79.go\n├── dir80\n│   └── file80.go\n├── dir81\n│   └── file81.go\n├── dir82\n│   └── file82.go\n├── dir83\n│   └── file83.go\n├── dir84\n│   └── file84.go\n├── dir85\n│   └── file85.go\n├── dir86\n│   └── file86.go\n├── dir87\n│   └── file87.go\n├── dir88\n│   └── file88.go\n├── dir89\n│   └── file89.go\n├── dir90\n│   └── file90.go\n├── dir91\n│   └── file91.go\n├── dir92\n│   └── file92.go\n├── dir93\n│   └── file93.go\n├── dir94\n│   └── file94.go\n├── dir95\n│   └── file95.go\n├── dir96\n│   └── file96.go\n├── dir97\n│   └── file97.go\n├── dir98\n│   └── file98.go\n├── dir99\n... +301 more lines"
+  },
+  {
+   "name": "ls",
+   "in": "total 120\ndrwxr-xr-x  1 user staff  0 Jan 1 12:00 dir0\n-rw-r--r--  1 user staff  1000 Jan 2 12:00 file1.js\n-rw-r--r--  1 user staff  2000 Jan 3 12:00 file2.md\n-rw-r--r--  1 user staff  3000 Jan 4 12:00 file3.txt\ndrwxr-xr-x  1 user staff  4000 Jan 5 12:00 dir4\n-rw-r--r--  1 user staff  5000 Jan 6 12:00 file5.rs\n-rw-r--r--  1 user staff  6000 Jan 7 12:00 file6.c\n-rw-r--r--  1 user staff  7000 Jan 8 12:00 file7.go\ndrwxr-xr-x  1 user staff  8000 Jan 9 12:00 dir8\n-rw-r--r--  1 user staff  9000 Jan 10 12:00 file9.md\n-rw-r--r--  1 user staff  10000 Jan 11 12:00 file10.txt\n-rw-r--r--  1 user staff  11000 Jan 12 12:00 file11.py\ndrwxr-xr-x  1 user staff  12000 Jan 13 12:00 dir12\n-rw-r--r--  1 user staff  13000 Jan 14 12:00 file13.c\n-rw-r--r--  1 user staff  14000 Jan 15 12:00 file14.go\n-rw-r--r--  1 user staff  15000 Jan 16 12:00 file15.js\ndrwxr-xr-x  1 user staff  16000 Jan 17 12:00 dir16\n-rw-r--r--  1 user staff  17000 Jan 18 12:00 file17.txt\n-rw-r--r--  1 user staff  18000 Jan 19 12:00 file18.py\n-rw-r--r--  1 user staff  19000 Jan 20 12:00 file19.rs\ndrwxr-xr-x  1 user staff  20000 Jan 21 12:00 dir20\n-rw-r--r--  1 user staff  21000 Jan 22 12:00 file21.go\n-rw-r--r--  1 user staff  22000 Jan 23 12:00 file22.js\n-rw-r--r--  1 user staff  23000 Jan 24 12:00 file23.md\ndrwxr-xr-x  1 user staff  24000 Jan 25 12:00 dir24\n-rw-r--r--  1 user staff  25000 Jan 26 12:00 file25.py\n-rw-r--r--  1 user staff  26000 Jan 27 12:00 file26.rs\n-rw-r--r--  1 user staff  27000 Jan 28 12:00 file27.c\ndrwxr-xr-x  1 user staff  28000 Jan 1 12:00 dir28\n-rw-r--r--  1 user staff  29000 Jan 2 12:00 file29.js\n-rw-r--r--  1 user staff  30000 Jan 3 12:00 file30.md\n-rw-r--r--  1 user staff  31000 Jan 4 12:00 file31.txt\ndrwxr-xr-x  1 user staff  32000 Jan 5 12:00 dir32\n-rw-r--r--  1 user staff  33000 Jan 6 12:00 file33.rs\n-rw-r--r--  1 user staff  34000 Jan 7 12:00 file34.c\n-rw-r--r--  1 user staff  35000 Jan 8 12:00 file35.go\ndrwxr-xr-x  1 user staff  36000 Jan 9 12:00 dir36\n-rw-r--r--  1 user staff  37000 Jan 10 12:00 file37.md\n-rw-r--r--  1 user staff  38000 Jan 11 12:00 file38.txt\n-rw-r--r--  1 user staff  39000 Jan 12 12:00 file39.py\ndrwxr-xr-x 1 user staff 0 Jan 1 12:00 node_modules",
+   "out": "dir0/\ndir4/\ndir8/\ndir12/\ndir16/\ndir20/\ndir24/\ndir28/\ndir32/\ndir36/\nfile1.js  1000B\nfile2.md  2.0K\nfile3.txt  2.9K\nfile5.rs  4.9K\nfile6.c  5.9K\nfile7.go  6.8K\nfile9.md  8.8K\nfile10.txt  9.8K\nfile11.py  10.7K\nfile13.c  12.7K\nfile14.go  13.7K\nfile15.js  14.6K\nfile17.txt  16.6K\nfile18.py  17.6K\nfile19.rs  18.6K\nfile21.go  20.5K\nfile22.js  21.5K\nfile23.md  22.5K\nfile25.py  24.4K\nfile26.rs  25.4K\nfile27.c  26.4K\nfile29.js  28.3K\nfile30.md  29.3K\nfile31.txt  30.3K\nfile33.rs  32.2K\nfile34.c  33.2K\nfile35.go  34.2K\nfile37.md  36.1K\nfile38.txt  37.1K\nfile39.py  38.1K\n\nSummary: 30 files, 10 dirs (5 .md, 5 .txt, 4 .js, 4 .rs, 4 .c, +2 more)"
+  },
+  {
+   "name": "search",
+   "in": "Result of search in '/repo' (total 60 files):\n- src/pkg0/file0.ts\n- src/pkg1/file1.ts\n- src/pkg2/file2.ts\n- src/pkg3/file3.ts\n- src/pkg4/file4.ts\n- src/pkg5/file5.ts\n- src/pkg6/file6.ts\n- src/pkg7/file7.ts\n- src/pkg8/file8.ts\n- src/pkg9/file9.ts\n- src/pkg10/file10.ts\n- src/pkg11/file11.ts\n- src/pkg12/file12.ts\n- src/pkg13/file13.ts\n- src/pkg14/file14.ts\n- src/pkg15/file15.ts\n- src/pkg16/file16.ts\n- src/pkg17/file17.ts\n- src/pkg18/file18.ts\n- src/pkg19/file19.ts\n- src/pkg20/file20.ts\n- src/pkg21/file21.ts\n- src/pkg22/file22.ts\n- src/pkg0/file23.ts\n- src/pkg1/file24.ts\n- src/pkg2/file25.ts\n- src/pkg3/file26.ts\n- src/pkg4/file27.ts\n- src/pkg5/file28.ts\n- src/pkg6/file29.ts\n- src/pkg7/file30.ts\n- src/pkg8/file31.ts\n- src/pkg9/file32.ts\n- src/pkg10/file33.ts\n- src/pkg11/file34.ts\n- src/pkg12/file35.ts\n- src/pkg13/file36.ts\n- src/pkg14/file37.ts\n- src/pkg15/file38.ts\n- src/pkg16/file39.ts\n- src/pkg17/file40.ts\n- src/pkg18/file41.ts\n- src/pkg19/file42.ts\n- src/pkg20/file43.ts\n- src/pkg21/file44.ts\n- src/pkg22/file45.ts\n- src/pkg0/file46.ts\n- src/pkg1/file47.ts\n- src/pkg2/file48.ts\n- src/pkg3/file49.ts\n- src/pkg4/file50.ts\n- src/pkg5/file51.ts\n- src/pkg6/file52.ts\n- src/pkg7/file53.ts\n- src/pkg8/file54.ts\n- src/pkg9/file55.ts\n- src/pkg10/file56.ts\n- src/pkg11/file57.ts\n- src/pkg12/file58.ts\n- src/pkg13/file59.ts",
+   "out": "Result of search in '/repo' (total 60 files):\n60 files in 23 dirs:\n\nsrc/pkg0/ (3):\n  file0.ts\n  file23.ts\n  file46.ts\n\nsrc/pkg1/ (3):\n  file1.ts\n  file24.ts\n  file47.ts\n\nsrc/pkg10/ (3):\n  file10.ts\n  file33.ts\n  file56.ts\n\nsrc/pkg11/ (3):\n  file11.ts\n  file34.ts\n  file57.ts\n\nsrc/pkg12/ (3):\n  file12.ts\n  file35.ts\n  file58.ts\n\nsrc/pkg13/ (3):\n  file13.ts\n  file36.ts\n  file59.ts\n\nsrc/pkg14/ (2):\n  file14.ts\n  file37.ts\n\nsrc/pkg15/ (2):\n  file15.ts\n  file38.ts\n\nsrc/pkg16/ (2):\n  file16.ts\n  file39.ts\n\nsrc/pkg17/ (2):\n  file17.ts\n  file40.ts\n\nsrc/pkg18/ (2):\n  file18.ts\n  file41.ts\n\nsrc/pkg19/ (2):\n  file19.ts\n  file42.ts\n\nsrc/pkg2/ (3):\n  file2.ts\n  file25.ts\n  file48.ts\n\nsrc/pkg20/ (2):\n  file20.ts\n  file43.ts\n\nsrc/pkg21/ (2):\n  file21.ts\n  file44.ts\n\nsrc/pkg22/ (2):\n  file22.ts\n  file45.ts\n\nsrc/pkg3/ (3):\n  file3.ts\n  file26.ts\n  file49.ts\n\nsrc/pkg4/ (3):\n  file4.ts\n  file27.ts\n  file50.ts\n\nsrc/pkg5/ (3):\n  file5.ts\n  file28.ts\n  file51.ts\n\nsrc/pkg6/ (3):\n  file6.ts\n  file29.ts\n  file52.ts\n\n+3 more dirs"
+  },
+  {
+   "name": "dedup",
+   "in": "same repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 7\ndistinct 8\ndistinct 9\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 17\ndistinct 18\ndistinct 19\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 27\ndistinct 28\ndistinct 29\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 37\ndistinct 38\ndistinct 39\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 47\ndistinct 48\ndistinct 49\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 57\ndistinct 58\ndistinct 59\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 67\ndistinct 68\ndistinct 69\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 77\ndistinct 78\ndistinct 79\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 87\ndistinct 88\ndistinct 89\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 97\ndistinct 98\ndistinct 99\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 107\ndistinct 108\ndistinct 109\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 117\ndistinct 118\ndistinct 119\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 127\ndistinct 128\ndistinct 129\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 137\ndistinct 138\ndistinct 139\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 147\ndistinct 148\ndistinct 149\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 157\ndistinct 158\ndistinct 159\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 167\ndistinct 168\ndistinct 169\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 177\ndistinct 178\ndistinct 179\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 187\ndistinct 188\ndistinct 189\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 197\ndistinct 198\ndistinct 199\n\n\n\nend",
+   "out": "same repeated log line\n  ... (6 duplicate lines)\ndistinct 7\ndistinct 8\ndistinct 9\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 17\ndistinct 18\ndistinct 19\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 27\ndistinct 28\ndistinct 29\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 37\ndistinct 38\ndistinct 39\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 47\ndistinct 48\ndistinct 49\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 57\ndistinct 58\ndistinct 59\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 67\ndistinct 68\ndistinct 69\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 77\ndistinct 78\ndistinct 79\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 87\ndistinct 88\ndistinct 89\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 97\ndistinct 98\ndistinct 99\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 107\ndistinct 108\ndistinct 109\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 117\ndistinct 118\ndistinct 119\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 127\ndistinct 128\ndistinct 129\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 137\ndistinct 138\ndistinct 139\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 147\ndistinct 148\ndistinct 149\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 157\ndistinct 158\ndistinct 159\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 167\ndistinct 168\ndistinct 169\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 177\ndistinct 178\ndistinct 179\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 187\ndistinct 188\ndistinct 189\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 197\ndistinct 198\ndistinct 199\n\nend"
+  },
+  {
+   "name": "trunc",
+   "in": "x0\nx1\nx2\nx3\nx4\nx5\nx6\nx7\nx8\nx9\nx10\nx11\nx12\nx13\nx14\nx15\nx16\nx17\nx18\nx19\nx20\nx21\nx22\nx23\nx24\nx25\nx26\nx27\nx28\nx29\nx30\nx31\nx32\nx33\nx34\nx35\nx36\nx37\nx38\nx39\nx40\nx41\nx42\nx43\nx44\nx45\nx46\nx47\nx48\nx49\nx50\nx51\nx52\nx53\nx54\nx55\nx56\nx57\nx58\nx59\nx60\nx61\nx62\nx63\nx64\nx65\nx66\nx67\nx68\nx69\nx70\nx71\nx72\nx73\nx74\nx75\nx76\nx77\nx78\nx79\nx80\nx81\nx82\nx83\nx84\nx85\nx86\nx87\nx88\nx89\nx90\nx91\nx92\nx93\nx94\nx95\nx96\nx97\nx98\nx99\nx100\nx101\nx102\nx103\nx104\nx105\nx106\nx107\nx108\nx109\nx110\nx111\nx112\nx113\nx114\nx115\nx116\nx117\nx118\nx119\nx120\nx121\nx122\nx123\nx124\nx125\nx126\nx127\nx128\nx129\nx130\nx131\nx132\nx133\nx134\nx135\nx136\nx137\nx138\nx139\nx140\nx141\nx142\nx143\nx144\nx145\nx146\nx147\nx148\nx149\nx150\nx151\nx152\nx153\nx154\nx155\nx156\nx157\nx158\nx159\nx160\nx161\nx162\nx163\nx164\nx165\nx166\nx167\nx168\nx169\nx170\nx171\nx172\nx173\nx174\nx175\nx176\nx177\nx178\nx179\nx180\nx181\nx182\nx183\nx184\nx185\nx186\nx187\nx188\nx189\nx190\nx191\nx192\nx193\nx194\nx195\nx196\nx197\nx198\nx199\nx200\nx201\nx202\nx203\nx204\nx205\nx206\nx207\nx208\nx209\nx210\nx211\nx212\nx213\nx214\nx215\nx216\nx217\nx218\nx219\nx220\nx221\nx222\nx223\nx224\nx225\nx226\nx227\nx228\nx229\nx230\nx231\nx232\nx233\nx234\nx235\nx236\nx237\nx238\nx239\nx240\nx241\nx242\nx243\nx244\nx245\nx246\nx247\nx248\nx249\nx250\nx251\nx252\nx253\nx254\nx255\nx256\nx257\nx258\nx259\nx260\nx261\nx262\nx263\nx264\nx265\nx266\nx267\nx268\nx269\nx270\nx271\nx272\nx273\nx274\nx275\nx276\nx277\nx278\nx279\nx280\nx281\nx282\nx283\nx284\nx285\nx286\nx287\nx288\nx289\nx290\nx291\nx292\nx293\nx294\nx295\nx296\nx297\nx298\nx299\nx300\nx301\nx302\nx303\nx304\nx305\nx306\nx307\nx308\nx309\nx310\nx311\nx312\nx313\nx314\nx315\nx316\nx317\nx318\nx319\nx320\nx321\nx322\nx323\nx324\nx325\nx326\nx327\nx328\nx329\nx330\nx331\nx332\nx333\nx334\nx335\nx336\nx337\nx338\nx339\nx340\nx341\nx342\nx343\nx344\nx345\nx346\nx347\nx348\nx349\nx350\nx351\nx352\nx353\nx354\nx355\nx356\nx357\nx358\nx359\nx360\nx361\nx362\nx363\nx364\nx365\nx366\nx367\nx368\nx369\nx370\nx371\nx372\nx373\nx374\nx375\nx376\nx377\nx378\nx379\nx380\nx381\nx382\nx383\nx384\nx385\nx386\nx387\nx388\nx389\nx390\nx391\nx392\nx393\nx394\nx395\nx396\nx397\nx398\nx399",
+   "out": "x0\nx1\nx2\nx3\nx4\nx5\nx6\nx7\nx8\nx9\nx10\nx11\nx12\nx13\nx14\nx15\nx16\nx17\nx18\nx19\nx20\nx21\nx22\nx23\nx24\nx25\nx26\nx27\nx28\nx29\nx30\nx31\nx32\nx33\nx34\nx35\nx36\nx37\nx38\nx39\nx40\nx41\nx42\nx43\nx44\nx45\nx46\nx47\nx48\nx49\nx50\nx51\nx52\nx53\nx54\nx55\nx56\nx57\nx58\nx59\nx60\nx61\nx62\nx63\nx64\nx65\nx66\nx67\nx68\nx69\nx70\nx71\nx72\nx73\nx74\nx75\nx76\nx77\nx78\nx79\nx80\nx81\nx82\nx83\nx84\nx85\nx86\nx87\nx88\nx89\nx90\nx91\nx92\nx93\nx94\nx95\nx96\nx97\nx98\nx99\nx100\nx101\nx102\nx103\nx104\nx105\nx106\nx107\nx108\nx109\nx110\nx111\nx112\nx113\nx114\nx115\nx116\nx117\nx118\nx119\nx120\nx121\nx122\nx123\nx124\nx125\nx126\nx127\nx128\nx129\nx130\nx131\nx132\nx133\nx134\nx135\nx136\nx137\nx138\nx139\nx140\nx141\nx142\nx143\nx144\nx145\nx146\nx147\nx148\nx149\nx150\nx151\nx152\nx153\nx154\nx155\nx156\nx157\nx158\nx159\nx160\nx161\nx162\nx163\nx164\nx165\nx166\nx167\nx168\nx169\nx170\nx171\nx172\nx173\nx174\nx175\nx176\nx177\nx178\nx179\nx180\nx181\nx182\nx183\nx184\nx185\nx186\nx187\nx188\nx189\nx190\nx191\nx192\nx193\nx194\nx195\nx196\nx197\nx198\nx199\nx200\nx201\nx202\nx203\nx204\nx205\nx206\nx207\nx208\nx209\nx210\nx211\nx212\nx213\nx214\nx215\nx216\nx217\nx218\nx219\nx220\nx221\nx222\nx223\nx224\nx225\nx226\nx227\nx228\nx229\nx230\nx231\nx232\nx233\nx234\nx235\nx236\nx237\nx238\nx239\nx240\nx241\nx242\nx243\nx244\nx245\nx246\nx247\nx248\nx249\nx250\nx251\nx252\nx253\nx254\nx255\nx256\nx257\nx258\nx259\nx260\nx261\nx262\nx263\nx264\nx265\nx266\nx267\nx268\nx269\nx270\nx271\nx272\nx273\nx274\nx275\nx276\nx277\nx278\nx279\nx280\nx281\nx282\nx283\nx284\nx285\nx286\nx287\nx288\nx289\nx290\nx291\nx292\nx293\nx294\nx295\nx296\nx297\nx298\nx299\nx300\nx301\nx302\nx303\nx304\nx305\nx306\nx307\nx308\nx309\nx310\nx311\nx312\nx313\nx314\nx315\nx316\nx317\nx318\nx319\nx320\nx321\nx322\nx323\nx324\nx325\nx326\nx327\nx328\nx329\nx330\nx331\nx332\nx333\nx334\nx335\nx336\nx337\nx338\nx339\nx340\nx341\nx342\nx343\nx344\nx345\nx346\nx347\nx348\nx349\nx350\nx351\nx352\nx353\nx354\nx355\nx356\nx357\nx358\nx359\nx360\nx361\nx362\nx363\nx364\nx365\nx366\nx367\nx368\nx369\nx370\nx371\nx372\nx373\nx374\nx375\nx376\nx377\nx378\nx379\nx380\nx381\nx382\nx383\nx384\nx385\nx386\nx387\nx388\nx389\nx390\nx391\nx392\nx393\nx394\nx395\nx396\nx397\nx398\nx399"
+  },
+  {
+   "name": "short",
+   "in": "too short",
+   "out": "too short"
+  },
+  {
+   "name": "plain",
+   "in": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word ",
+   "out": "word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word word "
+  },
+  {
+   "name": "rtkShapes",
+   "body": {
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "a",
+        "content": "src/file0.go:1:    match here 0\nsrc/file1.go:2:    match here 1\nsrc/file2.go:3:    match here 2\nsrc/file3.go:4:    match here 3\nsrc/file0.go:5:    match here 4\nsrc/file1.go:6:    match here 5\nsrc/file2.go:7:    match here 6\nsrc/file3.go:8:    match here 7\nsrc/file0.go:9:    match here 8\nsrc/file1.go:10:    match here 9\nsrc/file2.go:11:    match here 10\nsrc/file3.go:12:    match here 11\nsrc/file0.go:13:    match here 12\nsrc/file1.go:14:    match here 13\nsrc/file2.go:15:    match here 14\nsrc/file3.go:16:    match here 15\nsrc/file0.go:17:    match here 16\nsrc/file1.go:18:    match here 17\nsrc/file2.go:19:    match here 18\nsrc/file3.go:20:    match here 19\nsrc/file0.go:21:    match here 20\nsrc/file1.go:22:    match here 21\nsrc/file2.go:23:    match here 22\nsrc/file3.go:24:    match here 23\nsrc/file0.go:25:    match here 24\nsrc/file1.go:26:    match here 25\nsrc/file2.go:27:    match here 26\nsrc/file3.go:28:    match here 27\nsrc/file0.go:29:    match here 28\nsrc/file1.go:30:    match here 29\nsrc/file2.go:31:    match here 30\nsrc/file3.go:32:    match here 31\nsrc/file0.go:33:    match here 32\nsrc/file1.go:34:    match here 33\nsrc/file2.go:35:    match here 34\nsrc/file3.go:36:    match here 35\nsrc/file0.go:37:    match here 36\nsrc/file1.go:38:    match here 37\nsrc/file2.go:39:    match here 38\nsrc/file3.go:40:    match here 39\nsrc/file0.go:41:    match here 40\nsrc/file1.go:42:    match here 41\nsrc/file2.go:43:    match here 42\nsrc/file3.go:44:    match here 43\nsrc/file0.go:45:    match here 44\nsrc/file1.go:46:    match here 45\nsrc/file2.go:47:    match here 46\nsrc/file3.go:48:    match here 47\nsrc/file0.go:49:    match here 48\nsrc/file1.go:50:    match here 49\nsrc/file2.go:51:    match here 50\nsrc/file3.go:52:    match here 51\nsrc/file0.go:53:    match here 52\nsrc/file1.go:54:    match here 53\nsrc/file2.go:55:    match here 54\nsrc/file3.go:56:    match here 55\nsrc/file0.go:57:    match here 56\nsrc/file1.go:58:    match here 57\nsrc/file2.go:59:    match here 58\nsrc/file3.go:60:    match here 59"
+       },
+       {
+        "type": "tool_result",
+        "is_error": true,
+        "content": "src/file0.go:1:    match here 0\nsrc/file1.go:2:    match here 1\nsrc/file2.go:3:    match here 2\nsrc/file3.go:4:    match here 3\nsrc/file0.go:5:    match here 4\nsrc/file1.go:6:    match here 5\nsrc/file2.go:7:    match here 6\nsrc/file3.go:8:    match here 7\nsrc/file0.go:9:    match here 8\nsrc/file1.go:10:    match here 9\nsrc/file2.go:11:    match here 10\nsrc/file3.go:12:    match here 11\nsrc/file0.go:13:    match here 12\nsrc/file1.go:14:    match here 13\nsrc/file2.go:15:    match here 14\nsrc/file3.go:16:    match here 15\nsrc/file0.go:17:    match here 16\nsrc/file1.go:18:    match here 17\nsrc/file2.go:19:    match here 18\nsrc/file3.go:20:    match here 19\nsrc/file0.go:21:    match here 20\nsrc/file1.go:22:    match here 21\nsrc/file2.go:23:    match here 22\nsrc/file3.go:24:    match here 23\nsrc/file0.go:25:    match here 24\nsrc/file1.go:26:    match here 25\nsrc/file2.go:27:    match here 26\nsrc/file3.go:28:    match here 27\nsrc/file0.go:29:    match here 28\nsrc/file1.go:30:    match here 29\nsrc/file2.go:31:    match here 30\nsrc/file3.go:32:    match here 31\nsrc/file0.go:33:    match here 32\nsrc/file1.go:34:    match here 33\nsrc/file2.go:35:    match here 34\nsrc/file3.go:36:    match here 35\nsrc/file0.go:37:    match here 36\nsrc/file1.go:38:    match here 37\nsrc/file2.go:39:    match here 38\nsrc/file3.go:40:    match here 39\nsrc/file0.go:41:    match here 40\nsrc/file1.go:42:    match here 41\nsrc/file2.go:43:    match here 42\nsrc/file3.go:44:    match here 43\nsrc/file0.go:45:    match here 44\nsrc/file1.go:46:    match here 45\nsrc/file2.go:47:    match here 46\nsrc/file3.go:48:    match here 47\nsrc/file0.go:49:    match here 48\nsrc/file1.go:50:    match here 49\nsrc/file2.go:51:    match here 50\nsrc/file3.go:52:    match here 51\nsrc/file0.go:53:    match here 52\nsrc/file1.go:54:    match here 53\nsrc/file2.go:55:    match here 54\nsrc/file3.go:56:    match here 55\nsrc/file0.go:57:    match here 56\nsrc/file1.go:58:    match here 57\nsrc/file2.go:59:    match here 58\nsrc/file3.go:60:    match here 59"
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "content": [
+         {
+          "type": "text",
+          "text": "./dir0/sub/file0.txt\n./dir1/sub/file1.txt\n./dir2/sub/file2.txt\n./dir3/sub/file3.txt\n./dir4/sub/file4.txt\n./dir5/sub/file5.txt\n./dir6/sub/file6.txt\n./dir7/sub/file7.txt\n./dir8/sub/file8.txt\n./dir9/sub/file9.txt\n./dir10/sub/file10.txt\n./dir11/sub/file11.txt\n./dir12/sub/file12.txt\n./dir13/sub/file13.txt\n./dir14/sub/file14.txt\n./dir15/sub/file15.txt\n./dir16/sub/file16.txt\n./dir17/sub/file17.txt\n./dir18/sub/file18.txt\n./dir19/sub/file19.txt\n./dir20/sub/file20.txt\n./dir21/sub/file21.txt\n./dir22/sub/file22.txt\n./dir23/sub/file23.txt\n./dir24/sub/file24.txt\n./dir0/sub/file25.txt\n./dir1/sub/file26.txt\n./dir2/sub/file27.txt\n./dir3/sub/file28.txt\n./dir4/sub/file29.txt\n./dir5/sub/file30.txt\n./dir6/sub/file31.txt\n./dir7/sub/file32.txt\n./dir8/sub/file33.txt\n./dir9/sub/file34.txt\n./dir10/sub/file35.txt\n./dir11/sub/file36.txt\n./dir12/sub/file37.txt\n./dir13/sub/file38.txt\n./dir14/sub/file39.txt\n./dir15/sub/file40.txt\n./dir16/sub/file41.txt\n./dir17/sub/file42.txt\n./dir18/sub/file43.txt\n./dir19/sub/file44.txt\n./dir20/sub/file45.txt\n./dir21/sub/file46.txt\n./dir22/sub/file47.txt\n./dir23/sub/file48.txt\n./dir24/sub/file49.txt\n./dir0/sub/file50.txt\n./dir1/sub/file51.txt\n./dir2/sub/file52.txt\n./dir3/sub/file53.txt\n./dir4/sub/file54.txt\n./dir5/sub/file55.txt\n./dir6/sub/file56.txt\n./dir7/sub/file57.txt\n./dir8/sub/file58.txt\n./dir9/sub/file59.txt\n./dir10/sub/file60.txt\n./dir11/sub/file61.txt\n./dir12/sub/file62.txt\n./dir13/sub/file63.txt\n./dir14/sub/file64.txt\n./dir15/sub/file65.txt\n./dir16/sub/file66.txt\n./dir17/sub/file67.txt\n./dir18/sub/file68.txt\n./dir19/sub/file69.txt\n./dir20/sub/file70.txt\n./dir21/sub/file71.txt\n./dir22/sub/file72.txt\n./dir23/sub/file73.txt\n./dir24/sub/file74.txt\n./dir0/sub/file75.txt\n./dir1/sub/file76.txt\n./dir2/sub/file77.txt\n./dir3/sub/file78.txt\n./dir4/sub/file79.txt"
+         },
+         {
+          "type": "image"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "role": "tool",
+      "content": [
+       {
+        "type": "text",
+        "text": "x0\nx1\nx2\nx3\nx4\nx5\nx6\nx7\nx8\nx9\nx10\nx11\nx12\nx13\nx14\nx15\nx16\nx17\nx18\nx19\nx20\nx21\nx22\nx23\nx24\nx25\nx26\nx27\nx28\nx29\nx30\nx31\nx32\nx33\nx34\nx35\nx36\nx37\nx38\nx39\nx40\nx41\nx42\nx43\nx44\nx45\nx46\nx47\nx48\nx49\nx50\nx51\nx52\nx53\nx54\nx55\nx56\nx57\nx58\nx59\nx60\nx61\nx62\nx63\nx64\nx65\nx66\nx67\nx68\nx69\nx70\nx71\nx72\nx73\nx74\nx75\nx76\nx77\nx78\nx79\nx80\nx81\nx82\nx83\nx84\nx85\nx86\nx87\nx88\nx89\nx90\nx91\nx92\nx93\nx94\nx95\nx96\nx97\nx98\nx99\nx100\nx101\nx102\nx103\nx104\nx105\nx106\nx107\nx108\nx109\nx110\nx111\nx112\nx113\nx114\nx115\nx116\nx117\nx118\nx119\nx120\nx121\nx122\nx123\nx124\nx125\nx126\nx127\nx128\nx129\nx130\nx131\nx132\nx133\nx134\nx135\nx136\nx137\nx138\nx139\nx140\nx141\nx142\nx143\nx144\nx145\nx146\nx147\nx148\nx149\nx150\nx151\nx152\nx153\nx154\nx155\nx156\nx157\nx158\nx159\nx160\nx161\nx162\nx163\nx164\nx165\nx166\nx167\nx168\nx169\nx170\nx171\nx172\nx173\nx174\nx175\nx176\nx177\nx178\nx179\nx180\nx181\nx182\nx183\nx184\nx185\nx186\nx187\nx188\nx189\nx190\nx191\nx192\nx193\nx194\nx195\nx196\nx197\nx198\nx199\nx200\nx201\nx202\nx203\nx204\nx205\nx206\nx207\nx208\nx209\nx210\nx211\nx212\nx213\nx214\nx215\nx216\nx217\nx218\nx219\nx220\nx221\nx222\nx223\nx224\nx225\nx226\nx227\nx228\nx229\nx230\nx231\nx232\nx233\nx234\nx235\nx236\nx237\nx238\nx239\nx240\nx241\nx242\nx243\nx244\nx245\nx246\nx247\nx248\nx249\nx250\nx251\nx252\nx253\nx254\nx255\nx256\nx257\nx258\nx259\nx260\nx261\nx262\nx263\nx264\nx265\nx266\nx267\nx268\nx269\nx270\nx271\nx272\nx273\nx274\nx275\nx276\nx277\nx278\nx279\nx280\nx281\nx282\nx283\nx284\nx285\nx286\nx287\nx288\nx289\nx290\nx291\nx292\nx293\nx294\nx295\nx296\nx297\nx298\nx299\nx300\nx301\nx302\nx303\nx304\nx305\nx306\nx307\nx308\nx309\nx310\nx311\nx312\nx313\nx314\nx315\nx316\nx317\nx318\nx319\nx320\nx321\nx322\nx323\nx324\nx325\nx326\nx327\nx328\nx329\nx330\nx331\nx332\nx333\nx334\nx335\nx336\nx337\nx338\nx339\nx340\nx341\nx342\nx343\nx344\nx345\nx346\nx347\nx348\nx349\nx350\nx351\nx352\nx353\nx354\nx355\nx356\nx357\nx358\nx359\nx360\nx361\nx362\nx363\nx364\nx365\nx366\nx367\nx368\nx369\nx370\nx371\nx372\nx373\nx374\nx375\nx376\nx377\nx378\nx379\nx380\nx381\nx382\nx383\nx384\nx385\nx386\nx387\nx388\nx389\nx390\nx391\nx392\nx393\nx394\nx395\nx396\nx397\nx398\nx399"
+       }
+      ]
+     }
+    ]
+   },
+   "want": {
+    "messages": [
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "tool_use_id": "a",
+        "content": "60 matches in 4F:\n\n[file] src/file0.go (15):\n     1: match here 0\n     5: match here 4\n     9: match here 8\n    13: match here 12\n    17: match here 16\n    21: match here 20\n    25: match here 24\n    29: match here 28\n    33: match here 32\n    37: match here 36\n  +5\n\n[file] src/file1.go (15):\n     2: match here 1\n     6: match here 5\n    10: match here 9\n    14: match here 13\n    18: match here 17\n    22: match here 21\n    26: match here 25\n    30: match here 29\n    34: match here 33\n    38: match here 37\n  +5\n\n[file] src/file2.go (15):\n     3: match here 2\n     7: match here 6\n    11: match here 10\n    15: match here 14\n    19: match here 18\n    23: match here 22\n    27: match here 26\n    31: match here 30\n    35: match here 34\n    39: match here 38\n  +5\n\n[file] src/file3.go (15):\n     4: match here 3\n     8: match here 7\n    12: match here 11\n    16: match here 15\n    20: match here 19\n    24: match here 23\n    28: match here 27\n    32: match here 31\n    36: match here 35\n    40: match here 39\n  +5\n\n"
+       },
+       {
+        "type": "tool_result",
+        "is_error": true,
+        "content": "src/file0.go:1:    match here 0\nsrc/file1.go:2:    match here 1\nsrc/file2.go:3:    match here 2\nsrc/file3.go:4:    match here 3\nsrc/file0.go:5:    match here 4\nsrc/file1.go:6:    match here 5\nsrc/file2.go:7:    match here 6\nsrc/file3.go:8:    match here 7\nsrc/file0.go:9:    match here 8\nsrc/file1.go:10:    match here 9\nsrc/file2.go:11:    match here 10\nsrc/file3.go:12:    match here 11\nsrc/file0.go:13:    match here 12\nsrc/file1.go:14:    match here 13\nsrc/file2.go:15:    match here 14\nsrc/file3.go:16:    match here 15\nsrc/file0.go:17:    match here 16\nsrc/file1.go:18:    match here 17\nsrc/file2.go:19:    match here 18\nsrc/file3.go:20:    match here 19\nsrc/file0.go:21:    match here 20\nsrc/file1.go:22:    match here 21\nsrc/file2.go:23:    match here 22\nsrc/file3.go:24:    match here 23\nsrc/file0.go:25:    match here 24\nsrc/file1.go:26:    match here 25\nsrc/file2.go:27:    match here 26\nsrc/file3.go:28:    match here 27\nsrc/file0.go:29:    match here 28\nsrc/file1.go:30:    match here 29\nsrc/file2.go:31:    match here 30\nsrc/file3.go:32:    match here 31\nsrc/file0.go:33:    match here 32\nsrc/file1.go:34:    match here 33\nsrc/file2.go:35:    match here 34\nsrc/file3.go:36:    match here 35\nsrc/file0.go:37:    match here 36\nsrc/file1.go:38:    match here 37\nsrc/file2.go:39:    match here 38\nsrc/file3.go:40:    match here 39\nsrc/file0.go:41:    match here 40\nsrc/file1.go:42:    match here 41\nsrc/file2.go:43:    match here 42\nsrc/file3.go:44:    match here 43\nsrc/file0.go:45:    match here 44\nsrc/file1.go:46:    match here 45\nsrc/file2.go:47:    match here 46\nsrc/file3.go:48:    match here 47\nsrc/file0.go:49:    match here 48\nsrc/file1.go:50:    match here 49\nsrc/file2.go:51:    match here 50\nsrc/file3.go:52:    match here 51\nsrc/file0.go:53:    match here 52\nsrc/file1.go:54:    match here 53\nsrc/file2.go:55:    match here 54\nsrc/file3.go:56:    match here 55\nsrc/file0.go:57:    match here 56\nsrc/file1.go:58:    match here 57\nsrc/file2.go:59:    match here 58\nsrc/file3.go:60:    match here 59"
+       }
+      ]
+     },
+     {
+      "role": "user",
+      "content": [
+       {
+        "type": "tool_result",
+        "content": [
+         {
+          "type": "text",
+          "text": "80 files in 25 dirs:\n\n./dir0/sub/  (4)\n  file0.txt\n  file25.txt\n  file50.txt\n  file75.txt\n./dir1/sub/  (4)\n  file1.txt\n  file26.txt\n  file51.txt\n  file76.txt\n./dir10/sub/  (3)\n  file10.txt\n  file35.txt\n  file60.txt\n./dir11/sub/  (3)\n  file11.txt\n  file36.txt\n  file61.txt\n./dir12/sub/  (3)\n  file12.txt\n  file37.txt\n  file62.txt\n./dir13/sub/  (3)\n  file13.txt\n  file38.txt\n  file63.txt\n./dir14/sub/  (3)\n  file14.txt\n  file39.txt\n  file64.txt\n./dir15/sub/  (3)\n  file15.txt\n  file40.txt\n  file65.txt\n./dir16/sub/  (3)\n  file16.txt\n  file41.txt\n  file66.txt\n./dir17/sub/  (3)\n  file17.txt\n  file42.txt\n  file67.txt\n./dir18/sub/  (3)\n  file18.txt\n  file43.txt\n  file68.txt\n./dir19/sub/  (3)\n  file19.txt\n  file44.txt\n  file69.txt\n./dir2/sub/  (4)\n  file2.txt\n  file27.txt\n  file52.txt\n  file77.txt\n./dir20/sub/  (3)\n  file20.txt\n  file45.txt\n  file70.txt\n./dir21/sub/  (3)\n  file21.txt\n  file46.txt\n  file71.txt\n./dir22/sub/  (3)\n  file22.txt\n  file47.txt\n  file72.txt\n./dir23/sub/  (3)\n  file23.txt\n  file48.txt\n  file73.txt\n./dir24/sub/  (3)\n  file24.txt\n  file49.txt\n  file74.txt\n./dir3/sub/  (4)\n  file3.txt\n  file28.txt\n  file53.txt\n  file78.txt\n./dir4/sub/  (4)\n  file4.txt\n  file29.txt\n  file54.txt\n  file79.txt\n\n+5 more dirs\n"
+         },
+         {
+          "type": "image"
+         }
+        ]
+       }
+      ]
+     },
+     {
+      "role": "tool",
+      "content": [
+       {
+        "type": "text",
+        "text": "x0\nx1\nx2\nx3\nx4\nx5\nx6\nx7\nx8\nx9\nx10\nx11\nx12\nx13\nx14\nx15\nx16\nx17\nx18\nx19\nx20\nx21\nx22\nx23\nx24\nx25\nx26\nx27\nx28\nx29\nx30\nx31\nx32\nx33\nx34\nx35\nx36\nx37\nx38\nx39\nx40\nx41\nx42\nx43\nx44\nx45\nx46\nx47\nx48\nx49\nx50\nx51\nx52\nx53\nx54\nx55\nx56\nx57\nx58\nx59\nx60\nx61\nx62\nx63\nx64\nx65\nx66\nx67\nx68\nx69\nx70\nx71\nx72\nx73\nx74\nx75\nx76\nx77\nx78\nx79\nx80\nx81\nx82\nx83\nx84\nx85\nx86\nx87\nx88\nx89\nx90\nx91\nx92\nx93\nx94\nx95\nx96\nx97\nx98\nx99\nx100\nx101\nx102\nx103\nx104\nx105\nx106\nx107\nx108\nx109\nx110\nx111\nx112\nx113\nx114\nx115\nx116\nx117\nx118\nx119\nx120\nx121\nx122\nx123\nx124\nx125\nx126\nx127\nx128\nx129\nx130\nx131\nx132\nx133\nx134\nx135\nx136\nx137\nx138\nx139\nx140\nx141\nx142\nx143\nx144\nx145\nx146\nx147\nx148\nx149\nx150\nx151\nx152\nx153\nx154\nx155\nx156\nx157\nx158\nx159\nx160\nx161\nx162\nx163\nx164\nx165\nx166\nx167\nx168\nx169\nx170\nx171\nx172\nx173\nx174\nx175\nx176\nx177\nx178\nx179\nx180\nx181\nx182\nx183\nx184\nx185\nx186\nx187\nx188\nx189\nx190\nx191\nx192\nx193\nx194\nx195\nx196\nx197\nx198\nx199\nx200\nx201\nx202\nx203\nx204\nx205\nx206\nx207\nx208\nx209\nx210\nx211\nx212\nx213\nx214\nx215\nx216\nx217\nx218\nx219\nx220\nx221\nx222\nx223\nx224\nx225\nx226\nx227\nx228\nx229\nx230\nx231\nx232\nx233\nx234\nx235\nx236\nx237\nx238\nx239\nx240\nx241\nx242\nx243\nx244\nx245\nx246\nx247\nx248\nx249\nx250\nx251\nx252\nx253\nx254\nx255\nx256\nx257\nx258\nx259\nx260\nx261\nx262\nx263\nx264\nx265\nx266\nx267\nx268\nx269\nx270\nx271\nx272\nx273\nx274\nx275\nx276\nx277\nx278\nx279\nx280\nx281\nx282\nx283\nx284\nx285\nx286\nx287\nx288\nx289\nx290\nx291\nx292\nx293\nx294\nx295\nx296\nx297\nx298\nx299\nx300\nx301\nx302\nx303\nx304\nx305\nx306\nx307\nx308\nx309\nx310\nx311\nx312\nx313\nx314\nx315\nx316\nx317\nx318\nx319\nx320\nx321\nx322\nx323\nx324\nx325\nx326\nx327\nx328\nx329\nx330\nx331\nx332\nx333\nx334\nx335\nx336\nx337\nx338\nx339\nx340\nx341\nx342\nx343\nx344\nx345\nx346\nx347\nx348\nx349\nx350\nx351\nx352\nx353\nx354\nx355\nx356\nx357\nx358\nx359\nx360\nx361\nx362\nx363\nx364\nx365\nx366\nx367\nx368\nx369\nx370\nx371\nx372\nx373\nx374\nx375\nx376\nx377\nx378\nx379\nx380\nx381\nx382\nx383\nx384\nx385\nx386\nx387\nx388\nx389\nx390\nx391\nx392\nx393\nx394\nx395\nx396\nx397\nx398\nx399"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "name": "rtkResponses",
+   "body": {
+    "input": [
+     {
+      "type": "function_call_output",
+      "call_id": "c",
+      "output": "same repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 7\ndistinct 8\ndistinct 9\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 17\ndistinct 18\ndistinct 19\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 27\ndistinct 28\ndistinct 29\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 37\ndistinct 38\ndistinct 39\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 47\ndistinct 48\ndistinct 49\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 57\ndistinct 58\ndistinct 59\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 67\ndistinct 68\ndistinct 69\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 77\ndistinct 78\ndistinct 79\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 87\ndistinct 88\ndistinct 89\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 97\ndistinct 98\ndistinct 99\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 107\ndistinct 108\ndistinct 109\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 117\ndistinct 118\ndistinct 119\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 127\ndistinct 128\ndistinct 129\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 137\ndistinct 138\ndistinct 139\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 147\ndistinct 148\ndistinct 149\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 157\ndistinct 158\ndistinct 159\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 167\ndistinct 168\ndistinct 169\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 177\ndistinct 178\ndistinct 179\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 187\ndistinct 188\ndistinct 189\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\nsame repeated log line\ndistinct 197\ndistinct 198\ndistinct 199\n\n\n\nend"
+     },
+     {
+      "type": "function_call_output",
+      "output": [
+       {
+        "type": "input_text",
+        "text": "diff --git a/x.go b/x.go\nindex 1..2 100644\n--- a/x.go\n+++ b/x.go\n@@ -1,3 +1,300 @@\n line 0\n+line 1\n+line 2\n line 3\n+line 4\n+line 5\n line 6\n+line 7\n+line 8\n line 9\n+line 10\n+line 11\n line 12\n+line 13\n+line 14\n line 15\n+line 16\n+line 17\n line 18\n+line 19\n+line 20\n line 21\n+line 22\n+line 23\n line 24\n+line 25\n+line 26\n line 27\n+line 28\n+line 29\n line 30\n+line 31\n+line 32\n line 33\n+line 34\n+line 35\n line 36\n+line 37\n+line 38\n line 39\n+line 40\n+line 41\n line 42\n+line 43\n+line 44\n line 45\n+line 46\n+line 47\n line 48\n+line 49\n+line 50\n line 51\n+line 52\n+line 53\n line 54\n+line 55\n+line 56\n line 57\n+line 58\n+line 59\n line 60\n+line 61\n+line 62\n line 63\n+line 64\n+line 65\n line 66\n+line 67\n+line 68\n line 69\n+line 70\n+line 71\n line 72\n+line 73\n+line 74\n line 75\n+line 76\n+line 77\n line 78\n+line 79\n+line 80\n line 81\n+line 82\n+line 83\n line 84\n+line 85\n+line 86\n line 87\n+line 88\n+line 89\n line 90\n+line 91\n+line 92\n line 93\n+line 94\n+line 95\n line 96\n+line 97\n+line 98\n line 99\n+line 100\n+line 101\n line 102\n+line 103\n+line 104\n line 105\n+line 106\n+line 107\n line 108\n+line 109\n+line 110\n line 111\n+line 112\n+line 113\n line 114\n+line 115\n+line 116\n line 117\n+line 118\n+line 119\n line 120\n+line 121\n+line 122\n line 123\n+line 124\n+line 125\n line 126\n+line 127\n+line 128\n line 129\n+line 130\n+line 131\n line 132\n+line 133\n+line 134\n line 135\n+line 136\n+line 137\n line 138\n+line 139\n+line 140\n line 141\n+line 142\n+line 143\n line 144\n+line 145\n+line 146\n line 147\n+line 148\n+line 149\n line 150\n+line 151\n+line 152\n line 153\n+line 154\n+line 155\n line 156\n+line 157\n+line 158\n line 159\n+line 160\n+line 161\n line 162\n+line 163\n+line 164\n line 165\n+line 166\n+line 167\n line 168\n+line 169\n+line 170\n line 171\n+line 172\n+line 173\n line 174\n+line 175\n+line 176\n line 177\n+line 178\n+line 179\n line 180\n+line 181\n+line 182\n line 183\n+line 184\n+line 185\n line 186\n+line 187\n+line 188\n line 189\n+line 190\n+line 191\n line 192\n+line 193\n+line 194\n line 195\n+line 196\n+line 197\n line 198\n+line 199\n+line 200\n line 201\n+line 202\n+line 203\n line 204\n+line 205\n+line 206\n line 207\n+line 208\n+line 209\n line 210\n+line 211\n+line 212\n line 213\n+line 214\n+line 215\n line 216\n+line 217\n+line 218\n line 219\n+line 220\n+line 221\n line 222\n+line 223\n+line 224\n line 225\n+line 226\n+line 227\n line 228\n+line 229\n+line 230\n line 231\n+line 232\n+line 233\n line 234\n+line 235\n+line 236\n line 237\n+line 238\n+line 239\n line 240\n+line 241\n+line 242\n line 243\n+line 244\n+line 245\n line 246\n+line 247\n+line 248\n line 249\n+line 250\n+line 251\n line 252\n+line 253\n+line 254\n line 255\n+line 256\n+line 257\n line 258\n+line 259\n+line 260\n line 261\n+line 262\n+line 263\n line 264\n+line 265\n+line 266\n line 267\n+line 268\n+line 269\n line 270\n+line 271\n+line 272\n line 273\n+line 274\n+line 275\n line 276\n+line 277\n+line 278\n line 279\n+line 280\n+line 281\n line 282\n+line 283\n+line 284\n line 285\n+line 286\n+line 287\n line 288\n+line 289\n+line 290\n line 291\n+line 292\n+line 293\n line 294\n+line 295\n+line 296\n line 297\n+line 298\n+line 299\ndiff --git a/y.go b/y.go\n@@ -1 +1 @@\n-old\n+new\n\\ No newline at end of file"
+       }
+      ]
+     },
+     {
+      "type": "message",
+      "role": "user",
+      "content": "hi"
+     }
+    ]
+   },
+   "want": {
+    "input": [
+     {
+      "type": "function_call_output",
+      "call_id": "c",
+      "output": "same repeated log line\n  ... (6 duplicate lines)\ndistinct 7\ndistinct 8\ndistinct 9\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 17\ndistinct 18\ndistinct 19\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 27\ndistinct 28\ndistinct 29\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 37\ndistinct 38\ndistinct 39\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 47\ndistinct 48\ndistinct 49\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 57\ndistinct 58\ndistinct 59\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 67\ndistinct 68\ndistinct 69\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 77\ndistinct 78\ndistinct 79\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 87\ndistinct 88\ndistinct 89\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 97\ndistinct 98\ndistinct 99\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 107\ndistinct 108\ndistinct 109\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 117\ndistinct 118\ndistinct 119\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 127\ndistinct 128\ndistinct 129\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 137\ndistinct 138\ndistinct 139\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 147\ndistinct 148\ndistinct 149\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 157\ndistinct 158\ndistinct 159\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 167\ndistinct 168\ndistinct 169\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 177\ndistinct 178\ndistinct 179\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 187\ndistinct 188\ndistinct 189\nsame repeated log line\n  ... (6 duplicate lines)\ndistinct 197\ndistinct 198\ndistinct 199\n\nend"
+     },
+     {
+      "type": "function_call_output",
+      "output": [
+       {
+        "type": "input_text",
+        "text": "\nx.go\n  @@ -1,3 +1,300 @@\n  +line 1\n  +line 2\n   line 3\n  +line 4\n  +line 5\n   line 6\n  +line 7\n  +line 8\n   line 9\n  +line 10\n  +line 11\n   line 12\n  +line 13\n  +line 14\n   line 15\n  +line 16\n  +line 17\n   line 18\n  +line 19\n  +line 20\n   line 21\n  +line 22\n  +line 23\n   line 24\n  +line 25\n  +line 26\n   line 27\n  +line 28\n  +line 29\n   line 30\n  +line 31\n  +line 32\n   line 33\n  +line 34\n  +line 35\n   line 36\n  +line 37\n  +line 38\n   line 39\n  +line 40\n  +line 41\n   line 42\n  +line 43\n  +line 44\n   line 45\n  +line 46\n  +line 47\n   line 48\n  +line 49\n  +line 50\n   line 51\n  +line 52\n  +line 53\n   line 54\n  +line 55\n  +line 56\n   line 57\n  +line 58\n  +line 59\n   line 60\n  +line 61\n  +line 62\n   line 63\n  +line 64\n  +line 65\n   line 66\n  +line 67\n  +line 68\n   line 69\n  +line 70\n  +line 71\n   line 72\n  +line 73\n  +line 74\n   line 75\n  +line 76\n  +line 77\n   line 78\n  +line 79\n  +line 80\n   line 81\n  +line 82\n  +line 83\n   line 84\n  +line 85\n  +line 86\n   line 87\n  +line 88\n  +line 89\n   line 90\n  +line 91\n  +line 92\n   line 93\n  +line 94\n  +line 95\n   line 96\n  +line 97\n  +line 98\n   line 99\n  +line 100\n  ... (133 lines truncated)\n  +200 -0\n\ny.go\n  @@ -1 +1 @@\n  -old\n  +new\n  +1 -1\n[full diff: rtk git diff --no-compact]"
+       }
+      ]
+     },
+     {
+      "type": "message",
+      "role": "user",
+      "content": "hi"
+     }
+    ]
+   }
+  }
+ ],
+ "inject": [
+  {
+   "format": "anthropic",
+   "name": "claude-none",
+   "body": {
+    "model": "m",
+    "messages": []
+   },
+   "want": {
+    "model": "m",
+    "messages": [],
+    "system": "PROMPT TEXT"
+   }
+  },
+  {
+   "format": "anthropic",
+   "name": "claude-string",
+   "body": {
+    "system": "be nice",
+    "messages": []
+   },
+   "want": {
+    "system": "be nice\n\nPROMPT TEXT",
+    "messages": []
+   }
+  },
+  {
+   "format": "anthropic",
+   "name": "claude-empty",
+   "body": {
+    "system": "",
+    "messages": []
+   },
+   "want": {
+    "system": "PROMPT TEXT",
+    "messages": []
+   }
+  },
+  {
+   "format": "anthropic",
+   "name": "claude-dup",
+   "body": {
+    "system": "be nice\n\nPROMPT TEXT",
+    "messages": []
+   },
+   "want": {
+    "system": "be nice\n\nPROMPT TEXT",
+    "messages": []
+   }
+  },
+  {
+   "format": "anthropic",
+   "name": "claude-array-cache",
+   "body": {
+    "system": [
+     {
+      "type": "text",
+      "text": "a"
+     },
+     {
+      "type": "text",
+      "text": "b",
+      "cache_control": {
+       "type": "ephemeral"
+      }
+     },
+     {
+      "type": "text",
+      "text": "c"
+     }
+    ]
+   },
+   "want": {
+    "system": [
+     {
+      "type": "text",
+      "text": "a"
+     },
+     {
+      "type": "text",
+      "text": "PROMPT TEXT"
+     },
+     {
+      "type": "text",
+      "text": "b",
+      "cache_control": {
+       "type": "ephemeral"
+      }
+     },
+     {
+      "type": "text",
+      "text": "c"
+     }
+    ]
+   }
+  },
+  {
+   "format": "anthropic",
+   "name": "claude-array",
+   "body": {
+    "system": [
+     {
+      "type": "text",
+      "text": "a"
+     }
+    ]
+   },
+   "want": {
+    "system": [
+     {
+      "type": "text",
+      "text": "a"
+     },
+     {
+      "type": "text",
+      "text": "PROMPT TEXT"
+     }
+    ]
+   }
+  },
+  {
+   "format": "gemini",
+   "name": "gemini-none",
+   "body": {
+    "contents": []
+   },
+   "want": {
+    "contents": [],
+    "systemInstruction": {
+     "parts": [
+      {
+       "text": "PROMPT TEXT"
+      }
+     ]
+    }
+   }
+  },
+  {
+   "format": "gemini",
+   "name": "gemini-parts",
+   "body": {
+    "systemInstruction": {
+     "parts": [
+      {
+       "text": "x"
+      }
+     ]
+    },
+    "contents": []
+   },
+   "want": {
+    "systemInstruction": {
+     "parts": [
+      {
+       "text": "x"
+      },
+      {
+       "text": "PROMPT TEXT"
+      }
+     ]
+    },
+    "contents": []
+   }
+  },
+  {
+   "format": "gemini",
+   "name": "gemini-snake",
+   "body": {
+    "system_instruction": {
+     "parts": []
+    },
+    "contents": []
+   },
+   "want": {
+    "system_instruction": {
+     "parts": [
+      {
+       "text": "PROMPT TEXT"
+      }
+     ]
+    },
+    "contents": []
+   }
+  },
+  {
+   "format": "openai",
+   "name": "chat-none",
+   "body": {
+    "messages": [
+     {
+      "role": "user",
+      "content": "hi"
+     }
+    ]
+   },
+   "want": {
+    "messages": [
+     {
+      "role": "system",
+      "content": "PROMPT TEXT"
+     },
+     {
+      "role": "user",
+      "content": "hi"
+     }
+    ]
+   }
+  },
+  {
+   "format": "openai",
+   "name": "chat-empty",
+   "body": {
+    "messages": []
+   },
+   "want": {
+    "messages": [
+     {
+      "role": "system",
+      "content": "PROMPT TEXT"
+     }
+    ]
+   }
+  },
+  {
+   "format": "openai",
+   "name": "chat-sys",
+   "body": {
+    "messages": [
+     {
+      "role": "user",
+      "content": "hi"
+     },
+     {
+      "role": "system",
+      "content": "sys"
+     }
+    ]
+   },
+   "want": {
+    "messages": [
+     {
+      "role": "user",
+      "content": "hi"
+     },
+     {
+      "role": "system",
+      "content": "sys\n\nPROMPT TEXT"
+     }
+    ]
+   }
+  },
+  {
+   "format": "openai",
+   "name": "chat-dev-array",
+   "body": {
+    "messages": [
+     {
+      "role": "developer",
+      "content": [
+       {
+        "type": "text",
+        "text": "d"
+       }
+      ]
+     }
+    ]
+   },
+   "want": {
+    "messages": [
+     {
+      "role": "developer",
+      "content": [
+       {
+        "type": "text",
+        "text": "d"
+       },
+       {
+        "type": "text",
+        "text": "PROMPT TEXT"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "format": "openai",
+   "name": "chat-dup",
+   "body": {
+    "messages": [
+     {
+      "role": "system",
+      "content": "PROMPT TEXT"
+     }
+    ]
+   },
+   "want": {
+    "messages": [
+     {
+      "role": "system",
+      "content": "PROMPT TEXT"
+     }
+    ]
+   }
+  },
+  {
+   "format": "openai",
+   "name": "chat-null",
+   "body": {
+    "messages": [
+     {
+      "role": "system",
+      "content": null
+     }
+    ]
+   },
+   "want": {
+    "messages": [
+     {
+      "role": "system",
+      "content": "PROMPT TEXT"
+     }
+    ]
+   }
+  },
+  {
+   "format": "openai",
+   "name": "instructions",
+   "body": {
+    "instructions": "base",
+    "messages": [
+     {
+      "role": "user",
+      "content": "x"
+     }
+    ]
+   },
+   "want": {
+    "instructions": "base\n\nPROMPT TEXT",
+    "messages": [
+     {
+      "role": "user",
+      "content": "x"
+     }
+    ]
+   }
+  },
+  {
+   "format": "responses",
+   "name": "responses-none",
+   "body": {
+    "input": [
+     {
+      "type": "message",
+      "role": "user",
+      "content": "hi"
+     }
+    ]
+   },
+   "want": {
+    "input": [
+     {
+      "type": "message",
+      "role": "system",
+      "content": [
+       {
+        "type": "input_text",
+        "text": "PROMPT TEXT"
+       }
+      ]
+     },
+     {
+      "type": "message",
+      "role": "user",
+      "content": "hi"
+     }
+    ]
+   }
+  },
+  {
+   "format": "responses",
+   "name": "responses-dev",
+   "body": {
+    "input": [
+     {
+      "type": "message",
+      "role": "developer",
+      "content": [
+       {
+        "type": "input_text",
+        "text": "d"
+       }
+      ]
+     }
+    ]
+   },
+   "want": {
+    "input": [
+     {
+      "type": "message",
+      "role": "developer",
+      "content": [
+       {
+        "type": "input_text",
+        "text": "d"
+       },
+       {
+        "type": "input_text",
+        "text": "PROMPT TEXT"
+       }
+      ]
+     }
+    ]
+   }
+  },
+  {
+   "format": "responses",
+   "name": "responses-string",
+   "body": {
+    "input": "hello"
+   },
+   "want": {
+    "input": "hello"
+   }
+  },
+  {
+   "format": "responses",
+   "name": "responses-instr-empty",
+   "body": {
+    "instructions": "",
+    "input": []
+   },
+   "want": {
+    "instructions": "PROMPT TEXT",
+    "input": []
+   }
+  }
+ ]
+}

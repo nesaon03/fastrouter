@@ -46,6 +46,25 @@ type Config struct {
 	// KeyLimits are optional per-key limits, keyed by local API key name or id.
 	// Empty (the default) means no limits beyond 9Router's own access lists.
 	KeyLimits map[string]KeyLimit `json:"keyLimits,omitempty"`
+
+	// TokenSavers override the imported 9Router token-saver settings. A field
+	// left out uses the imported value (9Router's default if never set).
+	TokenSavers TokenSavers `json:"tokenSavers"`
+}
+
+// TokenSavers mirror 9Router's settings of the same names.
+type TokenSavers struct {
+	RTK                  *bool     `json:"rtk,omitempty"`               // compress tool output
+	Caveman              *string   `json:"caveman,omitempty"`           // level, "" or "off" disables
+	Ponytail             *string   `json:"ponytail,omitempty"`          // level, "" or "off" disables
+	Headroom             *bool     `json:"headroom,omitempty"`          // use a Headroom proxy
+	HeadroomURL          *string   `json:"headroomUrl,omitempty"`       // default http://localhost:8787
+	HeadroomCodeAware    *bool     `json:"headroomCodeAware,omitempty"` // --code-aware when autostarting
+	HeadroomKompress     *bool     `json:"headroomKompress,omitempty"`  // false adds --disable-kompress when autostarting
+	HeadroomTimeout      *Duration `json:"headroomTimeout,omitempty"`   // default 3s
+	CompressUserMessages *bool     `json:"headroomCompressUserMessages,omitempty"`
+	// HeadroomAutostart runs `headroom proxy` (if on PATH) for a localhost URL. Off by default.
+	HeadroomAutostart bool `json:"headroomAutostart,omitempty"`
 }
 
 // KeyLimit limits one local API key.

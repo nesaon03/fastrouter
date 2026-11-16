@@ -17,6 +17,7 @@ import (
 	"github.com/zenpo/fastrouter/internal/dashboard"
 	"github.com/zenpo/fastrouter/internal/pricing"
 	"github.com/zenpo/fastrouter/internal/router"
+	"github.com/zenpo/fastrouter/internal/saver"
 	"github.com/zenpo/fastrouter/internal/store"
 	tr "github.com/zenpo/fastrouter/internal/translate"
 	"golang.org/x/crypto/bcrypt"
@@ -35,6 +36,8 @@ type Server struct {
 	cfgFirstByte, cfgIdle, cfgCooldown, cfgEmptyWait time.Duration
 	keyLimits                                        map[string]config.KeyLimit
 	st                                               *store.Store
+	tsCfg                                            config.TokenSavers
+	saver                                            atomic.Pointer[saver.Saver]
 
 	pwOK sync.Map // sha256(user:pass) -> true, so bcrypt runs once per credential
 }
@@ -51,6 +54,7 @@ func New(cfg config.Config, snap *store.Snapshot, st *store.Store) *Server {
 		cfgEmptyWait: time.Duration(cfg.EmptyResponseWait),
 		keyLimits:    cfg.KeyLimits,
 		st:           st,
+		tsCfg:        cfg.TokenSavers,
 	}
 	s.Reload(snap)
 	return s
@@ -83,7 +87,11 @@ func (s *Server) Reload(snap *store.Snapshot) {
 		t, _ = pricing.New(nil)
 	}
 	s.rec.prices.Store(t)
+	s.saver.Store(saver.New(snap.Settings, s.tsCfg))
 }
+
+// Saver returns the current token-saver settings.
+func (s *Server) Saver() *saver.Saver { return s.saver.Load() }
 
 // Close flushes background writes.
 func (s *Server) Close() { s.rec.close() }

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/zenpo/fastrouter/internal/router"
+	"github.com/zenpo/fastrouter/internal/saver"
 	"github.com/zenpo/fastrouter/internal/secret"
 	tr "github.com/zenpo/fastrouter/internal/translate"
 )
@@ -144,6 +145,14 @@ func (s *Server) route(w http.ResponseWriter, p *proxyReq, targets []router.Targ
 		if err != nil {
 			writeError(w, p.cf, http.StatusBadRequest, "invalid_request_error", "could not read request: "+err.Error())
 			return
+		}
+		if sv := s.saver.Load(); sv.Enabled() && !saver.OptedOut(p.r.Header) {
+			var tag string
+			if upBody, tag = sv.Apply(p.r.Context(), upBody, uf, t.Model); tag != "" {
+				w.Header().Set(saver.TagHeader, tag)
+			} else {
+				w.Header().Del(saver.TagHeader)
+			}
 		}
 		order := t.Provider.Pool.Order(time.Now())
 		for i, acct := range order {
