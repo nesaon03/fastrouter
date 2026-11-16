@@ -293,7 +293,7 @@ func TestHeadroomArgs(t *testing.T) {
 	if got := strings.Join(s.HeadroomArgs("9000"), " "); got != "proxy --port 9000 --disable-kompress" {
 		t.Fatalf("overrides: %q", got)
 	}
-	if cmd, err := New(imported, config.TokenSavers{}).StartHeadroom(context.Background()); cmd != nil || err != nil {
+	if cmd, err := New(imported, config.TokenSavers{}).StartHeadroom(context.Background(), ""); cmd != nil || err != nil {
 		t.Fatal("autostart must be off by default")
 	}
 }

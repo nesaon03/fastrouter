@@ -10,8 +10,9 @@ import (
 
 // StartHeadroom runs `headroom proxy --port N [--code-aware]` (as 9Router's
 // dashboard does) when autostart is on, the URL is local and the headroom CLI
-// is already installed. The process stops when ctx ends. Nothing is installed.
-func (s *Saver) StartHeadroom(ctx context.Context) (*exec.Cmd, error) {
+// is already installed (FastRouter's own venv under dir, or PATH). The process
+// stops when ctx ends. Nothing is installed.
+func (s *Saver) StartHeadroom(ctx context.Context, dir string) (*exec.Cmd, error) {
 	if s == nil || s.Headroom == nil || !s.HeadroomAutostartWant {
 		return nil, nil
 	}
@@ -26,9 +27,9 @@ func (s *Saver) StartHeadroom(ctx context.Context) (*exec.Cmd, error) {
 	if port == "" {
 		port = "8787"
 	}
-	bin, err := exec.LookPath("headroom")
-	if err != nil {
-		return nil, errors.New("headroom CLI not found on PATH (install it yourself, e.g. pip install headroom-ai[proxy])")
+	bin, _ := HeadroomBinary(dir)
+	if bin == "" {
+		return nil, errors.New("headroom CLI not found (install it from the dashboard's Token Saver page)")
 	}
 	cmd := exec.CommandContext(ctx, bin, s.HeadroomArgs(port)...)
 	if err := cmd.Start(); err != nil {

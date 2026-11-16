@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"path/filepath"
 	"runtime"
 	"runtime/debug"
 	"strconv"
@@ -135,7 +136,7 @@ func serve(cfgPath, host string, port int) error {
 	bg, stopBG := context.WithCancel(context.Background())
 	defer stopBG()
 	go srv.RunTokenRefresh(bg, time.Minute) // Codex accounts signed in through FastRouter
-	if hr, err := srv.Saver().StartHeadroom(bg); err != nil {
+	if hr, err := srv.Saver().StartHeadroom(bg, filepath.Join(cfg.DataDir, "headroom")); err != nil {
 		log.Printf("headroom autostart skipped: %v", err)
 	} else if hr != nil {
 		log.Printf("started headroom proxy (pid %d)", hr.Process.Pid)
