@@ -197,3 +197,11 @@ func TestM4GeminiSchemaKeepsKeywordNamedParams(t *testing.T) {
 		t.Fatal(low)
 	}
 }
+
+// L12: one SSE line can't grow without bound.
+func TestL12FrameLineCap(t *testing.T) {
+	fr := NewFrameReader(strings.NewReader("data: " + strings.Repeat("x", MaxFrameLine+10) + "\n\n"))
+	if _, err := fr.Next(); err != ErrFrameTooLarge {
+		t.Fatalf("err %v", err)
+	}
+}

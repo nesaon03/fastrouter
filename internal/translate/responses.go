@@ -445,7 +445,6 @@ type rsEvent struct {
 type responsesDecoder struct {
 	tools    map[int]int // output index -> tool index
 	nextTool int
-	sawText  map[int]bool
 }
 
 func (d *responsesDecoder) Decode(f Frame) ([]Event, error) {

@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"errors"
 	"io"
 )
 
@@ -33,6 +34,12 @@ func (fr *FrameReader) Reset(r io.Reader) {
 	fr.raw, fr.data, fr.ev = fr.raw[:0], fr.data[:0], fr.ev[:0]
 }
 
+// MaxFrameLine caps one SSE line (16 MB).
+const MaxFrameLine = 16 << 20
+
+// ErrFrameTooLarge is returned for an SSE line over MaxFrameLine.
+var ErrFrameTooLarge = errors.New("sse: line over 16 MB")
+
 // Buffered reports bytes already read from the network but not yet returned.
 func (fr *FrameReader) Buffered() int { return fr.br.Buffered() }
 
@@ -49,6 +56,9 @@ func (fr *FrameReader) Next() (Frame, error) {
 			for err == bufio.ErrBufferFull {
 				line, err = fr.br.ReadSlice('\n')
 				buf = append(buf, line...)
+				if len(buf) > MaxFrameLine { // L12: a broken upstream can't grow one line without bound
+					return Frame{}, ErrFrameTooLarge
+				}
 			}
 			line = buf
 		}

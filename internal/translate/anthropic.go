@@ -611,18 +611,16 @@ func (d *anthropicDecoder) End() []Event {
 }
 
 type anthropicEncoder struct {
-	out          sseBuf
-	id           string
-	model        string
-	started      bool
-	block        int    // index of the open block, -1 if none
-	open         string // type of the open block
-	openTool     int
-	next         int
-	usage        Usage
-	finish       Finish
-	finished     bool
-	pendingStart bool
+	out      sseBuf
+	id       string
+	model    string
+	started  bool
+	block    int    // index of the open block, -1 if none
+	open     string // type of the open block
+	openTool int
+	next     int
+	usage    Usage
+	finish   Finish
 	// H2: while one tool_use block streams, later tools are buffered and sent
 	// as whole blocks when the tool run ends, so interleaved argument deltas
 	// are never dropped.
