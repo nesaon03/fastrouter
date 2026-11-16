@@ -438,7 +438,7 @@ function cardStatus(p) {
   if (p.accounts.length === 0) return html`<span class="muted">No connections</span>`;
   const active = p.accounts.filter((a) => a.active);
   if (active.length === 0) return html`<${Badge} icon="pause_circle">Disabled</${Badge}>`;
-  const bad = active.filter((a) => a.expired || (a.status !== "ok" && a.status !== "needs-plugin")).length;
+  const bad = active.filter((a) => (a.expired && !a.autoRefresh) || (a.status !== "ok" && a.status !== "needs-plugin" && a.status !== "unknown-provider")).length;
   const cooling = active.filter((a) => a.cooling).length;
   const ok = active.length - bad;
   return html`${ok > 0 && html`<${Badge} kind="success" dot>${ok} Connected</${Badge}>`}
@@ -606,81 +606,218 @@ function NodeForm({ node, type, onClose, onSaved }) {
     </form></${Modal}>`;
 }
 
+// 9Router's Risk Notice (shared/constants/providersDisplay.js RISK_NOTICE).
+const RISK_NOTICE = "This provider uses a subscription / OAuth session that is not officially licensed for proxy or router use. The account may be restricted or banned. Use at your own risk.";
+const CLASS_LABEL = { auth: "auth", banned: "banned", quota: "quota", rate_limit: "rate limit", model: "model", bad_request: "bad request", overloaded: "overloaded", upstream: "provider error", network: "network", timeout: "timeout", empty: "empty" };
+
 function ProviderDetail({ data, id, reload, go, query }) {
   const p = data.providers.find((x) => x.id === id);
   const [modal, setModal] = useState(/(^|&)add\b/.test(query) ? { t: "add" } : null);
   const [order, setOrder] = useState(null);
-  const accts = order || (p ? p.accounts : []);
-  const [props, cls] = useDrag(accts, async (a, b) => {
-    const next = move(accts, a, b); setOrder(next);
-    try { await run(() => api("POST", "/api/admin/accounts/reorder", { provider: p.id, ids: next.map((x) => x.id) }), "Priority updated"); await reload(); } catch (e) {}
-    setOrder(null);
-  });
+  const [sel, setSel] = useState({});
+  const [tests, setTests] = useState({});
+  const [sum, setSum] = useState(null);
+  const stopRef = useRef(false);
   if (!p) return html`<div class="card empty"><p>Provider not found.</p><button class="btn outline" onClick=${() => go("providers")}>Back</button></div>`;
+  const accts = order || p.accounts;
   const meta = provMeta(p);
-  const patch = (a, body, ok) => run(async () => { await api("PATCH", `/api/admin/accounts/${a.id}`, body); await reload(); }, ok);
-  const signIn = (conn) => setModal({ t: "signin", conn });
+  const isLogin = p.kind === "login";
   const canAdd = p.kind === "apikey" || p.kind.endsWith("compatible");
-  const others = p.aliases.filter((a) => a !== p.prefix);
-  const dotColor = (a) => !a.active ? "var(--subtle)" : a.cooling ? "var(--warning)" : a.expired || (a.status !== "ok" && a.status !== "needs-plugin") ? "var(--danger)" : "var(--success)";
-  const state = (a) => !a.active ? html`<${Badge}>Paused</${Badge}>` : a.cooling ? html`<${Badge} kind="warning" icon="hourglass_top">Cooling down</${Badge}>`
-    : a.expired ? html`<${Badge} kind="error">Expired</${Badge}>` : a.status === "ok" || a.status === "needs-plugin" ? html`<${Badge} kind="success">Ready</${Badge}>` : html`<${Badge} kind="error">${a.status}</${Badge}>`;
+  const strat = (data.settings.providerStrategies || {})[p.id] || {};
+  const rr = strat.fallbackStrategy === "round-robin";
+  const patch = (a, body, ok) => run(async () => { await api("PATCH", `/api/admin/accounts/${a.id}`, body); await reload(); }, ok);
+  const setStrategy = (fallbackStrategy, sticky) => run(async () => {
+    await api("PATCH", "/api/admin/settings", { providerStrategies: { [p.id]: { fallbackStrategy, stickyRoundRobinLimit: sticky || 0 } } }); await reload();
+  }, "Routing updated");
+  const moveTo = async (i, j) => {
+    if (j < 0 || j >= accts.length) return;
+    const next = accts.slice(); const [x] = next.splice(i, 1); next.splice(j, 0, x); setOrder(next);
+    try { await run(() => api("POST", "/api/admin/accounts/reorder", { provider: p.id, ids: next.map((a) => a.id) }), "Priority updated"); await reload(); } catch (e) {}
+    setOrder(null);
+  };
+  const add = () => (isLogin ? (p.risk ? setModal({ t: "risk" }) : setModal({ t: "signin", conn: "" })) : setModal({ t: "add" }));
+  const testOne = async (a) => {
+    setTests((t) => ({ ...t, [a.id]: { running: true } }));
+    try {
+      const r = await api("POST", "/api/admin/providers/test", { mode: "chat", provider: p.id, account: a.id });
+      const x = r.results[0] || { ok: false, message: "account not routable (inactive or not signed in)" };
+      setTests((t) => ({ ...t, [a.id]: x })); return x;
+    } catch (e) { const x = { ok: false, message: e.message }; setTests((t) => ({ ...t, [a.id]: x })); return x; }
+  };
+  const oneByOne = async () => {
+    stopRef.current = false;
+    const list = accts.filter((a) => a.active);
+    const s0 = { total: list.length, completed: 0, passed: 0, failed: 0, running: true };
+    setSum(s0); setTests({});
+    for (const a of list) {
+      if (stopRef.current) { s0.stopped = true; break; }
+      s0.current = a.name; setSum({ ...s0 });
+      const x = await testOne(a);
+      s0.completed++; x.ok ? s0.passed++ : s0.failed++; setSum({ ...s0 });
+    }
+    s0.running = false; s0.current = ""; setSum({ ...s0 }); reload();
+  };
+  const selected = accts.filter((a) => sel[a.id]);
+  const allSel = accts.length > 0 && selected.length === accts.length;
+  const ready = (a) => a.active && !a.expired && (a.status === "ok" || a.status === "needs-plugin" || a.status === "unknown-provider");
+  const statusPill = (a) => !a.active ? html`<${Badge} dot>disabled</${Badge}>` : a.cooling ? html`<${Badge} kind="warning" dot>cooling</${Badge}>`
+    : a.expired ? html`<${Badge} kind="warning" dot>expired${a.autoRefresh ? " · refreshing" : ""}</${Badge}>`
+    : ready(a) ? html`<${Badge} kind="success" dot>active</${Badge}>` : html`<${Badge} kind="error" dot>${a.status === "needs-reauth" ? "sign in again" : a.status}</${Badge}>`;
+  const testPill = (a) => {
+    const t = tests[a.id];
+    if (t && t.running) return html`<${Badge} kind="info" icon="progress_activity">testing</${Badge}>`;
+    if (t) return t.ok ? html`<${Badge} kind="success">success · ${t.ms}ms</${Badge}>` : html`<${Badge} kind="error" title=${t.message}>failed${t.class ? " · " + (CLASS_LABEL[t.class] || t.class) : ""}</${Badge}>`;
+    if (a.lastStatus) return a.lastStatus < 300 ? html`<${Badge} kind="success">success</${Badge}>` : html`<${Badge} kind="error">failed · ${a.lastStatus}</${Badge}>`;
+    return null;
+  };
   return html`
-    <a class="back" href="#/providers"><${Icon} n="arrow_back" style="font-size:16px" />All providers</a>
-    <div class="card"><div class="row between">
-      <div class="row" style="gap:16px"><${Logo} p=${p} lg /><div><h2 style="font-size:20px;font-weight:600">${meta.name}</h2>
-        <div class="row small muted" style="gap:8px;margin-top:4px;flex-wrap:wrap">Model prefix <span class="chip">${p.prefix}/</span>
-          ${others.length > 0 && html`<span>also <span class="mono">${others.join(", ")}</span></span>`}
-          ${p.baseUrl && html`<span class="mono truncate" style="max-width:360px">${p.baseUrl}</span>`}</div></div></div>
-      <div class="row" style="gap:8px">
-        ${p.kind.endsWith("compatible") && html`<button class="btn outline" onClick=${() => setModal({ t: "node" })}><${Icon} n="edit" />Edit endpoint</button>
-          <button class="btn ghost" onClick=${() => setModal({ t: "delnode" })}><${Icon} n="delete" />Delete</button>`}
-        ${p.kind === "login" && html`<button class="btn primary" onClick=${() => signIn("")}><${Icon} n="login" />Add ${meta.name} account</button>`}
-        ${canAdd && html`<button class="btn primary" onClick=${() => setModal({ t: "add" })}><${Icon} n="add" />Add account</button>`}
-      </div></div>
-      ${p.kind === "plugin" && html`<div class="notice warn" style="margin-top:16px"><${Icon} n="extension" />This provider signs in through a workaround that FastRouter core does not ship. Accounts are kept from your import and skipped at runtime.</div>`}
-      ${p.kind === "login" && html`<div class="notice info" style="margin-top:16px"><${Icon} n="info" />Official sign-in. ${p.id === "codex" ? "Tokens from FastRouter sign-ins refresh automatically; imported ones are left alone so your 9Router session stays signed in." : "Z.ai sign-in gives a coding-plan key; sign in again when it stops working."}</div>`}
+    <nav class="crumbs"><a href="#/providers">Providers</a><${Icon} n="chevron_right" /><span class="row" style="gap:6px"><${Logo} p=${p} xs />${meta.name}</span></nav>
+    <div class="pd-head">
+      <${Logo} p=${p} lg />
+      <div class="grow" style="min-width:0">
+        <div class="row" style="gap:12px;flex-wrap:wrap"><h1 class="pd-title">${meta.name}</h1>
+          ${(p.website || meta.key) && html`<a class="pd-link" href=${meta.key && !isLogin ? meta.key : p.website || meta.key} target="_blank" rel="noopener noreferrer"><${Icon} n="open_in_new" />${meta.key && !isLogin ? "Get API Key" : "Sign up / Learn more"}</a>`}</div>
+        <div class="muted">${p.accounts.length} connection${p.accounts.length === 1 ? "" : "s"} · model prefix <span class="mono">${p.prefix}/</span>${p.baseUrl ? html` · <span class="mono">${p.baseUrl}</span>` : ""}</div>
+      </div>
+      ${p.kind.endsWith("compatible") && html`<div class="row" style="gap:8px"><button class="btn outline" onClick=${() => setModal({ t: "node" })}><${Icon} n="edit" />Edit endpoint</button>
+        <button class="btn ghost" onClick=${() => setModal({ t: "delnode" })}><${Icon} n="delete" />Delete</button></div>`}
     </div>
-    <div class="card flush">
-      <div class="row between" style="padding:16px 18px;border-bottom:1px solid var(--border-subtle)"><div><h2 style="font-size:16px;font-weight:600">Accounts</h2>
-        <p class="small muted">Tried in priority order${accts.length > 1 ? " — drag to reorder" : ""}. ${p.usable} of ${p.accounts.length} usable now.</p></div></div>
-      ${accts.length === 0 ? html`<div class="empty"><div class="bubble"><${Icon} n="group" /></div><p class="medium">No accounts yet</p>
-          <p class="small muted" style="margin:4px 0 14px">Add an account to start routing <span class="mono">${p.prefix}/…</span> models.</p>
-          ${canAdd && html`<button class="btn primary" onClick=${() => setModal({ t: "add" })}><${Icon} n="add" />Add account</button>`}</div>`
-        : accts.map((a, i) => html`<div class="acct ${a.active ? "" : "off"} ${cls(i)}" key=${a.id} ...${accts.length > 1 ? props(i) : {}}>
-          ${accts.length > 1 && html`<span class="handle" title="Drag to reorder"><${Icon} n="drag_indicator" /></span>`}
-          <span class="prio" title="Priority">${i + 1}</span>
-          <span class="sdot" style=${`background:${dotColor(a)}`}></span>
-          <div class="grow"><div class="row" style="gap:8px"><span class="medium truncate">${a.name}</span>${state(a)}
-              ${a.region && html`<${Badge} kind="info">${a.region}</${Badge}>`}</div>
-            <div class="row small muted" style="gap:14px;margin-top:3px;flex-wrap:wrap">
-              ${a.keyHint && html`<span class="row" style="gap:4px"><${Icon} n=${a.keyHint === "signed in" ? "verified" : "key"} style="font-size:14px" /><span class="mono">${a.keyHint}</span></span>`}
-              ${a.expiresAt && html`<span>expires ${new Date(a.expiresAt).toLocaleDateString()}</span>`}
-              <span>${fmt(a.uses)} requests</span>${a.failures > 0 && html`<span>${fmt(a.failures)} failed</span>`}<span>last used ${ago(a.lastUsedAt)}</span></div></div>
-          ${p.kind === "login" && html`<button class="btn outline sm" onClick=${() => signIn(a.id)}><${Icon} n="refresh" />Sign in again</button>`}
-          <${Toggle} sm on=${a.active} title=${a.active ? "Pause" : "Resume"} onChange=${(v) => patch(a, { active: v }, v ? "Account resumed" : "Account paused")} />
-          <button class="icon-btn" title="Edit" onClick=${() => setModal({ t: "edit", a })}><${Icon} n="edit" /></button>
-          <button class="icon-btn danger" title="Delete" onClick=${() => setModal({ t: "del", a })}><${Icon} n="delete" /></button>
+    ${p.risk && html`<div class="risk"><${Icon} n="warning" /><p><b>Risk Notice:</b> ${RISK_NOTICE}</p></div>`}
+    ${p.kind === "plugin" && html`<div class="notice warn"><${Icon} n="extension" />${meta.name} talks a custom binary protocol FastRouter does not ship yet. Imported accounts are kept and skipped at runtime.</div>`}
+
+    <div class="card">
+      <div class="row between wrap" style="gap:12px;margin-bottom:14px">
+        <h2 class="pd-h2">Connections</h2>
+        <div class="row wrap" style="gap:12px">
+          ${selected.length > 0 && html`<button class="btn danger sm" onClick=${() => setModal({ t: "delsel" })}><${Icon} n="delete" />Delete Selected (${selected.length})</button>`}
+          ${accts.length > 0 && html`<button class="btn outline sm" disabled=${sum && sum.running} onClick=${oneByOne}><${Icon} n=${sum && sum.running ? "progress_activity" : "sync"} cls=${sum && sum.running ? "spin" : ""} />${sum && sum.running ? "Testing Connection One-by-One…" : "Test Connection One-by-One"}</button>`}
+          ${sum && sum.running && html`<button class="btn ghost sm" onClick=${() => { stopRef.current = true; }}><${Icon} n="stop" />Stop</button>`}
+          <div class="row" style="gap:8px"><span class="small muted medium">Round Robin</span><${Toggle} sm on=${rr} onChange=${(v) => setStrategy(v ? "round-robin" : "fallback", strat.stickyRoundRobinLimit)} />
+            ${rr && html`<span class="small muted">Sticky:</span><input class="input sticky-in" type="number" min="1" value=${strat.stickyRoundRobinLimit || data.settings.stickyRoundRobinLimit || 3}
+              onChange=${(e) => setStrategy("round-robin", Math.max(1, parseInt(e.target.value, 10) || 1))} />`}</div>
+        </div>
+      </div>
+      ${sum && html`<div class="sumbar"><span>Total: ${sum.total}</span><span>Completed: ${sum.completed}</span><span style="color:var(--green-fg)">Passed: ${sum.passed}</span><span style=${sum.failed ? "color:var(--red-fg)" : ""}>Failed: ${sum.failed}</span>
+        ${sum.stopped && html`<span style="color:var(--amber-fg)">Stopped</span>`}${sum.running && sum.current && html`<span>Running: ${sum.current}</span>`}
+        <span class="grow"></span><span class="muted">One "Say OK" request (5 tokens max) per account</span></div>`}
+      ${accts.length === 0 ? html`<div class="row between wrap" style="gap:12px">
+          <div class="row" style="gap:12px"><div class="bubble sm"><${Icon} n=${isLogin ? "lock" : "key"} /></div><p class="small muted">No connections yet</p></div>
+          ${(isLogin || canAdd) && html`<button class="btn primary sm" onClick=${add}><${Icon} n="add" />${isLogin ? "Add Connection" : "Add API Key"}</button>`}</div>`
+      : html`
+        <label class="selall"><input type="checkbox" checked=${allSel} onChange=${() => setSel(allSel ? {} : Object.fromEntries(accts.map((a) => [a.id, true])))} />Select All</label>
+        ${accts.map((a, i) => html`<div class="crow ${a.active ? "" : "off"}" key=${a.id}>
+          <input type="checkbox" checked=${!!sel[a.id]} onChange=${() => setSel({ ...sel, [a.id]: !sel[a.id] })} />
+          <div class="arrows"><button disabled=${i === 0} title="Move up" onClick=${() => moveTo(i, i - 1)}><${Icon} n="keyboard_arrow_up" /></button>
+            <button disabled=${i === accts.length - 1} title="Move down" onClick=${() => moveTo(i, i + 1)}><${Icon} n="keyboard_arrow_down" /></button></div>
+          <${Icon} n=${a.authType === "oauth" || isLogin ? "lock" : "key"} cls="muted" />
+          <div class="grow" style="min-width:0">
+            <div class="medium truncate">${a.email || a.name}</div>
+            ${a.email && a.name && a.email !== a.name && html`<div class="small muted truncate">${a.name}</div>`}
+            <div class="row wrap" style="gap:6px;margin-top:5px">${statusPill(a)}
+              <${Badge}>${a.authType === "oauth" || isLogin ? "OAuth" : "API Key"}</${Badge}>
+              <span class="small muted">#${i + 1}</span>
+              ${a.region && html`<${Badge} kind="info">${a.region}</${Badge}>`}
+              ${testPill(a)}
+              ${tests[a.id] && !tests[a.id].ok && !tests[a.id].running ? html`<span class="small err-text truncate" title=${tests[a.id].message}>${tests[a.id].message}</span>`
+                : a.lastError && html`<span class="small err-text truncate" title=${a.lastError}>${a.lastError}</span>`}
+            </div>
+          </div>
+          <div class="row" style="gap:2px">
+            ${isLogin && html`<button class="act" onClick=${() => setModal({ t: "signin", conn: a.id })}><${Icon} n="login" /><span>Re-auth</span></button>`}
+            <button class="act" onClick=${() => testOne(a)} disabled=${tests[a.id] && tests[a.id].running}><${Icon} n="science" /><span>Test</span></button>
+            <button class="act" onClick=${() => setModal({ t: "edit", a })}><${Icon} n="edit" /><span>Edit</span></button>
+            <button class="act danger" onClick=${() => setModal({ t: "del", a })}><${Icon} n="delete" /><span>Delete</span></button>
+          </div>
+          <${Toggle} sm on=${a.active} title=${a.active ? "Disable connection" : "Enable connection"} onChange=${(v) => patch(a, { active: v }, v ? "Connection enabled" : "Connection disabled")} />
         </div>`)}
+        ${(isLogin || canAdd) && html`<div style="margin-top:14px"><button class="btn primary sm" onClick=${add}><${Icon} n="add" />Add</button></div>`}`}
     </div>
+    <${ModelsCard} data=${data} p=${p} reload=${reload} firstAccount=${(accts.find((a) => a.active) || {}).id} />
+
     ${modal && modal.t === "add" && html`<${AccountForm} data=${data} provider=${p} onClose=${() => setModal(null)} onSaved=${reload} />`}
     ${modal && modal.t === "edit" && html`<${AccountForm} data=${data} account=${modal.a} onClose=${() => setModal(null)} onSaved=${reload} />`}
     ${modal && modal.t === "node" && html`<${NodeForm} node=${p} onClose=${() => setModal(null)} onSaved=${reload} />`}
+    ${modal && modal.t === "risk" && html`<${Confirm} title="Risk Notice" text=${RISK_NOTICE} danger label="I Understand, Continue" onClose=${() => setModal(null)}
+      onYes=${async () => { setTimeout(() => setModal({ t: "signin", conn: "" }), 0); }} />`}
     ${modal && modal.t === "signin" && html`<${SignIn} provider=${p} conn=${modal.conn} onClose=${() => setModal(null)} onSaved=${reload} />`}
-    ${modal && modal.t === "del" && html`<${Confirm} title="Delete account?" text=${`"${modal.a.name}" and its stored key will be removed. This can't be undone.`} onClose=${() => setModal(null)}
-      onYes=${() => run(async () => { await api("DELETE", `/api/admin/accounts/${modal.a.id}`); await reload(); }, "Account deleted")} />`}
+    ${modal && modal.t === "del" && html`<${Confirm} title="Delete connection?" text=${`"${modal.a.email || modal.a.name}" and its stored credentials will be removed. This can't be undone.`} onClose=${() => setModal(null)}
+      onYes=${() => run(async () => { await api("DELETE", `/api/admin/accounts/${modal.a.id}`); await reload(); }, "Connection deleted")} />`}
+    ${modal && modal.t === "delsel" && html`<${Confirm} title="Delete selected connections?" text=${`${selected.length} connection(s) and their stored credentials will be removed.`} onClose=${() => setModal(null)}
+      onYes=${() => run(async () => { for (const a of selected) await api("DELETE", `/api/admin/accounts/${a.id}`); setSel({}); await reload(); }, "Connections deleted")} />`}
     ${modal && modal.t === "delnode" && html`<${Confirm} title="Delete endpoint?" text=${`"${p.name}" and its ${p.accounts.length} account(s) will be removed. Combos that use ${p.prefix}/ models will skip them.`} onClose=${() => setModal(null)}
       onYes=${() => run(async () => { await api("DELETE", `/api/admin/nodes/${encodeURIComponent(p.id)}`); await reload(); go("providers"); }, "Endpoint deleted")} />`}`;
+}
+
+// Capability icons for a model id (best effort from the name, like 9Router's badges).
+function capsOf(id) {
+  const l = id.toLowerCase(), out = [];
+  if (/(thinking|high|medium|low|reason|opus|pro|r1|-max|codex|o[134])/.test(l)) out.push(["psychology", "Reasoning"]);
+  if (/(gemini|gpt-[456]|claude|vl|vision|omni|4o|kimi-k[23]|grok-4)/.test(l)) out.push(["visibility", "Vision"]);
+  if (!/(embed|image|veo|tts)/.test(l)) out.push(["build", "Tools"]);
+  return out;
+}
+
+function ModelsCard({ data, p, reload, firstAccount }) {
+  const [info, setInfo] = useState(null);
+  const [copied, copy] = useCopy();
+  const [tests, setTests] = useState({});
+  const load = () => api("GET", `/api/admin/providers/${encodeURIComponent(p.id)}/models`).then(setInfo, () => setInfo({ models: [], prefix: p.prefix, thinking: "auto" }));
+  useEffect(() => { load(); }, [p.id]);
+  if (!info) return html`<div class="card pd-models"><h2 class="pd-h2">Available Models</h2><p class="small muted" style="margin-top:8px">Loading…</p></div>`;
+  const on = info.models.filter((m) => !m.disabled), off = info.models.filter((m) => m.disabled);
+  const setDisabled = (ids, ok) => run(async () => { await api("PATCH", "/api/admin/settings", { disabledModels: { [p.id]: ids } }); await load(); await reload(); }, ok);
+  const disable = (m) => setDisabled([...off.map((x) => x.id), m.id], "Model disabled");
+  const enable = (m) => setDisabled(off.filter((x) => x.id !== m.id).map((x) => x.id), "Model enabled");
+  const setThinking = (mode) => run(async () => { await api("PATCH", "/api/admin/settings", { providerThinking: { [p.id]: mode } }); await load(); await reload(); }, "Thinking updated");
+  const test = async (m) => {
+    setTests((t) => ({ ...t, [m.id]: "run" }));
+    try {
+      const r = await api("POST", "/api/admin/providers/test", { mode: "chat", provider: p.id, account: firstAccount || "", model: m.id });
+      const x = r.results[0];
+      setTests((t) => ({ ...t, [m.id]: x && x.ok ? "ok" : "error" }));
+      if (!x) toast("No active account to test with", "error"); else if (!x.ok) toast(`${m.id}: ${x.message}`, "error");
+    } catch (e) { setTests((t) => ({ ...t, [m.id]: "error" })); toast(e.message, "error"); }
+  };
+  const chip = (m) => {
+    const full = `${info.prefix}/${m.id}`, st = tests[m.id];
+    return html`<div class="mchip ${st === "ok" ? "ok" : st === "error" ? "bad" : ""}" key=${m.id}>
+      <${Icon} n=${st === "ok" ? "check_circle" : st === "error" ? "cancel" : "smart_toy"} cls="mchip-ic" />
+      <div class="grow" style="min-width:0"><code class="mchip-id" title=${m.upstream ? `upstream: ${m.upstream}` : full}>${full}</code>
+        <div class="mchip-sub"><i class="truncate">${m.name}</i>${capsOf(m.id).map(([n, t]) => html`<span title=${t}><${Icon} n=${n} /></span>`)}${m.custom && html`<span class="tagc">custom</span>`}</div></div>
+      <div class="mchip-act">
+        <button title="Test" disabled=${st === "run" || !firstAccount} onClick=${() => test(m)}><${Icon} n=${st === "run" ? "progress_activity" : "science"} cls=${st === "run" ? "spin" : ""} /></button>
+        <button title="Copy" onClick=${() => copy(full, m.id)}><${Icon} n=${copied === m.id ? "check" : "content_copy"} /></button>
+        <button title="Disable this model" class="x" onClick=${() => disable(m)}><${Icon} n="close" /></button>
+      </div></div>`;
+  };
+  return html`<div class="card pd-models">
+    <div class="row between wrap" style="gap:12px;margin-bottom:14px">
+      <h2 class="pd-h2">Available Models <span class="muted small" style="font-weight:400">${on.length}</span></h2>
+      <div class="row" style="gap:10px">
+        <label class="row small muted" style="gap:6px"><${Icon} n="psychology" />Thinking:
+          <select class="input select-sm" value=${info.thinking || "auto"} onChange=${(e) => setThinking(e.target.value)}>${THINK.map(([v, l]) => html`<option value=${v}>${l}</option>`)}</select></label>
+        ${on.length > 0 && html`<button class="btn outline sm" onClick=${() => setDisabled(info.models.map((m) => m.id), "All models disabled")}><${Icon} n="visibility_off" />Disable All</button>`}
+        ${off.length > 0 && html`<button class="btn ghost sm" onClick=${() => setDisabled([], "All models enabled")}><${Icon} n="restart_alt" />Enable All</button>`}
+      </div></div>
+    ${info.models.length === 0 ? html`<p class="small muted">No model list for this provider. Any model id works as <span class="mono">${info.prefix}/model-id</span>.</p>`
+      : html`<div class="mgrid">${on.map(chip)}</div>`}
+    ${off.length > 0 && html`<details class="moff"><summary class="small muted">${off.length} disabled model${off.length === 1 ? "" : "s"}</summary>
+      <div class="row wrap" style="gap:6px;margin-top:8px">${off.map((m) => html`<button class="chip" title="Enable" onClick=${() => enable(m)}><span class="mono">${m.id}</span><${Icon} n="add" /></button>`)}</div></details>`}
+    ${!firstAccount && info.models.length > 0 && html`<p class="small muted" style="margin-top:10px">Add an active connection to test models.</p>`}
+  </div>`;
 }
 
 function SignIn({ provider, conn, onClose, onSaved }) {
   const [flow, setFlow] = useState(null);
   const [err, setErr] = useState("");
   const [paste, setPaste] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [copied, copy] = useCopy();
   useEffect(() => {
     let stop = false, t;
     api("POST", `/api/login/${provider.id}/start`, { connectionId: conn || "" }).then((f) => {
       setFlow(f);
+      if (f.kind === "paste") return;
       const poll = async () => {
         if (stop) return;
         try {
@@ -694,19 +831,37 @@ function SignIn({ provider, conn, onClose, onSaved }) {
     }).catch((e) => setErr(e.message));
     return () => { stop = true; clearTimeout(t); };
   }, []);
-  const submitPaste = () => run(async () => { const g = await api("POST", `/api/login/flows/${flow.id}/callback`, { url: paste }); setFlow(g); if (g.status === "done") await onSaved(); });
-  return html`<${Modal} title=${`Sign in to ${provMeta(provider).name}`} icon="login" onClose=${onClose} foot=${html`<button class="btn ghost" onClick=${onClose}>Close</button>`}>
+  const submit = async () => {
+    setBusy(true);
+    try {
+      const g = await api("POST", `/api/login/flows/${flow.id}/callback`, flow.kind === "paste" ? { text: paste } : { url: paste });
+      setFlow(g); setPaste(""); if (g.status === "done") { toast("Signed in"); await onSaved(); }
+    } catch (e) { toast(e.message, "error"); }
+    setBusy(false);
+  };
+  const name = provMeta(provider).name;
+  const pasteHint = provider.id === "vertex" ? "Paste the service-account JSON key file" : provider.id === "claude" ? "Paste the code Claude shows (code#state), or the localhost address" : "Paste the address your browser ended on (http://localhost…/callback?code=…)";
+  return html`<${Modal} title=${`Connect ${name}`} icon="login" onClose=${onClose} foot=${html`<button class="btn ghost" onClick=${onClose}>${flow && flow.status === "done" ? "Done" : "Close"}</button>`}>
     ${err && html`<div class="notice err"><${Icon} n="error" />${err}</div>`}
-    ${!flow && !err && html`<p class="muted">Starting sign-in…</p>`}
-    ${flow && flow.status === "done" && html`<div class="notice ok"><${Icon} n="check_circle" />Signed in. The account is ready to use.</div>`}
+    ${!flow && !err && html`<p class="muted row" style="gap:8px"><${Icon} n="progress_activity" cls="spin" />Starting sign-in…</p>`}
+    ${flow && flow.status === "done" && html`<div class="notice ok"><${Icon} n="check_circle" />Connected. The account is ready to use.</div>`}
     ${flow && flow.status === "error" && html`<div class="notice err"><${Icon} n="error" />${flow.message}</div>`}
-    ${flow && flow.status === "pending" && html`<ol class="small" style="margin:0;padding-left:18px;line-height:1.8">
-        <li>Open the official sign-in page and approve access.</li>
-        <li>${flow.kind === "browser" ? "If the browser can't reach this machine, paste the final localhost URL below." : "Come back here; this window updates by itself."}</li></ol>
+    ${flow && flow.status === "pending" && flow.kind === "device" && html`<div class="col" style="gap:14px">
+      <ol class="steps"><li>Open the ${name} page below and sign in.</li><li>${flow.userCode ? "Enter or confirm this code:" : "Approve access for FastRouter."}</li><li>Come back here — this window updates by itself.</li></ol>
+      ${flow.userCode && html`<div class="devcode"><span class="mono">${flow.userCode}</span><button class="icon-btn" title="Copy code" onClick=${() => copy(flow.userCode, "uc")}><${Icon} n=${copied === "uc" ? "check" : "content_copy"} /></button></div>`}
+      <a class="btn primary" href=${flow.url} target="_blank" rel="noopener noreferrer"><${Icon} n="open_in_new" />Open ${name} sign-in</a>
+      <p class="small muted row" style="gap:6px"><${Icon} n="sync" cls="spin" style="font-size:16px" />Waiting for you to approve…</p></div>`}
+    ${flow && flow.status === "pending" && flow.kind === "browser" && html`<div class="col" style="gap:14px">
+      <ol class="steps"><li>Open the official ${name} sign-in and approve access.</li><li>You are sent back to FastRouter and this window finishes by itself.</li><li>If the browser can't reach this machine (remote dashboard), paste the final address below.</li></ol>
       <a class="btn primary" href=${flow.url} target="_blank" rel="noopener noreferrer"><${Icon} n="open_in_new" />Open sign-in page</a>
-      ${flow.kind === "browser" && html`<${Field} label="Paste the redirect URL (optional)"><div class="row"><input class="input mono grow" value=${paste} placeholder="http://localhost:1455/auth/callback?code=…" onInput=${(e) => setPaste(e.target.value)} />
-        <button class="btn secondary" disabled=${!paste} onClick=${submitPaste}>Submit</button></div></${Field}>`}
-      <p class="small muted row" style="gap:6px"><${Icon} n="sync" cls="spin" style="font-size:16px" />Waiting for sign-in…</p>`}
+      ${flow.hint && html`<p class="small muted">${flow.hint}</p>`}
+      <${Field} label="Paste callback (optional)"><div class="row"><input class="input mono grow" value=${paste} placeholder=${pasteHint} onInput=${(e) => setPaste(e.target.value)} />
+        <button class="btn secondary" disabled=${!paste || busy} onClick=${submit}>Submit</button></div></${Field}>
+      <p class="small muted row" style="gap:6px"><${Icon} n="sync" cls="spin" style="font-size:16px" />Waiting for sign-in…</p></div>`}
+    ${flow && flow.status === "pending" && flow.kind === "paste" && html`<div class="col" style="gap:12px">
+      <p class="small">${pasteHint}. It is stored encrypted and never shown again; FastRouter mints short-lived access tokens from it.</p>
+      <textarea class="input mono" rows="7" spellcheck="false" value=${paste} placeholder='{"type": "service_account", ...}' onInput=${(e) => setPaste(e.target.value)}></textarea>
+      <button class="btn primary" disabled=${!paste || busy} onClick=${submit}><${Icon} n="upload_file" />${busy ? "Checking…" : "Connect"}</button></div>`}
   </${Modal}>`;
 }
 

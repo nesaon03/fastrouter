@@ -181,6 +181,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("DELETE /api/admin/logs", s.adminWrite(s.handleLogClear))
 	mux.Handle("POST /api/admin/providers/test", s.adminWrite(s.handleProviderTest))
 	mux.Handle("GET /api/admin/quota", s.adminRead(s.handleQuota))
+	mux.Handle("GET /api/admin/providers/{id}/models", s.adminRead(s.handleProviderModels))
 	mux.Handle("GET /api/admin/headroom", s.adminRead(s.handleHeadroomStatus))
 	mux.Handle("POST /api/admin/headroom/install", s.adminWrite(s.handleHeadroomInstall))
 	mux.Handle("POST /api/admin/headroom/uninstall", s.adminWrite(s.handleHeadroomUninstall))

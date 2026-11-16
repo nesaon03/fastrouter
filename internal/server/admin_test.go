@@ -238,6 +238,21 @@ func TestAdminCRUDAppliesLive(t *testing.T) {
 	if string(back.Settings["cavemanLevel"]) != `"ultra"` {
 		t.Fatal("settings not persisted")
 	}
+
+	// Disabled models drop out of the provider's model list and the picker.
+	call("PATCH", "/api/admin/settings", `{"disabledModels":{"deepseek":["deepseek-chat"]}}`, 200)
+	call("PATCH", "/api/admin/settings", `{"disabledModels":{"nope":["x"]}}`, 400)
+	pm := call("GET", "/api/admin/providers/deepseek/models", "", 200)
+	found := false
+	for _, m := range pm["models"].([]any) {
+		if mm := m.(map[string]any); mm["id"] == "deepseek-chat" {
+			found = mm["disabled"] == true
+		}
+	}
+	if !found || pm["thinking"] != "high" || pm["prefix"] == "" {
+		t.Fatalf("provider models: %v", pm)
+	}
+	call("GET", "/api/admin/providers/nope/models", "", 404)
 }
 
 func TestDashboardAssetsServedWithCSP(t *testing.T) {

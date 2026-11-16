@@ -824,6 +824,7 @@ func (s *Server) settingsView(sn *store.Snapshot) map[string]any {
 		"customPrompt":          str("customPrompt", ""),
 		"providerThinking":      thinking,
 		"providerStrategies":    strategies,
+		"disabledModels":        disabledModels(sn),
 		"stickyRoundRobinLimit": sticky,
 		"vision":                vis,
 		"lockedByConfig":        locked,
@@ -1435,6 +1436,7 @@ type settingsIn struct {
 	CustomPrompt          *string                 `json:"customPrompt"`
 	ProviderThinking      map[string]string       `json:"providerThinking"`
 	ProviderStrategies    map[string]strategyView `json:"providerStrategies"`
+	DisabledModels        map[string][]string     `json:"disabledModels"`
 	StickyRoundRobinLimit *int                    `json:"stickyRoundRobinLimit"`
 	Vision                *visionView             `json:"vision"`
 }
@@ -1529,6 +1531,24 @@ func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 			}
 			set("providerStrategies", cur)
 		}
+		if in.DisabledModels != nil {
+			cur := map[string][]string{}
+			_ = json.Unmarshal(sn.Settings["disabledModels"], &cur)
+			for id, ms := range in.DisabledModels {
+				if !providerKnown(sn, id) {
+					return bad("unknown provider %q", id)
+				}
+				if len(ms) > 2000 {
+					return bad("too many models")
+				}
+				if len(ms) == 0 {
+					delete(cur, id)
+				} else {
+					cur[id] = ms
+				}
+			}
+			set("disabledModels", cur)
+		}
 		if in.StickyRoundRobinLimit != nil {
 			if *in.StickyRoundRobinLimit < 1 || *in.StickyRoundRobinLimit > 1000 {
 				return bad("sticky limit must be 1 to 1000")
@@ -1552,7 +1572,19 @@ func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 
 // modelGroups lists routable models per provider that has accounts: 9Router's
 // catalog ids plus custom models, each as the full prefix/model name.
+func disabledModels(sn *store.Snapshot) map[string][]string {
+	m := map[string][]string{}
+	_ = json.Unmarshal(sn.Settings["disabledModels"], &m)
+	return m
+}
+
 func modelGroups(st *router.State, sn *store.Snapshot, provs []adminProvider) []modelGroup {
+	off := map[string]bool{}
+	for p, ms := range disabledModels(sn) {
+		for _, m := range ms {
+			off[p+"/"+m] = true
+		}
+	}
 	custom := map[string][]store.CustomModel{}
 	for _, m := range sn.CustomModels {
 		if p, ok := st.Provider(m.ProviderAlias); ok && (m.Type == "" || m.Type == "llm") {
@@ -1575,7 +1607,7 @@ func modelGroups(st *router.State, sn *store.Snapshot, provs []adminProvider) []
 			}
 		}
 		for _, m := range catalog.Models(ap.ID) {
-			if !seen[m.ID] {
+			if !seen[m.ID] && !off[ap.ID+"/"+m.ID] {
 				seen[m.ID] = true
 				g.Models = append(g.Models, pickerModel{ID: prefix + "/" + m.ID, Name: m.Name})
 			}
@@ -1643,4 +1675,52 @@ func unsupportedReason(id string, d catalog.Display) string {
 		return "Sign-in is not supported yet."
 	}
 	return "Not supported yet."
+}
+
+// handleProviderModels lists a provider's models for its detail page.
+func (s *Server) handleProviderModels(w http.ResponseWriter, r *http.Request) {
+	id := r.PathValue("id")
+	st := s.state.Load()
+	type model struct {
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		Upstream string `json:"upstream,omitempty"`
+		Custom   bool   `json:"custom,omitempty"`
+		Disabled bool   `json:"disabled,omitempty"`
+	}
+	prefix := id
+	var up map[string]string
+	if p, ok := st.Provider(id); ok {
+		prefix, up = st.PrefixFor(p), p.Upstream
+	} else if c, ok := catalog.Lookup(id); ok {
+		prefix, up = c.PrimaryAlias(), c.Upstream
+	} else {
+		adminErr(w, http.StatusNotFound, "unknown provider")
+		return
+	}
+	off := map[string]bool{}
+	for _, m := range disabledModels(st.Snap)[id] {
+		off[m] = true
+	}
+	out, seen := []model{}, map[string]bool{}
+	for _, m := range st.Snap.CustomModels {
+		if p, ok := st.Provider(m.ProviderAlias); ok && p.ID == id && !seen[m.ID] {
+			seen[m.ID] = true
+			out = append(out, model{ID: m.ID, Name: firstNonEmpty(m.Name, m.ID), Custom: true, Disabled: off[m.ID]})
+		}
+	}
+	for _, m := range catalog.Models(id) {
+		if !seen[m.ID] {
+			seen[m.ID] = true
+			u := up[m.ID]
+			out = append(out, model{ID: m.ID, Name: m.Name, Upstream: u, Disabled: off[m.ID]})
+		}
+	}
+	thinking := ""
+	var th map[string]struct {
+		Mode string `json:"mode"`
+	}
+	_ = json.Unmarshal(st.Snap.Settings["providerThinking"], &th)
+	thinking = th[id].Mode
+	adminJSON(w, http.StatusOK, map[string]any{"provider": id, "prefix": prefix, "models": out, "thinking": firstNonEmpty(thinking, "auto")})
 }
