@@ -7,12 +7,13 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/router"
 	"github.com/zenpo/fastrouter/internal/config"
+	"github.com/zenpo/fastrouter/internal/router"
 	"github.com/zenpo/fastrouter/internal/store"
 )
 
@@ -228,4 +229,20 @@ func TestM9KeyRestrictionsNarrowAndCoverVision(t *testing.T) {
 	if got := resp.Header.Get("X-FastRouter-Model"); got != "txt/deepseek-v4-flash" {
 		t.Fatalf("restricted key reached vision model %q", got)
 	}
+}
+
+// M2: a request finishing after Close must not panic on the closed channel.
+func TestM2RecordAfterClose(t *testing.T) {
+	r := newRecorder(nil)
+	r.close()
+	r.close() // idempotent
+	r.record(usageItem{})
+	var wg sync.WaitGroup
+	r2 := newRecorder(nil)
+	for i := 0; i < 50; i++ {
+		wg.Add(1)
+		go func() { defer wg.Done(); r2.record(usageItem{}) }()
+	}
+	r2.close()
+	wg.Wait()
 }

@@ -151,7 +151,9 @@ func serve(cfgPath, host string, port int) error {
 
 	sig := make(chan os.Signal, 1)
 	signal.Notify(sig, syscall.SIGINT, syscall.SIGTERM, syscall.SIGHUP)
+	drained := make(chan struct{}) // closed once Shutdown has finished draining (M2)
 	go func() {
+		defer close(drained)
 		for s := range sig {
 			if s == syscall.SIGHUP {
 				if snap, err := st.Load(); err != nil {
@@ -173,6 +175,9 @@ func serve(cfgPath, host string, port int) error {
 	if err := hs.ListenAndServe(); !errors.Is(err, http.ErrServerClosed) {
 		return err
 	}
+	// ListenAndServe returns as soon as Shutdown starts; wait for in-flight
+	// requests to finish before the deferred recorder and store close.
+	<-drained
 	return nil
 }
 

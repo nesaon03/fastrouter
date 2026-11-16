@@ -2,6 +2,7 @@ package server
 
 import (
 	"log"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -18,6 +19,8 @@ type usageItem struct {
 
 // recorder prices and writes usage events in the background, off the request path.
 type recorder struct {
+	mu     sync.RWMutex // record holds it shared; close takes it exclusively
+	closed bool
 	ch     chan usageItem
 	done   chan struct{}
 	prices atomic.Pointer[pricing.Table]
@@ -62,8 +65,14 @@ func newRecorder(st *store.Store) *recorder {
 	return r
 }
 
-// record never blocks the request path; if the queue is full the event is dropped.
+// record never blocks the request path; if the queue is full or the
+// recorder is closed the event is dropped (never a send on a closed channel).
 func (r *recorder) record(it usageItem) {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	if r.closed {
+		return
+	}
 	select {
 	case r.ch <- it:
 	default:
@@ -71,7 +80,14 @@ func (r *recorder) record(it usageItem) {
 }
 
 func (r *recorder) close() {
+	r.mu.Lock()
+	if r.closed {
+		r.mu.Unlock()
+		return
+	}
+	r.closed = true
 	close(r.ch)
+	r.mu.Unlock()
 	<-r.done
 }
 
