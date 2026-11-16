@@ -61,7 +61,7 @@ function Logo({ p, lg, xs }) {
   const m = provMeta(p);
   const [bad, setBad] = useState(false);
   return html`<div class="logo ${lg ? "lg" : ""} ${xs ? "xs" : ""}" style=${`background:${m.color}18`}>
-    ${bad ? html`<div class="logo-fallback" style=${`background:${m.color}`}>${m.name.slice(0, 2).toUpperCase()}</div>`
+    ${bad ? html`<div class="logo-fallback" style=${`background:${m.color}`}>${p.textIcon || m.name.slice(0, 2).toUpperCase()}</div>`
           : html`<img src=${m.logo} alt="" onError=${() => setBad(true)} />`}</div>`;
 }
 
@@ -145,7 +145,6 @@ function useDrag(items, onMove) {
 const move = (arr, a, b) => { const c = arr.slice(); const [x] = c.splice(a, 1); c.splice(b, 0, x); return c; };
 
 /* -------------------------------------------------------- model picker */
-// Searchable picker grouped by provider, after 9Router's ModelSelectModal.
 const splitModel = (id) => { const i = id.indexOf("/"); return i < 0 ? ["", id] : [id.slice(0, i), id.slice(i + 1)]; };
 const findProvider = (data, pre) => data.providers.find((p) => p.prefix === pre || p.id === pre || (p.aliases || []).includes(pre));
 function modelInfo(data, id) {
@@ -165,7 +164,27 @@ function ModelTag({ data, id }) {
     ${i.p ? html`<span class="mtag-prov">${provMeta(i.p).name}</span>` : i.combo ? html`<span class="mtag-prov">Combo</span>` : ""}
     <span class="mono truncate">${i.label}</span></span>`;
 }
+// Searchable picker grouped by provider, after 9Router's ModelSelectModal.
+// Fast with thousands of models: the search index is built once per state
+// load, typing is coalesced to one filter per frame, and only the first
+// chunk of matches is rendered (more stream in as you scroll).
+const pickIndex = new WeakMap();
+function indexFor(data) {
+  let ix = pickIndex.get(data);
+  if (ix) return ix;
+  const byId = new Map(data.providers.map((p) => [p.id, p]));
+  const groups = (data.modelGroups || []).map((g) => {
+    const p = byId.get(g.provider) || { id: g.provider, name: g.name };
+    const head = `${g.name} ${g.prefix} ${g.provider}`.toLowerCase();
+    return { g, p, models: g.models.map((m) => ({ id: m.id, label: m.name || splitModel(m.id)[1], custom: m.custom, hay: `${head} ${m.id} ${m.name || ""}`.toLowerCase() })) };
+  });
+  const combos = data.combos.map((c) => ({ c, hay: `combo ${c.name} ${c.models.join(" ")}`.toLowerCase() }));
+  ix = { groups, combos, total: groups.reduce((n, x) => n + x.models.length, 0) };
+  pickIndex.set(data, ix);
+  return ix;
+}
 // Space-separated terms must all match; "-term" excludes; "/re/" is a regex.
+// Haystacks are pre-lowercased.
 function matcher(q) {
   q = q.trim();
   if (!q) return () => true;
@@ -175,36 +194,66 @@ function matcher(q) {
   const terms = q.toLowerCase().split(/\s+/);
   return (s) => { s = s.toLowerCase(); return terms.every((t) => (t[0] === "-" ? t.length === 1 || !s.includes(t.slice(1)) : s.includes(t))); };
 }
+const PICK_CHUNK = 160;
 function ModelPicker({ data, selected = [], multi, onPick, onClose, title, combos = true, exclude }) {
+  const ix = indexFor(data);
   const [q, setQ] = useState("");
+  const [prov, setProv] = useState("");
   const [custom, setCustom] = useState("");
   const [shut, setShut] = useState({});
+  const [limit, setLimit] = useState(PICK_CHUNK);
+  const timer = useRef(0);
+  const listRef = useRef(null);
+  const sentinel = useRef(null);
+  const onType = (e) => { const v = e.target.value; cancelAnimationFrame(timer.current); timer.current = requestAnimationFrame(() => { setQ(v); setLimit(PICK_CHUNK); if (listRef.current) listRef.current.scrollTop = 0; }); };
+  useEffect(() => () => cancelAnimationFrame(timer.current), []);
   const ok = matcher(q);
   const sel = new Set(selected);
-  const cs = combos ? data.combos.filter((c) => c.name !== exclude && ok(`combo ${c.name} ${c.models.join(" ")}`)) : [];
-  const groups = (data.modelGroups || []).map((g) => {
-    const p = data.providers.find((x) => x.id === g.provider) || { id: g.provider, name: g.name };
-    return { g, p, models: g.models.filter((m) => ok(`${g.name} ${g.prefix} ${m.id} ${m.name}`)) };
-  }).filter((x) => x.models.length);
-  const total = cs.length + groups.reduce((n, x) => n + x.models.length, 0);
+  const cs = combos && !prov ? ix.combos.filter((x) => x.c.name !== exclude && ok(x.hay)) : [];
+  let budget = limit - cs.length, total = cs.length, shown = cs.length;
+  const groups = [];
+  for (const x of ix.groups) {
+    if (prov && x.g.provider !== prov) continue;
+    const models = q ? x.models.filter((m) => ok(m.hay)) : x.models;
+    if (!models.length) continue;
+    total += models.length;
+    const closed = shut[x.g.provider] && !q;
+    const take = closed ? 0 : Math.max(0, Math.min(models.length, budget));
+    budget -= take; shown += take;
+    groups.push({ ...x, count: models.length, models: models.slice(0, take), closed, cut: !closed && take < models.length });
+  }
+  const more = shown < total && budget <= 0;
+  useEffect(() => {
+    if (!more || !sentinel.current) return;
+    const io = new IntersectionObserver((es) => { if (es.some((e) => e.isIntersecting)) setLimit((l) => l + PICK_CHUNK * 2); }, { root: listRef.current, rootMargin: "300px" });
+    io.observe(sentinel.current);
+    return () => io.disconnect();
+  }, [more, limit, q, prov]);
+  const first = cs.length ? cs[0].c.name : groups.find((x) => x.models.length)?.models[0]?.id;
   const chip = (id, label, tag) => html`<button type="button" class="pick-chip ${sel.has(id) ? "on" : ""}" title=${id} onClick=${() => onPick(id)}>
     ${sel.has(id) && html`<${Icon} n="check" />`}<span class="truncate">${label}</span>${tag && html`<span class="tag">${tag}</span>`}</button>`;
   const addCustom = () => { const v = custom.trim(); if (v) { onPick(v); setCustom(""); } };
   return html`<${Modal} wide title=${title || (multi ? "Add models" : "Select model")} icon="neurology" onClose=${onClose}
-    foot=${html`<span class="small muted grow">${multi ? `${selected.length} selected · click to add or remove` : "Click a model to choose it"}</span>
+    foot=${html`<span class="small muted grow">${multi ? `${selected.length} selected · click to add or remove` : "Click a model to choose it · Enter picks the first match"}</span>
       <button class="btn primary" onClick=${onClose}>${multi ? "Done" : "Cancel"}</button>`}>
     <div class="picker">
-      <div class="picker-search"><${Icon} n="search" /><input class="input" autofocus placeholder="Search models, providers or prefixes… (-exclude, /regex/)" value=${q} onInput=${(e) => setQ(e.target.value)} />
+      <div class="picker-search"><${Icon} n="search" /><input class="input" autofocus placeholder="Search ${ix.total} models, providers or prefixes… (-exclude, /regex/)" onInput=${onType}
+          onKeyDown=${(e) => { if (e.key === "Enter" && first) { e.preventDefault(); onPick(first); } }} />
         <span class="small muted">${total} match${total === 1 ? "" : "es"}</span></div>
-      <div class="picker-list">
+      <div class="pick-provs">
+        <button type="button" class="pprov ${prov ? "" : "on"}" onClick=${() => setProv("")}>All<span class="count">${ix.total}</span></button>
+        ${ix.groups.map((x) => html`<button type="button" key=${x.g.provider} class="pprov ${prov === x.g.provider ? "on" : ""}" title=${`${x.g.name} (${x.g.prefix}/)`}
+            onClick=${() => { setProv(prov === x.g.provider ? "" : x.g.provider); setLimit(PICK_CHUNK); }}><${Logo} p=${x.p} xs /><span class="truncate">${x.g.name}</span><span class="count">${x.models.length}</span></button>`)}</div>
+      <div class="picker-list" ref=${listRef}>
         ${cs.length > 0 && html`<div class="pick-group"><div class="pick-head"><span class="mtag-ic"><${Icon} n="layers" /></span><span class="strong">Combos</span><span class="count">${cs.length}</span></div>
-          <div class="pick-chips">${cs.map((c) => chip(c.name, c.name, c.strategy && c.strategy !== "fallback" ? STRATEGY[c.strategy].short : ""))}</div></div>`}
-        ${groups.map(({ g, p, models }) => html`<div class="pick-group" key=${g.provider}>
+          <div class="pick-chips">${cs.map(({ c }) => chip(c.name, c.name, c.strategy && c.strategy !== "fallback" ? STRATEGY[c.strategy].short : ""))}</div></div>`}
+        ${groups.map(({ g, p, models, count, closed, cut }) => html`<div class="pick-group" key=${g.provider}>
           <button type="button" class="pick-head" onClick=${() => setShut({ ...shut, [g.provider]: !shut[g.provider] })}>
             <${Logo} p=${p} xs /><span class="strong">${g.name}</span><span class="mono small muted">${g.prefix}/</span>
-            ${g.plugin && html`<${Badge} icon="extension">needs plugin</${Badge}>`}<span class="count">${models.length}</span>
-            <span class="grow"></span><${Icon} n=${shut[g.provider] && !q ? "expand_more" : "expand_less"} /></button>
-          ${!(shut[g.provider] && !q) && html`<div class="pick-chips">${models.map((m) => chip(m.id, m.name || splitModel(m.id)[1], m.custom ? "custom" : ""))}</div>`}</div>`)}
+            ${g.plugin && html`<${Badge} icon="extension">needs plugin</${Badge}>`}<span class="count">${count}</span>
+            <span class="grow"></span><${Icon} n=${closed ? "expand_more" : "expand_less"} /></button>
+          ${models.length > 0 && html`<div class="pick-chips">${models.map((m) => chip(m.id, m.label, m.custom ? "custom" : ""))}${cut && html`<span class="small muted" style="align-self:center">+${count - models.length} more…</span>`}</div>`}</div>`)}
+        ${more && html`<div ref=${sentinel} class="small muted" style="text-align:center;padding:10px">Loading more…</div>`}
         ${total === 0 && html`<div class="empty" style="padding:28px"><div class="bubble"><${Icon} n="search_off" /></div><p class="small muted">No model matches “${q}”. Type its id below.</p></div>`}
       </div>
       <div class="row" style="gap:8px"><input class="input mono grow" placeholder="Not listed? Type prefix/model, e.g. ds/deepseek-chat" value=${custom}
@@ -253,15 +302,16 @@ function ModelListEditor({ models, setModels, data, exclude, globs }) {
 /* --------------------------------------------------------------- shell */
 const NAV = [
   { id: "endpoint", label: "Dashboard", icon: "api", title: "Endpoint & Overview", sub: "Your local endpoint, connected providers and today's traffic" },
-  { id: "providers", label: "Providers", icon: "dns", title: "Providers", sub: "Accounts behind each model prefix" },
+  { id: "providers", label: "Providers", icon: "dns", title: "Providers", sub: "Manage your AI provider connections" },
   { id: "combos", label: "Combos & Vision", icon: "layers", title: "Combos & Vision Adapter", sub: "Named model chains: fallback, round-robin, smart router or fusion" },
   { id: "usage", label: "Usage", icon: "bar_chart", title: "Usage", sub: "Requests, tokens and estimated cost" },
-  { id: "quota", label: "Quota Tracker", icon: "data_usage", title: "Quota Tracker", sub: "Account health, cooldowns and failure rates" },
+  { id: "quota", label: "Quota Tracker", icon: "data_usage", title: "Quota Tracker", sub: "Track and manage your API quota limits" },
   { id: "keys", label: "API Keys", icon: "vpn_key", title: "API Keys", sub: "Local keys your tools use to call FastRouter" },
-  { id: "token-saver", label: "Token Saver", icon: "savings", title: "Token Saver", sub: "Shrink what goes upstream: RTK, Caveman, Ponytail and Headroom" },
+  { id: "token-saver", label: "Token Saver", icon: "savings", title: "Token Saver", sub: "Compress prompts and outputs to save tokens" },
   { id: "cli", label: "CLI Tools", icon: "code_blocks", title: "CLI Tools", sub: "Copy-paste setup for coding agents and SDKs" },
 ];
 const SYSTEM = [
+  { id: "skills", label: "Skills", icon: "extension", title: "Agent Skills", sub: "Copy a link and paste to your AI to use FastRouter — no install needed" },
   { id: "console-log", label: "Console Log", icon: "terminal", title: "Console Log", sub: "Live server log, redacted, newest at the bottom" },
   { id: "settings", label: "Settings", icon: "settings", title: "Settings", sub: "Thinking, routing strategy, vision fallback and password" },
 ];
@@ -370,74 +420,119 @@ function EndpointPage({ data, go }) {
 }
 
 /* ----------------------------------------------------------- providers */
-function statusOf(p) {
+// Providers page, laid out like 9Router's: Custom, OAuth, Free Tier and API Key
+// sections, each with Test All; status filter and search. Every provider 9Router
+// lists is shown; the ones FastRouter can't route yet say why.
+const STATUS_FILTER = [["all", "All"], ["active", "Active"], ["inactive", "Inactive"], ["none", "No connection"]];
+const SECTION_OF = { oauth: "oauth", free: "free", freeTier: "free", apikey: "apikey", webCookie: "apikey" };
+function provStatus(p) {
+  if (p.unsupported) return "unsupported";
+  if (p.noAuth && p.kind !== "plugin") return "active";
+  if (!p.accounts || p.accounts.length === 0) return "none";
+  return p.accounts.every((a) => !a.active) ? "inactive" : "active";
+}
+function cardStatus(p) {
+  if (p.unsupported) return html`<${Badge}>Not supported</${Badge}>`;
   if (p.kind === "plugin") return html`<${Badge} icon="extension">Needs plugin</${Badge}>`;
-  if (p.accounts.length === 0) return html`<span class="muted small">Not configured</span>`;
+  if (p.noAuth) return html`<${Badge} kind="success" dot>Ready</${Badge}>`;
+  if (p.accounts.length === 0) return html`<span class="muted">No connections</span>`;
   const active = p.accounts.filter((a) => a.active);
   if (active.length === 0) return html`<${Badge} icon="pause_circle">Disabled</${Badge}>`;
-  const cooling = active.filter((a) => a.cooling).length;
   const bad = active.filter((a) => a.expired || (a.status !== "ok" && a.status !== "needs-plugin")).length;
-  return html`<${Badge} kind="success" dot>${p.usable} connected</${Badge}>
-    ${cooling ? html`<${Badge} kind="warning" dot>${cooling} cooling</${Badge}>` : ""}
-    ${bad ? html`<${Badge} kind="error" dot>${bad} error</${Badge}>` : ""}`;
+  const cooling = active.filter((a) => a.cooling).length;
+  const ok = active.length - bad;
+  return html`${ok > 0 && html`<${Badge} kind="success" dot>${ok} Connected</${Badge}>`}
+    ${cooling > 0 && html`<${Badge} kind="warning" dot>${cooling} Cooling</${Badge}>`}
+    ${bad > 0 && html`<${Badge} kind="error" dot>${bad} Error</${Badge}>`}`;
 }
-const KIND_DOT = { apikey: "#f59e0b", login: "#3b82f6", plugin: "#9ca3af", "openai-compatible": "#f97316", "anthropic-compatible": "#f97316" };
-
-const OTHER_KIND = { oauth: "Sign-in (OAuth)", webCookie: "Web session", free: "Free tier", freeTier: "Free tier" };
+function TestResults({ res, data, onClose }) {
+  const name = (id) => { const p = data.providers.find((x) => x.id === id); return p ? provMeta(p).name : id; };
+  return html`<${Modal} title="Test results" icon="play_arrow" onClose=${onClose} foot=${html`<button class="btn primary" onClick=${onClose}>Done</button>`}>
+    ${res.summary.total === 0 ? html`<p class="small muted">No active accounts in this section to test.</p>` : html`
+    <p class="small" style="margin-bottom:12px"><b>${res.summary.passed}</b> of ${res.summary.total} passed${res.summary.failed ? html` · <span style="color:var(--red-fg)">${res.summary.failed} failed</span>` : ""}. Tests use free read-only calls (models list or usage API); no tokens are spent.</p>
+    <div class="col" style="gap:6px">${res.results.map((r) => html`<div class="test-row">
+      <span class="sdot" style=${`background:${r.ok ? "var(--success)" : "var(--danger, #ef4444)"}`}></span>
+      <span class="medium">${name(r.provider)}</span><span class="muted small truncate">${r.name}</span><span class="grow"></span>
+      <span class="small ${r.ok ? "muted" : ""}" style=${r.ok ? "" : "color:var(--red-fg)"}>${r.message}${r.status ? ` (${r.status})` : ""}</span><span class="small muted mono">${r.ms}ms</span></div>`)}</div>`}
+  </${Modal}>`;
+}
+function Unsupported({ p, onClose, onAdd }) {
+  return html`<${Modal} title=${p.name} icon="info" onClose=${onClose}
+    foot=${html`<button class="btn ghost" onClick=${onClose}>Close</button><button class="btn primary" onClick=${onAdd}><${Icon} n="add" />Add OpenAI Compatible</button>`}>
+    <div class="row" style="gap:12px;margin-bottom:12px"><${Logo} p=${p} lg /><div><div class="strong">${p.name}</div><div class="small muted">Listed by 9Router · not routable by FastRouter yet</div></div></div>
+    <p class="small">${p.reason}</p>
+    ${p.keyUrl && html`<p class="small" style="margin-top:10px">API keys: <a href=${p.keyUrl} target="_blank" rel="noreferrer">${p.keyUrl}</a></p>`}</${Modal}>`;
+}
 function ProvidersPage({ data, reload, go, query }) {
   const [modal, setModal] = useState(/(^|&)add\b/.test(query) ? { t: "account" } : null);
   const [q, setQ] = useState("");
-  const [show, setShow] = useState("all");
+  const [filter, setFilter] = useState("all");
+  const [showAll, setShowAll] = useState(false);
+  const [testing, setTesting] = useState("");
+  const [results, setResults] = useState(null);
   const ok = matcher(q);
   const toggleAll = (p, on) => run(async () => { for (const a of p.accounts) await api("PATCH", `/api/admin/accounts/${a.id}`, { active: on }); await reload(); }, on ? "Provider enabled" : "Provider disabled");
-  const visible = (p) => ok(`${provMeta(p).name} ${p.id} ${p.prefix} ${(p.aliases || []).join(" ")}`) &&
-    (show === "all" || (show === "configured") === (p.accounts.length > 0));
+  const test = async (category) => {
+    setTesting(category);
+    try { setResults(await api("POST", "/api/admin/providers/test", { category })); } catch (e) { toast(e.message, "error"); }
+    setTesting("");
+  };
+  const all = [...data.providers.filter((p) => !p.kind.endsWith("compatible")),
+    ...(data.others || []).map((o) => ({ ...o, unsupported: true, accounts: [], kind: "other" }))];
+  const visible = (p) => ok(`${provMeta(p).name} ${p.id} ${p.prefix || ""}`) && (filter === "all" || provStatus(p) === filter);
+  const connected = (p) => (p.accounts.some((a) => a.active) || (p.noAuth && p.kind !== "plugin") ? 0 : 1);
+  const byPriority = (a, b) => (a.priority || 999) - (b.priority || 999) || connected(a) - connected(b) || a.unsupported - b.unsupported || provMeta(a).name.localeCompare(provMeta(b).name);
   const byName = (a, b) => (b.accounts.length > 0) - (a.accounts.length > 0) || provMeta(a).name.localeCompare(provMeta(b).name);
-  const card = (p) => html`<div class="card xs hover ${p.accounts.length ? "" : "unset"}" key=${p.id} onClick=${() => go("providers/" + encodeURIComponent(p.id))}
-      style=${p.accounts.length && p.accounts.every((a) => !a.active) ? "opacity:.55" : ""}>
+  const group = (sec) => all.filter((p) => SECTION_OF[p.category || "apikey"] === sec);
+  const oauth = group("oauth").filter(visible).sort(byPriority);
+  const free = group("free").filter(visible).sort((a, b) => (b.noAuth ? 1 : 0) - (a.noAuth ? 1 : 0) || byPriority(a, b));
+  const apikeyAll = group("apikey").filter(visible).sort(byName);
+  const searching = q.trim() !== "" || filter !== "all";
+  const apikey = searching || showAll ? apikeyAll : apikeyAll.slice(0, 20);
+  const nodes = data.providers.filter((p) => p.kind.endsWith("compatible") && visible(p));
+  const open = (p) => (p.unsupported ? setModal({ t: "unsupported", p }) : go("providers/" + encodeURIComponent(p.id)));
+  const card = (p) => html`<div class="card xs hover pcard" key=${p.id} onClick=${() => open(p)}
+      style=${(p.accounts.length && p.accounts.every((a) => !a.active)) || p.unsupported ? "opacity:.55" : ""} title=${p.unsupported ? p.reason : ""}>
     <div class="prov-card"><div class="row grow" style="gap:12px;min-width:0"><${Logo} p=${p} />
       <div class="grow" style="min-width:0"><div class="prov-name truncate">${provMeta(p).name}</div>
-        <div class="prov-meta"><span class="sdot" style=${`background:${KIND_DOT[p.kind]}`}></span><span class="muted mono">${p.prefix}/</span>${statusOf(p)}</div></div></div>
-      ${p.accounts.length > 0 && p.kind !== "plugin" ? html`<${Toggle} sm on=${p.accounts.some((a) => a.active)} title="Enable or disable every account" onChange=${(v) => toggleAll(p, v)} />`
-        : p.kind === "apikey" && html`<span class="add-hint"><${Icon} n="add" /></span>`}
+        <div class="prov-meta">${cardStatus(p)}</div></div></div>
+      ${p.accounts.length > 0 && p.kind !== "plugin" && html`<span onClick=${(e) => e.stopPropagation()}><${Toggle} sm on=${p.accounts.some((a) => a.active)} title="Enable or disable every account" onChange=${(v) => toggleAll(p, v)} /></span>`}
     </div></div>`;
-  const section = (title, icon, all, action, note) => {
-    const list = all.filter(visible).sort(byName);
-    const conf = all.filter((p) => p.accounts.length > 0).length;
-    if (!list.length && (q || show !== "all")) return "";
-    return html`<div>
-      <div class="sec-head"><h2><${Icon} n=${icon} style="color:var(--primary)" />${title}<span class="count">${conf} / ${all.length}</span></h2>${action}</div>
-      ${note && html`<p class="small muted" style="margin:-4px 0 12px">${note}</p>`}
-      <div class="prov-grid">${list.map(card)}</div></div>`;
-  };
-  const builtin = data.providers.filter((p) => p.kind === "apikey");
-  const logins = data.providers.filter((p) => p.kind === "login" || p.kind === "plugin");
-  const nodes = data.providers.filter((p) => p.kind.endsWith("compatible"));
-  const others = show === "configured" ? [] : (data.others || []).filter((o) => ok(`${o.name} ${o.id}`));
-  const configured = data.providers.filter((p) => p.accounts.length > 0).length;
+  const testBtn = (cat, label) => html`<button class="btn outline sm" disabled=${!!testing} title=${`Test all ${label} connections`} onClick=${() => test(cat)}>
+    <${Icon} n=${testing === cat ? "progress_activity" : "play_arrow"} cls=${testing === cat ? "spin" : ""} />${testing === cat ? "Testing…" : "Test All"}</button>`;
+  const section = (title, list, cat, label, extra) => list.length > 0 && html`<section>
+    <div class="sec-head"><h2>${title}</h2>${testBtn(cat, label)}</div>
+    <div class="prov-grid">${list.map(card)}</div>${extra}</section>`;
+  const total = all.length;
   return html`
     <div class="prov-bar">
-      <div class="picker-search grow" style="max-width:420px"><${Icon} n="search" /><input class="input" placeholder="Search ${data.providers.length + (data.others || []).length} providers…" value=${q} onInput=${(e) => setQ(e.target.value)} /></div>
-      <${Seg} value=${show} onChange=${setShow} options=${[["all", "All"], ["configured", `Configured · ${configured}`], ["available", "Not configured"]]} />
+      <div class="picker-search" style="width:320px"><${Icon} n="search" /><input class="input" placeholder="Search ${total} providers…" value=${q} onInput=${(e) => setQ(e.target.value)} /></div>
       <span class="grow"></span>
-      <button class="btn outline" onClick=${() => setModal({ t: "node" })}><${Icon} n="link" />Add endpoint</button>
-      <button class="btn primary" onClick=${() => setModal({ t: "account" })}><${Icon} n="add" />Add account</button></div>
-    <div class="legend">
-      <span><i style="background:#f59e0b"></i>API key</span><span><i style="background:#3b82f6"></i>Official sign-in</span>
-      <span><i style="background:#f97316"></i>Compatible endpoint</span><span><i style="background:#9ca3af"></i>Needs plugin</span></div>
-    ${section("API key providers", "vpn_key", builtin, null, "Paste a key to route prefix/model calls through any of these. Click one to add an account.")}
-    ${section("Sign-in providers", "verified", logins)}
-    ${section("Custom endpoints", "link", nodes, html`<button class="btn ghost sm" onClick=${() => setModal({ t: "node" })}><${Icon} n="add" />New endpoint</button>`)}
-    ${others.length > 0 && html`<div>
-      <div class="sec-head"><h2><${Icon} n="extension" style="color:var(--text-muted)" />More 9Router providers<span class="count">${others.length}</span></h2></div>
-      <p class="small muted" style="margin:-4px 0 12px">These sign in with browser sessions, OAuth apps or CLI tokens that FastRouter core does not ship. Keep using them through 9Router, or add their OpenAI-compatible URL as a custom endpoint.</p>
-      <div class="prov-grid">${others.map((o) => html`<div class="card xs other" key=${o.id} title="Not supported by FastRouter yet">
-        <div class="prov-card"><div class="row grow" style="gap:12px;min-width:0"><${Logo} p=${o} />
-          <div class="grow" style="min-width:0"><div class="prov-name truncate">${o.name}</div>
-            <div class="prov-meta"><span class="sdot" style="background:#9ca3af"></span><span class="muted small">${OTHER_KIND[o.category] || o.category}</span></div></div></div>
-          <${Badge}>Not supported</${Badge}></div></div>`)}</div></div>`}
+      <select class="input select-sm" value=${filter} onChange=${(e) => setFilter(e.target.value)} aria-label="Filter providers by connection status">
+        ${STATUS_FILTER.map(([v, l]) => html`<option value=${v}>${l}</option>`)}</select></div>
+    <section>
+      <div class="sec-head"><h2>Custom Providers (OpenAI/Anthropic Compatible)</h2>
+        <div class="row" style="gap:8px">
+          <button class="btn primary sm" onClick=${() => setModal({ t: "node", type: "anthropic-compatible" })}><${Icon} n="add" />Add Anthropic Compatible</button>
+          <button class="btn outline sm" onClick=${() => setModal({ t: "node", type: "openai-compatible" })}><${Icon} n="add" />Add OpenAI Compatible</button>
+          ${nodes.length > 0 && testBtn("custom", "custom")}</div></div>
+      ${nodes.length ? html`<div class="prov-grid">${nodes.map((p) => html`<div class="card xs hover pcard" key=${p.id} onClick=${() => go("providers/" + encodeURIComponent(p.id))}
+          style=${p.accounts.length && p.accounts.every((a) => !a.active) ? "opacity:.55" : ""}>
+        <div class="prov-card"><div class="row grow" style="gap:12px;min-width:0"><${Logo} p=${p} />
+          <div class="grow" style="min-width:0"><div class="prov-name truncate">${p.name}</div>
+            <div class="prov-meta">${cardStatus(p)}<${Badge}>${p.kind === "anthropic-compatible" ? "Messages" : p.apiType === "responses" ? "Responses" : "Chat"}</${Badge}><span class="muted mono small">${p.prefix}/</span></div></div></div>
+          ${p.accounts.length > 0 && html`<span onClick=${(e) => e.stopPropagation()}><${Toggle} sm on=${p.accounts.some((a) => a.active)} onChange=${(v) => toggleAll(p, v)} /></span>`}</div></div>`)}</div>`
+        : html`<div class="empty-line"><${Icon} n="extension" />No custom providers — use buttons above to add OpenAI/Anthropic compatible endpoints</div>`}
+    </section>
+    ${section("OAuth Providers", oauth, "oauth", "OAuth")}
+    ${section("Free Tier Providers", free, "free", "Free")}
+    ${section("API Key Providers", apikey, "apikey", "API Key", !searching && apikeyAll.length > 20 && html`<button class="show-all" onClick=${() => setShowAll(!showAll)}>
+      <${Icon} n=${showAll ? "expand_less" : "expand_more"} />${showAll ? "Show less" : `Show all ${apikeyAll.length} providers`}</button>`)}
+    ${!oauth.length && !free.length && !apikey.length && !nodes.length && html`<div class="empty-line"><${Icon} n="search_off" />No providers match your search or filters</div>`}
     ${modal && modal.t === "account" && html`<${AccountForm} data=${data} onClose=${() => setModal(null)} onSaved=${reload} />`}
-    ${modal && modal.t === "node" && html`<${NodeForm} onClose=${() => setModal(null)} onSaved=${reload} />`}`;
+    ${modal && modal.t === "node" && html`<${NodeForm} type=${modal.type} onClose=${() => setModal(null)} onSaved=${reload} />`}
+    ${modal && modal.t === "unsupported" && html`<${Unsupported} p=${modal.p} onClose=${() => setModal(null)} onAdd=${() => setModal({ t: "node", type: "openai-compatible" })} />`}
+    ${results && html`<${TestResults} res=${results} data=${data} onClose=${() => setResults(null)} />`}`;
 }
 
 function AccountForm({ data, provider, account, onClose, onSaved }) {
@@ -483,9 +578,9 @@ function AccountForm({ data, provider, account, onClose, onSaved }) {
     </form></${Modal}>`;
 }
 
-function NodeForm({ node, onClose, onSaved }) {
+function NodeForm({ node, type, onClose, onSaved }) {
   const [f, setF] = useState(node ? { name: node.name, prefix: node.prefix, baseUrl: node.baseUrl, type: node.kind, apiType: node.apiType || "chat" }
-    : { name: "", prefix: "", baseUrl: "", type: "openai-compatible", apiType: "chat" });
+    : { name: "", prefix: "", baseUrl: "", type: type || "openai-compatible", apiType: "chat" });
   const [busy, setBusy] = useState(false);
   const set = (k) => (e) => setF({ ...f, [k]: e && e.target ? e.target.value : e });
   const save = async (e) => {
@@ -898,20 +993,107 @@ function UsageDetails({ data, period }) {
 }
 
 /* --------------------------------------------------------------- quota */
-function QuotaPage({ data }) {
-  const accts = data.providers.flatMap((p) => p.accounts.map((a) => ({ ...a, p })));
-  const active = accts.filter((a) => a.active).sort((a, b) => b.uses - a.uses);
-  const maxUse = Math.max(1, ...active.map((a) => a.uses));
-  const stats = [["group", "Active accounts", active.length], ["hourglass_top", "Cooling down", active.filter((a) => a.cooling).length], ["error", "Failures (all time)", fmt(accts.reduce((n, a) => n + a.failures, 0))]];
+// Quota Tracker, after 9Router's ProviderLimits: per-account cards with each
+// quota window's remaining share and reset countdown, read from the provider's
+// own usage API (Codex, GLM, DeepSeek, OpenCode Go, OpenRouter).
+const qColor = (pct) => (pct < 30 ? "red" : pct < 70 ? "yellow" : "green");
+function countdown(iso, now) {
+  if (!iso) return "";
+  let s = Math.max(0, Math.round((Date.parse(iso) - now) / 1000));
+  const d = Math.floor(s / 86400); s -= d * 86400;
+  const h = Math.floor(s / 3600); s -= h * 3600;
+  const m = Math.floor(s / 60);
+  return d > 0 ? `${d}d ${h}h` : h > 0 ? `${h}h ${m}m` : `${m}m`;
+}
+const qMoney = (v, unit) => (unit === "USD" ? "$" : unit === "CNY" ? "¥" : "") + (+v).toFixed(2) + (unit === "USD" || unit === "CNY" ? "" : " " + unit);
+const qRemaining = (a) => { const r = a.quotas.filter((x) => x.remainingPct >= 0); return r.length ? Math.min(...r.map((x) => x.remainingPct)) : -1; };
+const qSoonest = (a) => Math.min(Infinity, ...a.quotas.filter((x) => x.resetAt).map((x) => Date.parse(x.resetAt)));
+function QuotaRow({ q, now, hidden, onHide }) {
+  const balance = q.remainingPct < 0;
+  const pct = balance ? 100 : Math.round(q.remainingPct);
+  const c = balance ? "neutral" : qColor(pct);
+  return html`<div class="qrow ${hidden ? "hid" : ""}">
+    <div class="qrow-top"><span class="qdot ${c}"></span><span class="medium grow truncate">${q.name}</span>
+      <span class="small muted">${balance ? (q.limit > 0 ? `${qMoney(q.used, q.unit)} / ${qMoney(q.limit, q.unit)}` : q.unit === "%" ? "" : `${qMoney(q.used, q.unit)} ${q.name.startsWith("Balance") ? "left" : "used"}`)
+        : q.unit === "%" ? `${Math.round(q.used)}% / 100% used` : `${qMoney(q.used, q.unit)} / ${qMoney(q.limit, q.unit)}`}</span>
+      <button class="icon-btn xs" title=${hidden ? "Show this quota" : "Hide this quota"} onClick=${onHide}><${Icon} n=${hidden ? "visibility_off" : "visibility"} /></button></div>
+    ${!balance && html`<div class="qbar ${c}"><i style=${`width:${Math.min(100, pct)}%`}></i></div>
+      <div class="qrow-foot"><span class="qpct ${c}">${pct}% remaining</span>${q.resetAt && html`<span class="small muted"><${Icon} n="schedule" />in ${countdown(q.resetAt, now)}</span>`}</div>`}
+  </div>`;
+}
+function QuotaCard({ a, p, now, hidden, toggleHide, busy, onRefresh, onEdit, onDelete, onToggle }) {
+  const shown = a.quotas.filter((q) => !hidden[a.id + "|" + q.name]);
+  const hiddenCount = a.quotas.length - shown.length;
+  const [showHidden, setShowHidden] = useState(false);
+  return html`<div class="card sm qcard" style=${a.active ? "" : "opacity:.6"}>
+    <div class="qcard-head"><${Logo} p=${p} />
+      <div class="grow" style="min-width:0"><div class="row" style="gap:6px"><span class="strong truncate">${provMeta(p).name}</span>${a.plan && html`<${Badge} kind="info">${a.plan}</${Badge}>`}</div>
+        <div class="small muted truncate">${a.name}</div></div>
+      <button class="icon-btn" title="Refresh this account" disabled=${busy || !a.supported} onClick=${onRefresh}><${Icon} n="refresh" cls=${busy ? "spin" : ""} /></button>
+      <button class="icon-btn" title="Edit account" onClick=${onEdit}><${Icon} n="edit" /></button>
+      <button class="icon-btn danger" title="Delete account" onClick=${onDelete}><${Icon} n="delete" /></button>
+      <${Toggle} sm on=${a.active} title=${a.active ? "Turn this account off" : "Turn this account on"} onChange=${onToggle} /></div>
+    ${a.supported && a.quotas.length > 0 && html`<div class="qcount"><span>${a.quotas.length} quota${a.quotas.length === 1 ? "" : "s"}</span>
+      ${hiddenCount > 0 && html`<button class="link small" onClick=${() => setShowHidden(!showHidden)}>${showHidden ? "Hide" : "Show"} ${hiddenCount} hidden</button>`}</div>`}
+    ${a.error && html`<div class="qmsg err"><${Icon} n="error" />${a.error}</div>`}
+    ${!a.supported && html`<div class="qmsg"><${Icon} n="info" />${a.note}</div>`}
+    <div class="col" style="gap:12px">${(showHidden ? a.quotas : shown).map((q) => html`<${QuotaRow} key=${q.name} q=${q} now=${now} hidden=${!!hidden[a.id + "|" + q.name]} onHide=${() => toggleHide(a.id + "|" + q.name)} />`)}</div>
+  </div>`;
+}
+function QuotaPage({ data, reload, go }) {
+  const [res, setRes] = useState(null);
+  const [busy, setBusy] = useState({});
+  const [prov, setProv] = useState("all");
+  const [acct, setAcct] = useState("all");
+  const [expiring, setExpiring] = useState(false);
+  const [auto, setAuto] = useState(() => localStorage.getItem("fr-quota-auto") === "1");
+  const [left, setLeft] = useState(60);
+  const [now, setNow] = useState(Date.now());
+  const [hidden, setHidden] = useState(() => { try { return JSON.parse(localStorage.getItem("fr-quota-hidden") || "{}"); } catch (e) { return {}; } });
+  const [confirm, setConfirm] = useState(null);
+  const load = async (refresh, id) => {
+    setBusy((b) => ({ ...b, [id || "*"]: true }));
+    try {
+      const r = await api("GET", `/api/admin/quota?${refresh ? "refresh=1&" : ""}${id ? "account=" + encodeURIComponent(id) : ""}`);
+      setRes((old) => (id && old ? { ...old, accounts: old.accounts.map((a) => r.accounts.find((x) => x.id === a.id) || a) } : r));
+    } catch (e) { toast(e.message, "error"); }
+    setBusy((b) => ({ ...b, [id || "*"]: false })); setLeft(60);
+  };
+  useEffect(() => { load(false); }, []);
+  useEffect(() => { const t = setInterval(() => { setNow(Date.now()); if (auto) setLeft((l) => l - 1); }, 1000); return () => clearInterval(t); }, [auto]);
+  useEffect(() => { if (auto && left <= 0) load(true); }, [left, auto]);
+  const toggleHide = (k) => { const h = { ...hidden }; if (h[k]) delete h[k]; else h[k] = true; setHidden(h); localStorage.setItem("fr-quota-hidden", JSON.stringify(h)); };
+  const setAutoP = (v) => { setAuto(v); setLeft(60); localStorage.setItem("fr-quota-auto", v ? "1" : "0"); };
+  const provOf = (a) => data.providers.find((p) => p.id === a.provider) || { id: a.provider, name: a.provider };
+  if (!res) return html`<div class="skeleton"></div>`;
+  const accts = res.accounts.filter((a) => (prov === "all" || a.provider === prov) && (acct === "all" || (acct === "active") === a.active));
+  const list = [...accts].sort((a, b) => b.supported - a.supported || (expiring ? qSoonest(a) - qSoonest(b) : 0));
+  const provIds = [...new Set(res.accounts.map((a) => a.provider))];
+  const empty = res.accounts.filter((a) => a.active && qRemaining(a) === 0);
+  const avail = res.accounts.filter((a) => !a.active && qRemaining(a) > 0);
+  const setActive = (ids, on) => run(async () => { for (const id of ids) await api("PATCH", `/api/admin/accounts/${id}`, { active: on }); await reload(); await load(false); },
+    `${ids.length} account${ids.length === 1 ? "" : "s"} turned ${on ? "on" : "off"}`);
   return html`
-    <div class="notice info"><${Icon} n="info" />Provider-side balances and plan limits aren't fetched yet. This page shows what FastRouter tracks itself: per-account use, failures and cooldowns.</div>
-    <div class="grid g3">${stats.map(([ic, l, v]) => html`<div class="card sm stat"><span class="label"><${Icon} n=${ic} />${l}</span><span class="value">${v}</span></div>`)}</div>
-    <div class="card flush"><div style="padding:16px 18px"><h2 style="font-size:16px;font-weight:600">Accounts by use</h2></div>
-      <table class="table"><thead><tr><th>Account</th><th>State</th><th>Requests</th><th class="num">Failure rate</th><th class="num">Last used</th></tr></thead><tbody>
-      ${active.map((a) => html`<tr><td><div class="row" style="gap:10px"><${Logo} p=${a.p} /><div><div class="medium">${a.name}</div><div class="small muted">${provMeta(a.p).name}</div></div></div></td>
-        <td>${a.p.kind === "plugin" ? html`<${Badge} icon="extension">Needs plugin</${Badge}>` : a.cooling ? html`<${Badge} kind="warning" icon="hourglass_top">Cooling</${Badge}>` : a.expired ? html`<${Badge} kind="error">Expired</${Badge}>` : html`<${Badge} kind="success" dot>Ready</${Badge}>`}</td>
-        <td><div class="row" style="gap:8px"><div class="bar grow"><i style=${`width:${(100 * a.uses) / maxUse}%`}></i></div><span class="small">${fmt(a.uses)}</span></div></td>
-        <td class="num small">${a.uses ? ((100 * a.failures) / a.uses).toFixed(1) + "%" : "—"}</td><td class="num small muted">${ago(a.lastUsedAt)}</td></tr>`)}</tbody></table></div>`;
+    ${res.demo && html`<div class="notice warn"><${Icon} n="science" />Demo data: these quota numbers are samples (FASTROUTER_DEMO_QUOTA=1), not your real usage.</div>`}
+    <div class="qbar-tools">
+      <select class="input select-sm" value=${prov} onChange=${(e) => setProv(e.target.value)} aria-label="Provider">
+        <option value="all">All providers</option>${provIds.map((id) => html`<option value=${id}>${provMeta(provOf({ provider: id })).name}</option>`)}</select>
+      <select class="input select-sm" value=${acct} onChange=${(e) => setAcct(e.target.value)} aria-label="Accounts">
+        <option value="all">All accounts</option><option value="active">Active</option><option value="inactive">Turned off</option></select>
+      <button class="btn outline sm ${expiring ? "on" : ""}" aria-pressed=${expiring} onClick=${() => setExpiring(!expiring)}><${Icon} n="hourglass_bottom" />Expiring first</button>
+      <button class="btn outline sm" disabled=${!empty.length} title="Turn off active accounts whose quota is used up" onClick=${() => setConfirm({ on: false, ids: empty.map((a) => a.id) })}><${Icon} n="toggle_off" />Turn off Empty${empty.length ? ` (${empty.length})` : ""}</button>
+      <button class="btn outline sm" disabled=${!avail.length} title="Turn on accounts that are off but have quota left" onClick=${() => setConfirm({ on: true, ids: avail.map((a) => a.id) })}><${Icon} n="toggle_on" />Turn on Available${avail.length ? ` (${avail.length})` : ""}</button>
+      <span class="grow"></span>
+      <label class="row small" style="gap:8px"><${Toggle} sm on=${auto} onChange=${setAutoP} />Auto-refresh${auto && html`<span class="muted mono">${left}s</span>`}</label>
+      <button class="icon-btn" title="Refresh all" disabled=${busy["*"]} onClick=${() => load(true)}><${Icon} n="refresh" cls=${busy["*"] ? "spin" : ""} /></button></div>
+    ${list.length === 0 ? html`<div class="card"><div class="empty"><div class="bubble"><${Icon} n="cloud_off" /></div><h3 class="strong">No accounts</h3><p class="small muted">Add a provider account to track its quota.</p></div></div>`
+    : html`<div class="qgrid">${list.map((a) => html`<${QuotaCard} key=${a.id} a=${a} p=${provOf(a)} now=${now} hidden=${hidden} toggleHide=${toggleHide} busy=${busy[a.id] || busy["*"]}
+        onRefresh=${() => load(true, a.id)} onEdit=${() => go("providers/" + encodeURIComponent(a.provider))}
+        onDelete=${() => setConfirm({ del: a })} onToggle=${(v) => setActive([a.id], v)} />`)}</div>`}
+    ${confirm && confirm.del && html`<${Confirm} title="Delete account?" text=${`Delete ${confirm.del.name} (${provMeta(provOf(confirm.del)).name})? This removes its saved credential.`}
+      onClose=${() => setConfirm(null)} onYes=${() => run(async () => { await api("DELETE", `/api/admin/accounts/${confirm.del.id}`); await reload(); await load(false); }, "Account deleted")} />`}
+    ${confirm && confirm.ids && html`<${Confirm} danger=${!confirm.on} label=${confirm.on ? "Turn on" : "Turn off"} title=${confirm.on ? "Turn on available accounts?" : "Turn off empty accounts?"}
+      text=${`${confirm.ids.length} account${confirm.ids.length === 1 ? "" : "s"} will be turned ${confirm.on ? "on" : "off"}.`} onClose=${() => setConfirm(null)} onYes=${() => setActive(confirm.ids, confirm.on)} />`}`;
 }
 
 /* ---------------------------------------------------------------- keys */
@@ -1020,34 +1202,135 @@ function CliPage({ data }) {
 }
 
 /* ------------------------------------------------------------ settings */
+// Token Saver, laid out like 9Router's. Headroom can be installed from here:
+// nothing is installed until the Install button is clicked.
+const CAVEMAN_LV = [["lite", "Lite", "Drop filler, keep grammar"], ["full", "Full", "Drop articles, fragments OK"], ["ultra", "Ultra", "Telegraphic, max compression"]];
+const PONYTAIL_LV = [["lite", "Lite", "Build asked, name lazier option"], ["full", "Full", "Ladder enforced: stdlib/native first"], ["ultra", "Ultra", "YAGNI extremist, deletion first"]];
+const EXTRA_TITLE = { code: "tree-sitter AST compression for code responses", ml: "Kompress-v2 HF model for prose/agentic traces (~+1GB)" };
+function SegLv({ value, levels, onChange, disabled }) {
+  return html`<div class="lv"><div class="lv-seg">${levels.map(([id, label, desc]) => html`<button type="button" title=${desc} class=${value === id ? "on" : ""} disabled=${disabled} onClick=${() => onChange(id)}>${label}</button>`)}</div>
+    <div class="lv-desc">${(levels.find((l) => l[0] === value) || levels[1])[2]}</div></div>`;
+}
+function HeadroomSetup({ s, hr, refresh, save, locked, onClose }) {
+  const [url, setUrl] = useState(s.headroomUrl);
+  const [act, setAct] = useState("");
+  const call = async (path, body, ok) => { setAct(path); try { await run(() => api("POST", "/api/admin/headroom/" + path, body || {}), ok); } catch (e) {} setAct(""); refresh(true); };
+  const installing = hr && hr.busy;
+  return html`<${Modal} title=${hr && hr.running ? "Headroom" : "Setup Headroom"} icon="compress" onClose=${onClose}
+    foot=${html`<button class="btn ghost" onClick=${() => refresh(true)}><${Icon} n="refresh" />Recheck</button><button class="btn primary" onClick=${onClose}>Done</button>`}>
+    ${!hr ? html`<p class="small muted">Checking…</p>` : html`<div class="col" style="gap:14px">
+      <div class="row" style="gap:8px"><span class="small muted">Status:</span><span class="chip ${hr.running ? "ok" : "warn"}">${installing ? "Installing…" : hr.running ? "Running" : !hr.localUrl ? "External" : hr.installed ? "Stopped" : "Not installed"}</span>
+        ${hr.version && html`<span class="small muted">headroom-ai v${hr.version}${hr.managed ? " · FastRouter venv" : ""}</span>`}</div>
+      <${Field} label="Headroom URL" hint="FastRouter sends context to <URL>/v1/compress before routing. Local URLs can be started from here.">
+        <div class="row" style="gap:8px"><input class="input mono grow" value=${url} disabled=${locked("headroomUrl")} onInput=${(e) => setUrl(e.target.value)} />
+          <button class="btn outline sm" disabled=${url === s.headroomUrl || locked("headroomUrl")} onClick=${() => save({ headroomUrl: url }, "URL saved")}>Save</button></div></${Field}>
+      ${hr.running ? (hr.pid ? html`<button class="btn outline" disabled=${!!act} onClick=${() => call("stop", null, "Headroom stopped")}><${Icon} n="stop_circle" />${act === "stop" ? "Stopping…" : "Stop Headroom"}</button>`
+          : html`<p class="small" style="color:var(--green-fg)">Headroom proxy is reachable. You can enable the token saver.</p>`)
+        : hr.installed && hr.canStart ? html`<button class="btn primary" disabled=${!!act} onClick=${() => call("start", null, "Headroom started")}><${Icon} n="play_arrow" />${act === "start" ? "Starting…" : "Start Headroom"}</button>`
+        : hr.installed ? html`<p class="small muted">Start Headroom yourself at the configured URL, then click Recheck.</p>`
+        : !hr.python && !hr.commands.length ? html`<p class="small" style="color:var(--amber-fg)">Python 3.10 or newer is required. Install it from <a href="https://www.python.org/downloads/" target="_blank" rel="noreferrer">python.org</a> (tick “Add python.exe to PATH”), then click Recheck.</p>`
+        : html`<div class="col" style="gap:8px"><p class="small medium">Install runs these commands (into FastRouter's own folder, not your system Python):</p>
+            <pre class="code-box">${hr.commands.join("\n")}</pre>
+            <button class="btn primary" disabled=${installing || !!act} onClick=${() => call("install", { extras: [] }, "Installing Headroom…")}><${Icon} n="download" />${installing ? "Installing… (a few minutes)" : "Install Headroom"}</button></div>`}
+      ${(installing || hr.log) && html`<pre class="code-box log">${hr.log || "Starting…"}</pre>`}
+      ${hr.error && html`<p class="small" style="color:var(--red-fg)">${hr.error}</p>`}
+    </div>`}</${Modal}>`;
+}
 function TokenSaverPage({ data, reload }) {
   const s = data.settings;
   const locked = (k) => s.lockedByConfig.includes(k);
   const save = (body, ok = "Settings saved") => run(async () => { await api("PATCH", "/api/admin/settings", body); await reload(); }, ok);
-  const [hrUrl, setHrUrl] = useState(s.headroomUrl);
+  const [hr, setHr] = useState(null);
+  const [setup, setSetup] = useState(false);
+  const [pending, setPending] = useState([]);
+  const [prompt, setPrompt] = useState(s.customPrompt || "");
+  const refresh = useCallback(async (fresh) => { try { setHr(await api("GET", "/api/admin/headroom" + (fresh ? "?fresh=1" : ""))); } catch (e) {} }, []);
+  useEffect(() => { refresh(false); }, []);
+  useEffect(() => { if (!hr || !hr.busy) return; const t = setTimeout(() => refresh(true), 1500); return () => clearTimeout(t); }, [hr]);
+  const hrLabel = !hr ? "Checking…" : hr.busy ? "Installing…" : hr.running ? "Running" : !hr.localUrl ? "External" : hr.installed ? "Stopped" : "Not installed";
+  const extrasCall = (path, body, ok) => run(async () => { await api("POST", "/api/admin/headroom/" + path, body); setPending([]); await refresh(true); }, ok);
+  const toggleExtra = async (extra, on) => {
+    await save(extra === "code" ? { headroomCodeAware: on } : { headroomKompress: on }, `[${extra}] ${on ? "on" : "off"}`);
+    if (hr && hr.running && hr.pid) await run(() => api("POST", "/api/admin/headroom/restart", {}), "Headroom restarted with the new setting");
+  };
   const Lock = ({ k }) => locked(k) && html`<span class="lock" title="Set in the config file"><${Icon} n="lock" />config file</span>`;
-  const saver = (icon, title, desc, enabledKey, levelKey, lockKey, extra) => html`<div class="set-row" style="align-items:flex-start">
-    <div class="saver-head" style="align-items:flex-start"><div class="saver-icon"><${Icon} n=${icon} /></div>
-      <div><div class="t">${title}<${Lock} k=${lockKey} /></div><div class="d">${desc}</div>${extra}</div></div>
-    <div class="row" style="gap:12px">${levelKey && s[enabledKey] && html`<${Seg} value=${s[levelKey]} disabled=${locked(lockKey)} onChange=${(v) => save({ [levelKey]: v })} options=${[["lite", "Lite"], ["full", "Full"], ["ultra", "Ultra"]]} />`}
-      <${Toggle} on=${s[enabledKey]} disabled=${locked(lockKey)} onChange=${(v) => save({ [enabledKey]: v }, v ? title + " on" : title + " off")} /></div></div>`;
-  const on = [s.rtkEnabled, s.cavemanEnabled, s.ponytailEnabled, s.headroomEnabled].filter(Boolean).length;
-  return html`
-    <div class="grid g3">
-      <div class="card sm stat"><span class="label"><${Icon} n="savings" />Savers on</span><span class="value">${on} / 4</span><span class="sub">applied to every request</span></div>
-      <div class="card sm stat"><span class="label"><${Icon} n="bolt" />Hot path</span><span class="value">in-process</span><span class="sub">RTK, Caveman and Ponytail run inside FastRouter</span></div>
-      <div class="card sm stat"><span class="label"><${Icon} n="cloud_sync" />Headroom</span><span class="value">${s.headroomEnabled ? "on" : "off"}</span><span class="sub">${s.headroomEnabled ? "falls back to direct if down" : "optional compression server"}</span></div>
-    </div>
-    <div class="card">
-      <div class="card-title"><div><h2><${Icon} n="compress" />Token savers</h2><p>Shrink what goes upstream. Applied to every request; changes take effect immediately.</p></div></div>
-      ${saver("terminal", "RTK", "Compresses long tool output (test logs, git diffs, builds) before it reaches the model.", "rtkEnabled", null, "rtkEnabled")}
-      ${saver("record_voice_over", "Caveman", "Asks the model to answer tersely. Fewer output tokens, same substance.", "cavemanEnabled", "cavemanLevel", "caveman")}
-      ${saver("content_cut", "Ponytail", "Trims the system prompt and old turns of long conversations.", "ponytailEnabled", "ponytailLevel", "ponytail")}
-      ${saver("cloud_sync", "Headroom", "Sends context through a Headroom compression server first. Requests fall back to direct if it's down.", "headroomEnabled", null, "headroomEnabled",
-        s.headroomEnabled && html`<div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap"><input class="input mono" style="width:280px" value=${hrUrl} disabled=${locked("headroomUrl")} onInput=${(e) => setHrUrl(e.target.value)} />
-          <button class="btn outline sm" disabled=${hrUrl === s.headroomUrl || locked("headroomUrl")} onClick=${() => save({ headroomUrl: hrUrl })}>Save URL</button>
-          <label class="row small" style="gap:8px"><${Toggle} sm on=${s.headroomCodeAware} disabled=${locked("headroomCodeAware")} onChange=${(v) => save({ headroomCodeAware: v })} />Code-aware</label></div>`)}
-    </div>`;
+  const link = (href, t) => html`<a class="ts-link" href=${href} target="_blank" rel="noreferrer">(${t})</a>`;
+  return html`<div class="card ts-card">
+    <h2 class="ts-title"><${Icon} n="bolt" />Token Saver</h2>
+    <div class="ts-row">
+      <div class="grow"><div class="ts-t">Compress tool output ${link("https://github.com/rtk-ai/rtk", "RTK")}<${Lock} k="rtkEnabled" /></div>
+        <div class="ts-d">git/grep/ls/tree/logs → 60-90% fewer input tokens</div></div>
+      <${Toggle} on=${s.rtkEnabled} disabled=${locked("rtkEnabled")} onChange=${(v) => save({ rtkEnabled: v }, v ? "RTK on" : "RTK off")} /></div>
+    <div class="ts-row">
+      <div class="grow"><div class="ts-t">Compress context ${link("https://github.com/chopratejas/headroom", "Headroom")}
+          <span class="chip ${hr && hr.running ? "ok" : "warn"}">${hrLabel}</span>
+          <button class="link small" onClick=${() => { setSetup(true); refresh(true); }}>${hr && hr.running ? "Manage" : "Setup"}</button><${Lock} k="headroomEnabled" /></div>
+        <div class="ts-d">Compress prompts via /v1/compress before routing to the model</div>
+        ${hr && hr.installed && html`<div class="ts-extras">
+          <span class="small muted">Compression extras${hr.version ? ` · v${hr.version}` : ""}:</span>
+          ${["code", "ml"].map((x) => hr.extras[x] ? html`<span class="xchip on" title=${EXTRA_TITLE[x]}>
+              <${Toggle} sm on=${x === "code" ? s.headroomCodeAware : s.headroomKompress !== false} disabled=${hr.busy} onChange=${(v) => toggleExtra(x, v)} /><b>[${x}]</b>
+              <button class="link small danger" disabled=${!!hr.busy} onClick=${() => extrasCall("uninstall", { extra: x }, `Uninstalling [${x}]…`)}>Uninstall</button></span>`
+            : html`<label class="xchip" title=${EXTRA_TITLE[x]}><input type="checkbox" checked=${pending.includes(x)} disabled=${!!hr.busy}
+                onChange=${(e) => setPending(e.target.checked ? [...pending, x] : pending.filter((y) => y !== x))} /><b>[${x}]</b></label>`)}
+          ${pending.length > 0 && html`<button class="btn primary sm" disabled=${!!hr.busy} onClick=${() => extrasCall("install", { extras: pending }, "Installing…")}>
+            ${hr.busy ? "Installing…" : `Install [proxy,${pending.join(",")}]`}</button>`}
+          ${hr.busy && html`<pre class="code-box log" style="width:100%">${hr.log || "Starting…"}</pre>`}</div>`}</div>
+      <${Toggle} on=${s.headroomEnabled} disabled=${locked("headroomEnabled")} onChange=${(v) => save({ headroomEnabled: v }, v ? "Headroom on" : "Headroom off")} /></div>
+    <div class="ts-row">
+      <div class="grow"><div class="ts-t">Compress LLM output ${link("https://github.com/JuliusBrussee/caveman", "Caveman")}<${Lock} k="caveman" /></div>
+        <div class="ts-d">Terse-style system prompt → ~65% fewer output tokens (up to 87%)</div></div>
+      <${SegLv} value=${s.cavemanLevel} levels=${CAVEMAN_LV} disabled=${locked("caveman")} onChange=${(v) => save({ cavemanLevel: v })} />
+      <${Toggle} on=${s.cavemanEnabled} disabled=${locked("caveman")} onChange=${(v) => save({ cavemanEnabled: v }, v ? "Caveman on" : "Caveman off")} /></div>
+    <div class="ts-row">
+      <div class="grow"><div class="ts-t">Lazy senior dev ${link("https://github.com/DietrichGebert/ponytail", "Ponytail")}<${Lock} k="ponytail" /></div>
+        <div class="ts-d">Bias the model toward minimal code: YAGNI, reuse stdlib, deletion over addition</div></div>
+      <${SegLv} value=${s.ponytailLevel} levels=${PONYTAIL_LV} disabled=${locked("ponytail")} onChange=${(v) => save({ ponytailLevel: v })} />
+      <${Toggle} on=${s.ponytailEnabled} disabled=${locked("ponytail")} onChange=${(v) => save({ ponytailEnabled: v }, v ? "Ponytail on" : "Ponytail off")} /></div>
+    <div class="ts-row last">
+      <div class="grow"><div class="ts-t">Custom system prompt</div>
+        <div class="ts-d">Appends your own instruction to every request, independently of the savers above</div>
+        ${s.customPromptEnabled && html`<div class="col" style="gap:8px;margin-top:10px">
+          <textarea class="input" rows="4" maxlength="8000" placeholder="e.g. Always answer in British English." value=${prompt} onInput=${(e) => setPrompt(e.target.value)}></textarea>
+          <div class="row" style="gap:8px"><span class="small muted grow">${prompt.trim().length} characters</span>
+            <button class="btn primary sm" disabled=${prompt === (s.customPrompt || "")} onClick=${() => save({ customPrompt: prompt }, "Custom prompt saved")}><${Icon} n="save" />Save prompt</button></div></div>`}</div>
+      <${Toggle} on=${s.customPromptEnabled} aria-label="Custom system prompt" onChange=${(v) => save({ customPromptEnabled: v }, v ? "Custom prompt on" : "Custom prompt off")} /></div>
+  </div>
+  ${setup && html`<${HeadroomSetup} s=${s} hr=${hr} refresh=${refresh} save=${save} locked=${locked} onClose=${() => setSetup(false)} />`}`;
+}
+
+/* -------------------------------------------------------------- skills */
+// Agent Skills, after 9Router's: copy a SKILL.md link and paste it to any AI agent.
+const SKILL_META = {
+  fastrouter: { name: "FastRouter (Entry)", icon: "hub", desc: "Setup + index of all capabilities. Start here — covers base URL, auth, model discovery, prefixes, combos and links to every capability skill." },
+  "fastrouter-chat": { name: "Chat", icon: "chat", endpoint: "/v1/chat/completions", desc: "Chat / code-gen via the OpenAI format with streaming, tools and images." },
+  "fastrouter-messages": { name: "Anthropic Messages", icon: "forum", endpoint: "/v1/messages", desc: "Claude-style API for Claude Code and Anthropic SDKs, plus count_tokens." },
+  "fastrouter-responses": { name: "Responses", icon: "reply_all", endpoint: "/v1/responses", desc: "OpenAI Responses API for the Codex CLI and Agents SDK." },
+  "fastrouter-gemini": { name: "Gemini", icon: "auto_awesome", endpoint: "/v1beta/models/{model}:generateContent", desc: "Gemini generateContent for Gemini SDKs and the Gemini CLI." },
+  "fastrouter-models": { name: "Models & Combos", icon: "layers", endpoint: "/v1/models", desc: "Model ids, provider prefixes, combos and their strategies." },
+};
+const SKILL_ORDER = ["fastrouter", "fastrouter-chat", "fastrouter-messages", "fastrouter-responses", "fastrouter-gemini", "fastrouter-models"];
+const RAW_BASE = "https://raw.githubusercontent.com/nesaon03/fastrouter/refs/heads/main/skills";
+function SkillsPage() {
+  const [src, setSrc] = useState(() => localStorage.getItem("fr-skill-src") || "local");
+  const [copied, copy] = useCopy();
+  const setS = (v) => { setSrc(v); localStorage.setItem("fr-skill-src", v); };
+  const url = (id) => (src === "local" ? `${location.origin}/skills/${id}/SKILL.md` : `${RAW_BASE}/${id}/SKILL.md`);
+  const entry = `Read this skill and use it: ${url("fastrouter")}`;
+  return html`<div class="skills">
+    <div class="card sm">
+      <div class="row" style="gap:8px;margin-bottom:8px"><span class="small muted grow">Paste this to your AI:</span>
+        <${Seg} value=${src} onChange=${setS} options=${[["local", "This PC"], ["github", "GitHub"]]} /></div>
+      <div class="paste-box"><span class="grow">Read this skill and use it:<br />${url("fastrouter")}</span><${CopyBtn} text=${entry} id="entry" copied=${copied} copy=${copy} /></div>
+      <p class="tiny muted" style="margin-top:8px">${src === "local" ? "Served by FastRouter itself, so agents on this PC can read it with no sign-in." : "nesaon03/fastrouter is a private repo: these links only work for agents that can read it."}</p></div>
+    ${SKILL_ORDER.map((id) => { const m = SKILL_META[id]; const entryCard = id === "fastrouter"; return html`<div class="card sm skill ${entryCard ? "entry" : ""}" key=${id}>
+      <div class="skill-ic"><${Icon} n=${m.icon} /></div>
+      <div class="grow" style="min-width:0">
+        <div class="row" style="gap:8px;flex-wrap:wrap"><span class="strong">${m.name}</span>${entryCard ? html`<span class="start-here">START HERE</span>` : html`<code class="ep">${m.endpoint}</code>`}</div>
+        <div class="small muted">${m.desc}</div>
+        <div class="row tiny muted" style="gap:6px;margin-top:4px"><span class="mono truncate">${url(id)}</span><a href=${url(id)} target="_blank" rel="noreferrer" title="Open"><${Icon} n="open_in_new" /></a></div></div>
+      <button class="btn primary sm" onClick=${() => copy(url(id), id)}><${Icon} n=${copied === id ? "check" : "content_copy"} />${copied === id ? "Copied" : "Copy link"}</button></div>`; })}
+  </div>`;
 }
 
 /* ---------------------------------------------------------- console log */
@@ -1155,7 +1438,7 @@ function PasswordCard({ passwordSet, relogin }) {
 }
 
 /* ----------------------------------------------------------------- app */
-const PAGES = { endpoint: EndpointPage, providers: ProvidersPage, combos: CombosPage, usage: UsagePage, quota: QuotaPage, keys: KeysPage, cli: CliPage, settings: SettingsPage, "token-saver": TokenSaverPage, "console-log": ConsoleLogPage };
+const PAGES = { endpoint: EndpointPage, providers: ProvidersPage, combos: CombosPage, usage: UsagePage, quota: QuotaPage, keys: KeysPage, cli: CliPage, settings: SettingsPage, "token-saver": TokenSaverPage, "console-log": ConsoleLogPage, skills: SkillsPage };
 function App() {
   const hash = useHash();
   const [dark, toggleTheme] = useTheme();
