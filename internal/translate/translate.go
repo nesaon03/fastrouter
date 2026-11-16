@@ -33,6 +33,7 @@ func EmitRequest(f Format, r *Request, o EmitOptions) ([]byte, error) {
 	if o.Model == "" {
 		o.Model = r.Model
 	}
+	r = resolveSignatures(r, f) // H4
 	switch f {
 	case OpenAI:
 		return emitOpenAIRequest(r, o)

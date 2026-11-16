@@ -2,6 +2,7 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -159,5 +160,25 @@ func TestM3FinalErrorUsesClientShape(t *testing.T) {
 	resp, body := do(t, "POST", hs.URL+"/v1/chat/completions", `{"model":"an/m","messages":[{"role":"user","content":"hi"}]}`, nil)
 	if resp.StatusCode != 529 || strings.Contains(body, `"type":"error"`) || !strings.Contains(body, `"message":"Overloaded"`) {
 		t.Fatalf("%d %s", resp.StatusCode, body)
+	}
+}
+
+// H4: a passthrough body carrying a foreign (tagged) signature is re-encoded
+// so Anthropic never receives it.
+func TestH4PassthroughDropsForeignSignature(t *testing.T) {
+	sc, up := newScripted(t)
+	sc.reply["k"] = jsonReply(200, `{"id":"m","type":"message","role":"assistant","content":[{"type":"text","text":"ok"}],"stop_reason":"end_turn","usage":{"input_tokens":1,"output_tokens":1}}`)
+	_, hs := newTestServer(t, &store.Snapshot{Nodes: []store.Node{anthropicNode("n1", "an", up.URL+"/v1")},
+		Connections: []store.Connection{conn("a1", "n1", "k", 1)}})
+	body := `{"model":"an/m","max_tokens":10,"messages":[{"role":"user","content":"q"},
+		{"role":"assistant","content":[{"type":"thinking","thinking":"hmm","signature":"frsig:gemini:GEMSIG"},{"type":"text","text":"a"}]},
+		{"role":"user","content":"again"}]}`
+	resp, out := do(t, "POST", hs.URL+"/v1/messages", body, nil)
+	if resp.StatusCode != 200 {
+		t.Fatalf("%d %s", resp.StatusCode, out)
+	}
+	sent, _ := json.Marshal(sc.last().Body)
+	if strings.Contains(string(sent), "GEMSIG") || strings.Contains(string(sent), "frsig") || !strings.Contains(string(sent), `"model":"m"`) {
+		t.Fatalf("foreign signature forwarded: %s", sent)
 	}
 }

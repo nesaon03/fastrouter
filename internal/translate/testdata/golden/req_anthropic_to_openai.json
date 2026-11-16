@@ -49,14 +49,7 @@
           }
         }
       ],
-      "reasoning_content": "Need two lookups.",
-      "reasoning_details": [
-        {
-          "type": "reasoning.text",
-          "text": "Need two lookups.",
-          "signature": "sig-abc"
-        }
-      ]
+      "reasoning_content": "Need two lookups."
     },
     {
       "role": "tool",

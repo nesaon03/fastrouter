@@ -129,3 +129,36 @@ func jsonEq(a, b string) bool {
 	}
 	return reflect.DeepEqual(x, y)
 }
+
+// H4: a Gemini signature reaches an Anthropic client tagged, and on the next
+// turn it is restored for Gemini but never sent to Anthropic.
+func TestH4SignaturesStayWithTheirFamily(t *testing.T) {
+	evs := []Event{{Kind: EvThinking, Text: "hmm"}, {Kind: EvSignature, Text: "GEMSIG"}}
+	TagEvents(evs, Gemini)
+	out := string(NewEncoder(Anthropic, "m").Encode(evs))
+	if !strings.Contains(out, `"signature":"frsig:gemini:GEMSIG"`) {
+		t.Fatalf("signature not tagged:\n%s", out)
+	}
+	body := `{"model":"m","max_tokens":4000,"thinking":{"type":"enabled","budget_tokens":2048},"messages":[{"role":"user","content":"q"},
+		{"role":"assistant","content":[{"type":"thinking","thinking":"hmm","signature":"frsig:gemini:GEMSIG"},{"type":"text","text":"a"}]},
+		{"role":"user","content":"again"}]}`
+	req, err := ParseRequest(Anthropic, []byte(body), "m", false)
+	if err != nil {
+		t.Fatal(err)
+	}
+	an, _ := EmitRequest(Anthropic, req, EmitOptions{Model: "m"})
+	if strings.Contains(string(an), "GEMSIG") {
+		t.Fatalf("Gemini signature sent to Anthropic: %s", an)
+	}
+	gm, _ := EmitRequest(Gemini, req, EmitOptions{Model: "m"})
+	if !strings.Contains(string(gm), `"thoughtSignature":"GEMSIG"`) || strings.Contains(string(gm), "frsig") {
+		t.Fatalf("signature not restored for Gemini: %s", gm)
+	}
+	// Native (untagged) Anthropic signatures still pass to Anthropic only.
+	req2, _ := ParseRequest(Anthropic, []byte(strings.ReplaceAll(body, "frsig:gemini:GEMSIG", "ANSIG")), "m", false)
+	an2, _ := EmitRequest(Anthropic, req2, EmitOptions{Model: "m"})
+	gm2, _ := EmitRequest(Gemini, req2, EmitOptions{Model: "m"})
+	if !strings.Contains(string(an2), "ANSIG") || strings.Contains(string(gm2), "ANSIG") {
+		t.Fatalf("native signature handling wrong:\n%s\n%s", an2, gm2)
+	}
+}

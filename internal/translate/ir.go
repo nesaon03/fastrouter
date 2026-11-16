@@ -243,10 +243,9 @@ func (t *Thinking) Enabled() bool {
 }
 
 // keepSignatures reports whether thinking signatures in r can be sent to an
-// upstream speaking `to`. Signatures are provider-specific, so they only go
-// back to the format they came from; OpenAI-format clients may carry either
-// kind (inside reasoning_details), so theirs are passed on.
-func (r *Request) keepSignatures(to Format) bool { return r.From == to || r.From == OpenAI }
+// upstream speaking `to`. EmitRequest has already restored or dropped every
+// signature for `to` (see sig.go), which sets From to the target format.
+func (r *Request) keepSignatures(to Format) bool { return r.From == to }
 
 // HasImages reports whether any message carries an image.
 func (r *Request) HasImages() bool {

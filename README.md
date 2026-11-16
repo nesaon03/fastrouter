@@ -45,7 +45,7 @@ Any client format can call any provider. When the client and provider speak the 
 - Thinking:
   - Effort levels and token budgets convert both ways (minimal 1024, low 4096, medium 10000, high 24576, max 32000).
   - For Anthropic, thinking is switched off when the history would be rejected (a tool turn with no signed thinking block), and unsigned thinking is dropped.
-  - Signatures are only replayed to the provider family that issued them. Gemini gets its documented placeholder signature on tool calls that have none.
+  - Signatures are only replayed to the provider family that issued them, even across mixed combos. A signature handed to a client in another format is tagged `frsig:<family>:…`. On a later turn it is restored for that family and dropped for any other, and a passthrough body carrying a tag is re-encoded. Gemini gets its documented placeholder signature on tool calls that have none.
 - Gemini tool schemas are cleaned of keywords Gemini rejects.
 - If a provider streams when the client wanted JSON (or the other way round), the answer is folded or replayed in the client's mode.
 - Errors from a translated upstream come back in the client format's error shape.

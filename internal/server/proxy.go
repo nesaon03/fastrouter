@@ -219,7 +219,9 @@ func anyUsable(ts []router.Target) bool {
 // bytes with the model swapped when the formats match, else a translation.
 func (s *Server) upstreamBody(p *proxyReq, t router.Target, uf tr.Format) ([]byte, error) {
 	mode := t.Provider.ThinkingMode
-	if uf == p.cf {
+	// H4: signatures tagged by an earlier translated turn must be restored or
+	// dropped, so such a body is re-encoded instead of passed through.
+	if uf == p.cf && !tr.HasTaggedSignature(p.body) {
 		b := p.body
 		if p.cf != tr.Gemini && t.Model != p.model {
 			b, _ = replaceTopLevelString(b, "model", t.Model)
@@ -342,6 +344,9 @@ func (s *Server) finishJSON(w http.ResponseWriter, a *attempt, resp *http.Respon
 	}
 	parsed, perr := tr.ParseResponse(a.uf, raw)
 	if perr == nil {
+		if a.uf != p.cf {
+			tr.TagResponse(parsed, a.uf) // H4
+		}
 		*usage = parsed.Usage
 		if !parsed.HasContent() && parsed.Finish != tr.FinishContentFilter && a.canRetry {
 			log.Printf("upstream %s (account %s) returned an empty response; trying next", a.t.Label, acct.ID)
@@ -443,6 +448,9 @@ func (s *Server) finishStream(w http.ResponseWriter, a *attempt, resp *http.Resp
 		var evs []tr.Event
 		if !passthrough || !committed || bytes.Contains(f.Data, []byte("sage")) {
 			evs, _ = dec.Decode(f) // undecodable frames are passed through or skipped
+			if a.uf != p.cf {
+				tr.TagEvents(evs, a.uf) // H4: mark which family issued each signature
+			}
 			track(evs)
 		}
 		if upErr != "" && !committed && !sawContent {
@@ -494,6 +502,9 @@ func (s *Server) finishStream(w http.ResponseWriter, a *attempt, resp *http.Resp
 		return true, nil
 	}
 	tail := dec.End()
+	if a.uf != p.cf {
+		tr.TagEvents(tail, a.uf)
+	}
 	track(tail)
 	clientCanceled := p.r.Context().Err() != nil
 	// H1: a cut-off stream or a mid-stream upstream error is not a clean finish.
