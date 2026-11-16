@@ -26,6 +26,7 @@ type Saver struct {
 	CavemanLevel          string
 	PonytailLevel         string
 	caveman, ponytail     string
+	custom                string    // user's own system prompt (9Router's customPrompt)
 	Headroom              *Headroom // nil: off
 	HeadroomURL           string
 	HeadroomCodeAware     bool
@@ -88,6 +89,9 @@ func New(settings map[string]json.RawMessage, o config.TokenSavers) *Saver {
 	if s.ponytail == "" {
 		s.PonytailLevel = ""
 	}
+	if b("customPromptEnabled", false, nil) {
+		s.custom = strings.TrimSpace(str("customPrompt", "", nil))
+	}
 	if b("headroomEnabled", false, o.Headroom) && s.HeadroomURL != "" {
 		timeout := 3 * time.Second
 		if o.HeadroomTimeout != nil {
@@ -105,7 +109,7 @@ func New(settings map[string]json.RawMessage, o config.TokenSavers) *Saver {
 
 // Enabled reports whether any saver is on.
 func (s *Saver) Enabled() bool {
-	return s != nil && (s.RTK || s.caveman != "" || s.ponytail != "" || s.Headroom != nil)
+	return s != nil && (s.RTK || s.caveman != "" || s.ponytail != "" || s.custom != "" || s.Headroom != nil)
 }
 
 // OptedOut reports whether the client turned savers off for this request.
@@ -145,6 +149,10 @@ func (s *Saver) Apply(ctx context.Context, b []byte, f tr.Format, model string) 
 	if s.ponytail != "" {
 		b = injectPrompt(b, f, s.ponytail)
 		tags = append(tags, "PONYTAIL:"+s.PonytailLevel)
+	}
+	if s.custom != "" {
+		b = injectPrompt(b, f, s.custom)
+		tags = append(tags, "CUSTOMPROMPT:"+strconv.Itoa(len(s.custom))+"c")
 	}
 	return b, strings.Join(tags, ",")
 }

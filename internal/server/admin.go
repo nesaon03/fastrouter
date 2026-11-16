@@ -787,6 +787,9 @@ func (s *Server) settingsView(sn *store.Snapshot) map[string]any {
 		"headroomEnabled":       b("headroomEnabled", false),
 		"headroomUrl":           str("headroomUrl", "http://localhost:8787"),
 		"headroomCodeAware":     b("headroomCodeAware", false),
+		"headroomKompress":      b("headroomKompress", true),
+		"customPromptEnabled":   b("customPromptEnabled", false),
+		"customPrompt":          str("customPrompt", ""),
 		"providerThinking":      thinking,
 		"providerStrategies":    strategies,
 		"stickyRoundRobinLimit": sticky,
@@ -1395,6 +1398,9 @@ type settingsIn struct {
 	HeadroomEnabled       *bool                   `json:"headroomEnabled"`
 	HeadroomURL           *string                 `json:"headroomUrl"`
 	HeadroomCodeAware     *bool                   `json:"headroomCodeAware"`
+	HeadroomKompress      *bool                   `json:"headroomKompress"`
+	CustomPromptEnabled   *bool                   `json:"customPromptEnabled"`
+	CustomPrompt          *string                 `json:"customPrompt"`
 	ProviderThinking      map[string]string       `json:"providerThinking"`
 	ProviderStrategies    map[string]strategyView `json:"providerStrategies"`
 	StickyRoundRobinLimit *int                    `json:"stickyRoundRobinLimit"`
@@ -1419,7 +1425,8 @@ func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 			sn.Settings[k] = b
 		}
 		for k, v := range map[string]*bool{"rtkEnabled": in.RTKEnabled, "cavemanEnabled": in.CavemanEnabled, "ponytailEnabled": in.PonytailEnabled,
-			"headroomEnabled": in.HeadroomEnabled, "headroomCodeAware": in.HeadroomCodeAware} {
+			"headroomEnabled": in.HeadroomEnabled, "headroomCodeAware": in.HeadroomCodeAware, "headroomKompress": in.HeadroomKompress,
+			"customPromptEnabled": in.CustomPromptEnabled} {
 			if v != nil {
 				set(k, *v)
 			}
@@ -1431,6 +1438,12 @@ func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 				}
 				set(k, *v)
 			}
+		}
+		if in.CustomPrompt != nil {
+			if len(*in.CustomPrompt) > 8000 {
+				return bad("custom prompt must be at most 8000 characters")
+			}
+			set("customPrompt", *in.CustomPrompt)
 		}
 		if in.HeadroomURL != nil {
 			u, err := cleanURL(*in.HeadroomURL, "Headroom URL")

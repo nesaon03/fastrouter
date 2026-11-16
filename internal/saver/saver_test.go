@@ -297,3 +297,16 @@ func TestHeadroomArgs(t *testing.T) {
 		t.Fatal("autostart must be off by default")
 	}
 }
+
+func TestCustomPrompt(t *testing.T) {
+	set := map[string]json.RawMessage{"rtkEnabled": json.RawMessage(`false`), "customPromptEnabled": json.RawMessage(`true`), "customPrompt": json.RawMessage(`"  Answer in French.  "`)}
+	s := New(set, config.TokenSavers{})
+	out, tag := s.Apply(context.Background(), []byte(`{"model":"m","messages":[{"role":"user","content":"hi"}]}`), tr.OpenAI, "m")
+	if tag != "CUSTOMPROMPT:17c" || !strings.Contains(string(out), "Answer in French.") {
+		t.Fatalf("tag %q body %s", tag, out)
+	}
+	set["customPromptEnabled"] = json.RawMessage(`false`)
+	if New(set, config.TokenSavers{}).Enabled() {
+		t.Fatal("custom prompt off should leave savers off")
+	}
+}
