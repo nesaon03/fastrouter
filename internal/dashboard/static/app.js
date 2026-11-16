@@ -1031,7 +1031,7 @@ function UsageOverview({ data, u, onDetails }) {
     <div class="usage-row">
       <div class="card flush grow" style="min-width:0"><div class="row between" style="padding:14px 18px 0">
         <h2 class="row h-sm"><${Icon} n="hub" style="color:var(--primary)" />Provider topology</h2>
-        <span class="small muted">${u && Object.keys(u.active || {}).length ? html`<span class="live-dot"></span>live` : "last request highlighted"}</span></div>
+        <div class="topo-legend">${u && Object.keys(u.active || {}).length ? html`<span><span class="live-dot"></span>live</span>` : ""}<span><i class="l-last"></i>last request</span><span><i class="l-live"></i>in flight</span><span><i class="l-err"></i>failed</span></div></div>
         <${Topology} data=${data} u=${u} /></div>
       <div class="card flush recent"><div class="row between" style="padding:14px 16px 10px;border-bottom:1px solid var(--border-subtle)">
         <h2 class="row h-sm"><${Icon} n="history" style="color:var(--primary)" />Recent requests</h2><button class="btn ghost sm" onClick=${onDetails}>View all<${Icon} n="chevron_right" /></button></div>
@@ -1052,60 +1052,148 @@ function UsageOverview({ data, u, onDetails }) {
       <${UsageTable} title="By API key" icon="vpn_key" list=${u.keys || []} label="Key" />` : ""}`;
 }
 
-// SVG topology: FastRouter in the middle, providers on an ellipse ring.
-// The edge of the last request is orange (red if it failed); live ones animate.
+// SVG topology after 9Router's ProviderTopology: FastRouter in the middle, every
+// provider as a pill (logo + full name) evenly spaced on an ellipse that fills the
+// card. The ellipse grows until no two pills overlap; the view then fits it.
+// Edges end at the pill borders: orange = last request, red = its latest call
+// failed, dashed and moving = in flight.
+let measureCtx;
+function textW(s, font) {
+  measureCtx = measureCtx || document.createElement("canvas").getContext("2d");
+  measureCtx.font = font;
+  return measureCtx.measureText(s).width;
+}
+const NAME_FONT = '600 12.5px Inter, ui-sans-serif, system-ui, sans-serif', SUB_FONT = '400 10.5px Inter, ui-sans-serif, system-ui, sans-serif';
+// Point where the ray from a box's centre towards (dx, dy) leaves the box.
+function boxEdge(hw, hh, dx, dy) {
+  const t = Math.min(dx ? hw / Math.abs(dx) : Infinity, dy ? hh / Math.abs(dy) : Infinity);
+  return [dx * t, dy * t];
+}
+function topoLayout(items, W, H, hub) {
+  const n = items.length, gap = 14;
+  if (!n) return { pos: [], box: [-W / 2, -H / 2, W, H] };
+  const maxHW = Math.max(...items.map((it) => it.w / 2)), maxHH = Math.max(...items.map((it) => it.h / 2));
+  let rx = Math.max(hub.w / 2 + maxHW + 60, W / 2 - maxHW - 24), ry = Math.max(hub.h / 2 + maxHH + 50, H / 2 - maxHH - 22);
+  const sep = (a, pa, b, pb) => Math.abs(pa[0] - pb[0]) >= (a.w + b.w) / 2 + gap || Math.abs(pa[1] - pb[1]) >= (a.h + b.h) / 2 + gap;
+  const at = (t) => [rx * Math.cos(t), ry * Math.sin(t)];
+  const hubOK = (it, q) => Math.abs(q[0]) >= it.w / 2 + hub.w / 2 + gap || Math.abs(q[1]) >= it.h / 2 + hub.h / 2 + gap;
+  // Walk round the ellipse giving each pill the smallest angle that clears its
+  // neighbour, then share the spare angle out evenly. Grow the ellipse if a lap
+  // isn't enough.
+  let pos = [];
+  for (let k = 0; k < 80; k++) {
+    const th = [-Math.PI / 2];
+    for (let i = 1; i < n; i++) {
+      let t = th[i - 1] + 0.01;
+      while (t < th[0] + 2 * Math.PI && !sep(items[i - 1], at(th[i - 1]), items[i], at(t))) t += 0.005;
+      th.push(t);
+    }
+    const need = n > 1 ? th[n - 1] - th[0] : 0;
+    // the wrap-around gap between the last and first pill needs room too
+    let wrap = 0.01;
+    if (n > 1) while (wrap < 2 * Math.PI && !sep(items[n - 1], at(th[0] + 2 * Math.PI - wrap), items[0], at(th[0]))) wrap += 0.005;
+    const used = need + (n > 1 ? wrap : 0);
+    if (used <= 2 * Math.PI) {
+      const spare = (2 * Math.PI - used) / Math.max(n, 1);
+      const gaps = th.map((t, i) => (i ? t - th[i - 1] : 0));
+      let t = -Math.PI / 2;
+      pos = items.map((it, i) => { if (i) t += gaps[i] + spare; return at(t); });
+      if (pos.every((q, i) => hubOK(items[i], q))) break;
+    }
+    rx *= 1.04; ry *= 1.04;
+  }
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  pos.forEach(([x, y], i) => { x0 = Math.min(x0, x - items[i].w / 2); x1 = Math.max(x1, x + items[i].w / 2); y0 = Math.min(y0, y - items[i].h / 2); y1 = Math.max(y1, y + items[i].h / 2); });
+  // Fit: pad, keep the card's aspect, never zoom in past 1:1 (text stays its real size).
+  let bw = Math.max(x1 - x0 + 40, W), bh = Math.max(y1 - y0 + 40, H);
+  if (bw / bh > W / H) bh = (bw * H) / W; else bw = (bh * W) / H;
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  return { pos, rx, ry, box: [cx - bw / 2, cy - bh / 2, bw, bh] };
+}
 function Topology({ data, u }) {
-  const W = 900, H = 500, cx = W / 2, cy = H / 2;
+  const H = 460;
+  const wrap = useRef(null);
+  const [W, setW] = useState(900);
+  const [, setFontTick] = useState(0);
   const [view, setView] = useState({ k: 1, x: 0, y: 0 });
   const [drag, setDrag] = useState(null);
-  const used = new Set(((u && u.providers) || []).map((r) => r.key));
-  const nodes = data.providers.filter((p) => p.accounts.length > 0 || used.has(p.id));
-  const stats = Object.fromEntries(((u && u.providers) || []).map((r) => [r.key, r]));
-  const last = u && u.recent && u.recent[0];
+  useEffect(() => {
+    const el = wrap.current; if (!el) return;
+    const ro = new ResizeObserver(() => setW(Math.max(420, Math.round(el.clientWidth))));
+    ro.observe(el);
+    if (document.fonts) document.fonts.ready.then(() => setFontTick((t) => t + 1));
+    return () => ro.disconnect();
+  }, []);
+  const rows = (u && u.providers) || [];
+  const stats = Object.fromEntries(rows.map((r) => [r.key, r]));
+  const recent = (u && u.recent) || [];
+  const last = recent[0];
   const active = (u && u.active) || {};
-  // Crowded rings alternate between an outer and an inner ellipse.
-  const n = Math.max(nodes.length, 1), two = n > 12;
-  const pos = (i) => { const a = -Math.PI / 2 + (i * 2 * Math.PI) / n, f = two && i % 2 ? 0.66 : 1; return [cx + 370 * f * Math.cos(a), cy + 205 * f * Math.sin(a)]; };
-  const zoom = (f) => setView((v) => ({ ...v, k: Math.min(3, Math.max(0.4, v.k * f)) }));
+  const failed = new Set(), seen = new Set();
+  for (const r of recent) { if (seen.has(r.provider)) continue; seen.add(r.provider); if (r.status >= 400 || r.status === 0) failed.add(r.provider); }
+  const nodes = data.providers.filter((p) => p.accounts.length > 0 || stats[p.id]);
+  const liveN = nodes.reduce((a, p) => a + (active[p.id] || 0), 0);
+  const hub = { w: liveN ? 172 : 150, h: 46 };
+  const items = nodes.map((p) => {
+    const m = provMeta(p), st = stats[p.id];
+    const sub = st ? `${fmt(st.requests)} req · ${fmt(st.input_tokens + st.output_tokens)} tok` : "";
+    const live = active[p.id] > 0;
+    const w = Math.ceil(Math.max(textW(m.name, NAME_FONT), sub ? textW(sub, SUB_FONT) : 0)) + 58 + (live ? 14 : 0);
+    const state = live ? "live" : failed.has(p.id) ? "err" : last && last.provider === p.id ? "last" : st ? "used" : "idle";
+    return { p, m, st, sub, live, w, h: sub ? 46 : 36, state };
+  });
+  const L = topoLayout(items, W, H, hub);
+  const [bx, by, bw, bh] = L.box;
+  const vw = bw / view.k, vh = bh / view.k;
+  const vb = `${bx + (bw - vw) / 2 - view.x} ${by + (bh - vh) / 2 - view.y} ${vw} ${vh}`;
+  const zoom = (f) => setView((v) => ({ ...v, k: Math.min(4, Math.max(0.3, v.k * f)) }));
   const fit = () => setView({ k: 1, x: 0, y: 0 });
-  const t = `translate(${cx + view.x} ${cy + view.y}) scale(${view.k}) translate(${-cx} ${-cy})`;
-  const down = (e) => { setDrag({ sx: e.clientX, sy: e.clientY, x: view.x, y: view.y, w: e.currentTarget.getBoundingClientRect().width }); };
-  const moveP = (e) => { if (!drag) return; const f = W / drag.w; setView((v) => ({ ...v, x: drag.x + (e.clientX - drag.sx) * f, y: drag.y + (e.clientY - drag.sy) * f })); };
-  return html`<div class="topo-wrap">
-    <svg viewBox="0 0 ${W} ${H}" class="topo-svg ${drag ? "grabbing" : ""}" onPointerDown=${down} onPointerMove=${moveP} onPointerUp=${() => setDrag(null)} onPointerLeave=${() => setDrag(null)}
-      onWheel=${(e) => { e.preventDefault(); zoom(e.deltaY < 0 ? 1.1 : 0.9); }}>
-      <defs><radialGradient id="hubg" cx="50%" cy="35%" r="70%"><stop offset="0" stop-color="#fb923c" /><stop offset="1" stop-color="#ea580c" /></radialGradient></defs>
-      <g transform=${t}>
-        <ellipse cx=${cx} cy=${cy} rx="370" ry="205" class="topo-ring" />${two && html`<ellipse cx=${cx} cy=${cy} rx=${370 * 0.66} ry=${205 * 0.66} class="topo-ring" />`}
-        ${nodes.map((p, i) => {
-          const [x, y] = pos(i);
-          const isLast = last && last.provider === p.id, bad = isLast && (last.status >= 400 || last.status === 0), live = active[p.id] > 0;
-          return html`<line key=${"e" + p.id} x1=${cx} y1=${cy} x2=${x} y2=${y} class="topo-edge ${live ? "live" : ""} ${isLast ? (bad ? "err" : "last") : ""} ${stats[p.id] ? "used" : ""}" />`;
-        })}
-        ${nodes.map((p, i) => {
-          const [x, y] = pos(i);
-          const m = provMeta(p), st = stats[p.id], isLast = last && last.provider === p.id;
-          const label = m.name.length > 16 ? m.name.slice(0, 15) + "…" : m.name;
-          return html`<g key=${"n" + p.id} class="topo-pnode ${isLast ? "last" : ""} ${st ? "" : "idle"}" transform="translate(${x} ${y})">
-            <title>${m.name} · ${p.prefix}/${st ? ` · ${st.requests} requests · ${fmt(st.input_tokens + st.output_tokens)} tokens` : ""}</title>
-            <rect x="-62" y="-20" width="124" height="40" rx="12" />
-            <circle cx="-42" cy="0" r="13" fill=${m.color + "22"} /><image href=${m.logo} x="-53" y="-11" width="22" height="22" />
-            <text x="-24" y="-2" class="nm">${label}</text><text x="-24" y="12" class="sub">${st ? `${fmt(st.requests)} req · ${fmt(st.input_tokens + st.output_tokens)} tok` : p.prefix + "/"}</text>
-            ${active[p.id] > 0 && html`<circle cx="56" cy="-14" r="5" class="topo-live" />`}</g>`;
-        })}
-        <g transform="translate(${cx} ${cy})" class="topo-hub">
-          <circle r="54" class="halo" /><circle r="44" fill="url(#hubg)" />
-          <path d="M13 2L3 14h7l-1 8 10-12h-7z" transform="translate(-14 -30) scale(1.15)" fill="#fff" />
-          <text y="16" text-anchor="middle" class="hub-t">FastRouter</text>
-          <text y="74" text-anchor="middle" class="hub-s">${nodes.length} provider${nodes.length === 1 ? "" : "s"}</text></g>
+  const down = (e) => { if (e.button !== 0) return; setDrag({ sx: e.clientX, sy: e.clientY, x: view.x, y: view.y, f: vw / e.currentTarget.getBoundingClientRect().width }); };
+  const moveP = (e) => { if (drag) setView((v) => ({ ...v, x: drag.x + (e.clientX - drag.sx) * drag.f, y: drag.y + (e.clientY - drag.sy) * drag.f })); };
+  // Draw idle edges first so highlighted ones sit on top.
+  const order = { idle: 0, used: 1, last: 2, err: 3, live: 4 };
+  const edges = items.map((it, i) => ({ it, i })).sort((a, b) => order[a.it.state] - order[b.it.state]);
+  return html`<div class="topo-wrap" ref=${wrap}>
+    <svg viewBox=${vb} style=${`height:${H}px`} class="topo-svg ${drag ? "grabbing" : ""}" preserveAspectRatio="xMidYMid meet"
+      onPointerDown=${down} onPointerMove=${moveP} onPointerUp=${() => setDrag(null)} onPointerLeave=${() => setDrag(null)}
+      onWheel=${(e) => { e.preventDefault(); zoom(e.deltaY < 0 ? 1.1 : 1 / 1.1); }}>
+      <defs><linearGradient id="hubg" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#fb923c" /><stop offset="1" stop-color="#ea580c" /></linearGradient></defs>
+      ${items.length > 0 && html`<ellipse cx="0" cy="0" rx=${L.rx} ry=${L.ry} class="topo-ring" />`}
+      ${edges.map(({ it, i }) => {
+        const [x, y] = L.pos[i];
+        const [sx, sy] = boxEdge(hub.w / 2 + 3, hub.h / 2 + 3, x, y);
+        const [ex, ey] = boxEdge(it.w / 2 + 3, it.h / 2 + 3, -x, -y);
+        const d = `M${sx.toFixed(1)},${sy.toFixed(1)} L${(x + ex).toFixed(1)},${(y + ey).toFixed(1)}`;
+        return html`<g key=${"e" + it.p.id} class="topo-edge ${it.state}"><path d=${d} />
+          ${it.live && html`<circle r="3.5" class="topo-spark"><animateMotion dur="1.1s" repeatCount="indefinite" path=${d} /></circle>`}</g>`;
+      })}
+      ${items.map((it, i) => {
+        const [x, y] = L.pos[i];
+        const { p, m, st } = it;
+        const tip = `${m.name} (${p.prefix}/)` + (st ? ` · ${st.requests} requests · ${fmt(st.input_tokens)} in / ${fmt(st.output_tokens)} out` + (st.failures ? ` · ${st.failures} failed` : "") : " · no requests in this period")
+          + (it.live ? ` · ${active[p.id]} in flight` : "") + (it.state === "err" ? " · latest call failed" : it.state === "last" ? " · last request" : "");
+        const tx = -it.w / 2 + 44;
+        return html`<g key=${"n" + p.id} class="topo-pnode ${it.state}" transform="translate(${x.toFixed(1)} ${y.toFixed(1)})" style=${`--pc:${m.color}`}>
+          <title>${tip}</title>
+          <rect x=${-it.w / 2} y=${-it.h / 2} width=${it.w} height=${it.h} rx="10" />
+          <rect x=${-it.w / 2 + 9} y="-13" width="26" height="26" rx="7" fill=${m.color + "1f"} stroke="none" class="ic" />
+          <image href=${m.logo} x=${-it.w / 2 + 12} y="-10" width="20" height="20" />
+          <text x=${tx} y=${it.sub ? -3 : 4.5} class="nm">${m.name}</text>
+          ${it.sub && html`<text x=${tx} y="12" class="sub">${it.sub}</text>`}
+          ${it.live && html`<circle cx=${it.w / 2 - 12} cy="0" r="4" class="topo-live" />`}</g>`;
+      })}
+      <g class="topo-hub ${liveN ? "on" : ""}">
+        <rect x=${-hub.w / 2} y=${-hub.h / 2} width=${hub.w} height=${hub.h} rx="12" fill="url(#hubg)" />
+        <path d="M13 2L3 14h7l-1 8 10-12h-7z" transform=${`translate(${-hub.w / 2 + 14} -12)`} fill="#fff" />
+        <text x=${-hub.w / 2 + 40} y="5" class="hub-t">FastRouter</text>
+        ${liveN > 0 && html`<rect x=${hub.w / 2 - 34} y="-10" width="22" height="20" rx="10" fill="#fde047" /><text x=${hub.w / 2 - 23} y="4" text-anchor="middle" class="hub-n">${liveN}</text>`}
       </g>
-      ${nodes.length === 0 && html`<text x=${cx} y=${cy + 90} text-anchor="middle" class="hub-s">Add a provider account to see it here</text>`}
+      ${nodes.length === 0 && html`<text x="0" y="60" text-anchor="middle" class="hub-s">Add a provider account to see it here</text>`}
     </svg>
-    <div class="zoom">
-      <button class="icon-btn" title="Zoom in" onClick=${() => zoom(1.2)}><${Icon} n="zoom_in" /></button>
-      <button class="icon-btn" title="Zoom out" onClick=${() => zoom(1 / 1.2)}><${Icon} n="zoom_out" /></button>
-      <button class="icon-btn" title="Fit" onClick=${fit}><${Icon} n="fit_screen" /></button></div>
-    ${last && html`<div class="topo-legend"><span><i class="l-last"></i>last request</span><span><i class="l-live"></i>in flight</span><span><i class="l-err"></i>failed</span></div>`}
+    <div class="topo-controls" role="group" aria-label="Zoom">
+      <button title="Zoom in" aria-label="Zoom in" onClick=${() => zoom(1.25)}><${Icon} n="add" /></button>
+      <button title="Zoom out" aria-label="Zoom out" onClick=${() => zoom(1 / 1.25)}><${Icon} n="remove" /></button>
+      <button title="Fit view" aria-label="Fit view" onClick=${fit}><${Icon} n="fit_screen" /></button></div>
   </div>`;
 }
 

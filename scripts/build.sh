@@ -20,6 +20,9 @@ DATE=${DATE:-$(git log -1 --format=%cI 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%S
 
 LDFLAGS="-s -w -X $PKG/internal/server.Version=$VERSION -X main.commit=$COMMIT -X main.date=$DATE"
 
+# Every Material Symbol the dashboard uses must be in the subset font (else it shows as text).
+go test -count=1 -run TestIconFontHasEveryUsedIcon ./internal/dashboard >/dev/null || { echo "icon font is missing glyphs: run python3 scripts/icons.py" >&2; exit 1; }
+
 mkdir -p dist
 for t in $TARGETS; do
 	os=${t%/*}
