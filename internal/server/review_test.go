@@ -182,3 +182,17 @@ func TestH4PassthroughDropsForeignSignature(t *testing.T) {
 		t.Fatalf("foreign signature forwarded: %s", sent)
 	}
 }
+
+// M10: client model names can't change the Gemini upstream path or query.
+func TestM10GeminiModelPath(t *testing.T) {
+	for in, want := range map[string]string{"gemini-3-pro": "gemini-3-pro", "models/gemini-2.5-flash": "gemini-2.5-flash", "tunedModels:x_1": "tunedModels:x_1"} {
+		if got, ok := geminiModelPath(in); !ok || got != want {
+			t.Errorf("%q -> %q %v", in, got, ok)
+		}
+	}
+	for _, bad := range []string{"../files?x=", "foo?y=1#", "a/b", "..", "", "x%2F", "a b"} {
+		if _, ok := geminiModelPath(bad); ok {
+			t.Errorf("%q accepted", bad)
+		}
+	}
+}

@@ -9,6 +9,8 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 	"sync"
@@ -169,6 +171,14 @@ func (s *Server) route(w http.ResponseWriter, p *proxyReq, targets []router.Targ
 			}
 			upBody = codex.Body
 		}
+		gemModel := ""
+		if uf == tr.Gemini {
+			var ok bool
+			if gemModel, ok = geminiModelPath(t.Model); !ok {
+				writeError(w, p.cf, http.StatusBadRequest, "invalid_request_error", "invalid model name for a Gemini upstream")
+				return
+			}
+		}
 		order := t.Provider.Pool.Order(time.Now())
 		for i, acct := range order {
 			u := url
@@ -177,9 +187,9 @@ func (s *Server) route(w http.ResponseWriter, p *proxyReq, targets []router.Targ
 			}
 			if uf == tr.Gemini {
 				if p.stream {
-					u += "/" + t.Model + ":streamGenerateContent?alt=sse"
+					u += "/" + gemModel + ":streamGenerateContent?alt=sse"
 				} else {
-					u += "/" + t.Model + ":generateContent"
+					u += "/" + gemModel + ":generateContent"
 				}
 			}
 			a := attempt{p: p, t: t, acct: acct, uf: uf, url: u, body: upBody, codex: codex,
@@ -788,4 +798,16 @@ func firstNonEmpty(a, b string) string {
 		return a
 	}
 	return b
+}
+
+var geminiModelRe = regexp.MustCompile(`^[A-Za-z0-9._:-]+$`)
+
+// geminiModelPath validates a client-supplied model id before it goes into the
+// Gemini URL path (M10): no "/", "?", "#" or ".." can reach the path or query.
+func geminiModelPath(m string) (string, bool) {
+	m = strings.TrimPrefix(m, "models/")
+	if !geminiModelRe.MatchString(m) || strings.Contains(m, "..") {
+		return "", false
+	}
+	return url.PathEscape(m), true
 }

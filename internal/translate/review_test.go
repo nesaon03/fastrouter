@@ -162,3 +162,38 @@ func TestH4SignaturesStayWithTheirFamily(t *testing.T) {
 		t.Fatalf("native signature handling wrong:\n%s\n%s", an2, gm2)
 	}
 }
+
+// M4: tool parameters named like JSON-Schema keywords must survive cleaning.
+func TestM4GeminiSchemaKeepsKeywordNamedParams(t *testing.T) {
+	in := `{"type":"object","properties":{"default":{"type":"string","default":"x"},"if":{"type":["string","null"]},"name":{"type":"object","properties":{"const":{"type":"string","const":"a"}}},"list":{"type":"array","items":{"type":"string","examples":["e"]}}},"required":["default","name"],"additionalProperties":false}`
+	var got map[string]any
+	if err := json.Unmarshal(geminiSchema(json.RawMessage(in)), &got); err != nil {
+		t.Fatal(err)
+	}
+	props := got["properties"].(map[string]any)
+	for _, k := range []string{"default", "if", "name", "list"} {
+		if _, ok := props[k]; !ok {
+			t.Fatalf("parameter %q was deleted: %v", k, props)
+		}
+	}
+	if _, ok := props["default"].(map[string]any)["default"]; ok {
+		t.Fatal("default keyword inside a parameter schema should still be stripped")
+	}
+	if props["if"].(map[string]any)["nullable"] != true {
+		t.Fatal("nested type list not cleaned")
+	}
+	inner := props["name"].(map[string]any)["properties"].(map[string]any)["const"].(map[string]any)
+	if _, ok := inner["enum"]; !ok {
+		t.Fatalf("nested const not converted: %v", inner)
+	}
+	if _, ok := props["list"].(map[string]any)["items"].(map[string]any)["examples"]; ok {
+		t.Fatal("items not cleaned")
+	}
+	if _, ok := got["additionalProperties"]; ok {
+		t.Fatal("top-level additionalProperties not stripped")
+	}
+	low := string(lowerSchemaTypes(json.RawMessage(`{"type":"OBJECT","properties":{"type":{"type":"STRING","enum":["OBJECT"]}}}`)))
+	if low != `{"properties":{"type":{"enum":["OBJECT"],"type":"string"}},"type":"object"}` {
+		t.Fatal(low)
+	}
+}

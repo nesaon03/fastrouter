@@ -273,13 +273,35 @@ func lowerSchemaTypes(s json.RawMessage) json.RawMessage {
 	return out
 }
 
+// walkSchema calls fn on every schema node, following only the keywords that
+// hold sub-schemas. The keys of "properties" are parameter names, not keywords,
+// so they are never passed to fn (M4); data values (enum, default, const,
+// examples) are not walked either.
 func walkSchema(v any, fn func(map[string]any)) {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return
+	}
+	fn(m)
+	for _, k := range []string{"properties", "patternProperties", "$defs", "definitions", "dependentSchemas"} {
+		if named, ok := m[k].(map[string]any); ok {
+			for _, sub := range named {
+				walkSchema(sub, fn)
+			}
+		}
+	}
+	for _, k := range []string{"items", "additionalProperties", "not", "contains", "if", "then", "else", "unevaluatedProperties", "propertyNames"} {
+		walkSchemaOrList(m[k], fn)
+	}
+	for _, k := range []string{"anyOf", "oneOf", "allOf", "prefixItems"} {
+		walkSchemaOrList(m[k], fn)
+	}
+}
+
+func walkSchemaOrList(v any, fn func(map[string]any)) {
 	switch x := v.(type) {
 	case map[string]any:
-		fn(x)
-		for _, c := range x {
-			walkSchema(c, fn)
-		}
+		walkSchema(x, fn)
 	case []any:
 		for _, c := range x {
 			walkSchema(c, fn)
