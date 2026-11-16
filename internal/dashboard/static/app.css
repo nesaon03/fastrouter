@@ -437,7 +437,7 @@ textarea.input { height:auto; padding:8px 12px; resize:vertical; }
 .link.danger { color:var(--red-fg); } .link:disabled { opacity:.5; cursor:default; }
 
 /* ---------- token saver ---------- */
-.ts-card { max-width:940px; margin:0 auto; padding:20px 24px; }
+.ts-card { width:100%; max-width:940px; margin:0 auto; padding:20px 24px; }
 .ts-title { font-size:17px; font-weight:600; display:flex; align-items:center; gap:8px; margin-bottom:6px; } .ts-title .ms { color:var(--primary); }
 .ts-row { display:flex; align-items:flex-start; gap:16px; padding:16px 0; border-bottom:1px solid var(--border-subtle); }
 .ts-row.last { border-bottom:0; } .ts-row > .toggle { margin-top:2px; }
@@ -459,7 +459,7 @@ textarea.input { height:auto; padding:8px 12px; resize:vertical; }
 textarea.input { height:auto; padding:10px 12px; resize:vertical; line-height:1.5; }
 
 /* ---------- agent skills ---------- */
-.skills { max-width:940px; margin:0 auto; display:flex; flex-direction:column; gap:12px; }
+.skills { width:100%; max-width:940px; margin:0 auto; display:flex; flex-direction:column; gap:12px; }
 .paste-box { display:flex; gap:10px; align-items:center; background:var(--surface-2); border-radius:8px; padding:12px 14px; font:12.5px/1.6 ui-monospace,Menlo,Consolas,monospace; word-break:break-all; }
 .skill { display:flex; align-items:center; gap:14px; }
 .skill.entry { border-color:rgba(229,106,74,.45); background:rgba(229,106,74,.06); }
