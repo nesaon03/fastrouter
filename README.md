@@ -36,6 +36,8 @@ Model names are `prefix/model`, for example `ds/deepseek-v4.1-flash`, or a combo
 - **Pools and combos:** Pools are round-robin with a sticky limit, or fill-first by priority, taken from your 9Router provider strategies. Combos are fallback or round-robin.
 - **Timeouts:** There is a first-byte timeout and an idle timeout between chunks. A client disconnect cancels the upstream request.
 - **Secrets:** API keys, tokens and the dashboard password are AES-256-GCM encrypted in SQLite, using `secret.key` (0600) in the data dir. Logs pass through a redactor.
+- **Keyless mode:** with no local API key (or no dashboard password), only loopback clients are trusted, and only when the `Host` is `localhost`, `127.0.0.1` or `::1` and any `Origin` is one of those too. That blocks DNS rebinding and browser CSRF. Add a tunnel host name to `allowedHosts` in the config to trust it, or better, create an API key.
+- **Limits:** request bodies over 64 MB get a 413. A key's `keyLimits.models` list in the config narrows its 9Router access list (both must allow the model), and the vision fallback only uses models the key may call.
 
 ## Formats and translation
 

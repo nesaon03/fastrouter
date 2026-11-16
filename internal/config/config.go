@@ -53,6 +53,12 @@ type Config struct {
 
 	// Plugins configures the official-login providers (Codex, GLM).
 	Plugins Plugins `json:"plugins"`
+
+	// AllowedHosts are extra Host / Origin host names trusted when no API key
+	// (or no dashboard password) is set. localhost, 127.0.0.1 and ::1 are always
+	// allowed. Requests for any other Host are refused in that open mode, which
+	// blocks DNS rebinding and browser CSRF (review M5).
+	AllowedHosts []string `json:"allowedHosts,omitempty"`
 }
 
 // TokenSavers mirror 9Router's settings of the same names.

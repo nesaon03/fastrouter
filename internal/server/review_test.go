@@ -246,3 +246,52 @@ func TestM2RecordAfterClose(t *testing.T) {
 	r2.close()
 	wg.Wait()
 }
+
+// M5: with no API key, loopback trust is refused for foreign Host / Origin
+// (DNS rebinding, browser CSRF); allowedHosts opts a host in.
+func TestM5OpenModeHostAndOrigin(t *testing.T) {
+	sc, up := newScripted(t)
+	sc.reply["k"] = jsonReply(200, fixture(t, "response.openai.json"))
+	cfg := testConfig()
+	cfg.AllowedHosts = []string{"router.example.com"}
+	s := New(cfg, &store.Snapshot{Nodes: []store.Node{node("n", "n", up.URL+"/v1")},
+		Connections: []store.Connection{conn("a", "n", "k", 1)}, Settings: map[string]json.RawMessage{}}, nil)
+	hs := httptest.NewServer(s.Handler())
+	defer func() { hs.Close(); s.Close() }()
+	body := `{"model":"n/m","messages":[{"role":"user","content":"hi"}]}`
+	call := func(host, origin, path string) int {
+		req, _ := http.NewRequest("POST", hs.URL+path, strings.NewReader(body))
+		if path == "/api/status" {
+			req.Method = "GET"
+		}
+		if host != "" {
+			req.Host = host
+		}
+		if origin != "" {
+			req.Header.Set("Origin", origin)
+		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp.Body.Close()
+		return resp.StatusCode
+	}
+	for _, c := range []struct {
+		host, origin, path string
+		want               int
+	}{
+		{"", "", "/v1/chat/completions", 200},
+		{"localhost:1234", "http://localhost:1234", "/v1/chat/completions", 200},
+		{"evil.example:80", "", "/v1/chat/completions", 403},
+		{"", "https://evil.example", "/v1/chat/completions", 403},
+		{"", "null", "/v1/chat/completions", 403},
+		{"router.example.com", "https://router.example.com", "/v1/chat/completions", 200},
+		{"evil.example", "", "/api/status", 403},
+		{"", "", "/api/status", 200},
+	} {
+		if got := call(c.host, c.origin, c.path); got != c.want {
+			t.Errorf("host %q origin %q %s: %d, want %d", c.host, c.origin, c.path, got, c.want)
+		}
+	}
+}

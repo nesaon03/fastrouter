@@ -8,6 +8,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"net/url"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -42,6 +43,8 @@ type Server struct {
 	refresher                                        *login.Refresher
 	saver                                            atomic.Pointer[saver.Saver]
 
+	allowedHosts map[string]bool // M5: extra hosts trusted in open (keyless) mode
+
 	pwOK sync.Map // sha256(user:pass) -> true, so bcrypt runs once per credential
 }
 
@@ -61,6 +64,10 @@ func New(cfg config.Config, snap *store.Snapshot, st *store.Store) *Server {
 		keyLimits:    cfg.KeyLimits,
 		st:           st,
 		tsCfg:        cfg.TokenSavers,
+		allowedHosts: map[string]bool{},
+	}
+	for _, h := range cfg.AllowedHosts {
+		s.allowedHosts[strings.ToLower(strings.TrimSpace(h))] = true
 	}
 	s.logins = newLogins(cfg.Plugins.CodexCallbackPort, s.client)
 	s.refresher = &login.Refresher{Client: s.client, Endpoints: login.Default, RefreshImported: cfg.Plugins.RefreshImported,
@@ -148,6 +155,10 @@ func (s *Server) auth(f tr.Format, next http.Handler) http.Handler {
 				writeError(w, f, http.StatusUnauthorized, "authentication_error", "no API keys configured; only local clients allowed")
 				return
 			}
+			if msg := s.openModeRefusal(r); msg != "" {
+				writeError(w, f, http.StatusForbidden, "permission_error", msg)
+				return
+			}
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -182,6 +193,10 @@ func (s *Server) dashAuth(next http.Handler) http.Handler {
 				http.Error(w, "dashboard is local-only until a password is set", http.StatusForbidden)
 				return
 			}
+			if msg := s.openModeRefusal(r); msg != "" {
+				http.Error(w, msg, http.StatusForbidden)
+				return
+			}
 			next.ServeHTTP(w, r)
 			return
 		}
@@ -210,6 +225,39 @@ func (s *Server) checkPassword(hash, pass string) bool {
 		s.pwOK.Store(k, true)
 	}
 	return ok
+}
+
+// openModeRefusal guards requests trusted only because they come from
+// loopback (M5). A browser on this machine is loopback too, so a web page could
+// otherwise spend quota (CSRF) or read answers after DNS rebinding. Returns
+// a reason to refuse, or "".
+func (s *Server) openModeRefusal(r *http.Request) string {
+	if !s.hostAllowed(r.Host) {
+		return "Host " + r.Host + " is not allowed without an API key (add it to allowedHosts or create an API key)"
+	}
+	if o := r.Header.Get("Origin"); o != "" {
+		u, err := url.Parse(o)
+		if err != nil || !s.hostAllowed(u.Host) {
+			return "cross-origin request refused without an API key"
+		}
+	}
+	return ""
+}
+
+func (s *Server) hostAllowed(hostport string) bool {
+	h := hostport
+	if host, _, err := net.SplitHostPort(hostport); err == nil {
+		h = host
+	}
+	h = strings.ToLower(strings.Trim(h, "[]"))
+	switch h {
+	case "localhost", "127.0.0.1", "::1":
+		return true
+	}
+	if ip := net.ParseIP(h); ip != nil && ip.IsLoopback() {
+		return true
+	}
+	return s.allowedHosts[h]
 }
 
 func isLoopback(remote string) bool {
