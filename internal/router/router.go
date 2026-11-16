@@ -213,7 +213,7 @@ func Build(snap *store.Snapshot, limits map[string]KeyLimit) *State {
 		if _, isBuiltin := catalog.Lookup(n.Prefix); isBuiltin {
 			continue
 		}
-		add(nodeProvider(n, n.Prefix), n.ID, n.Prefix)
+		add(nodeProvider(n, n.Prefix), append([]string{n.ID, n.Prefix}, n.Aliases...)...)
 	}
 	// Nodes whose prefix collides with a built-in are still reachable by id.
 	for _, n := range snap.Nodes {

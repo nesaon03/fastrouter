@@ -20,6 +20,7 @@ var migrations = []string{
 	`ALTER TABLE connections ADD COLUMN tokens_out INTEGER DEFAULT 0`,
 	`ALTER TABLE connections ADD COLUMN cost REAL DEFAULT 0`,
 	`CREATE INDEX IF NOT EXISTS usage_ts ON usage(ts)`,
+	`ALTER TABLE nodes ADD COLUMN aliases TEXT DEFAULT ''`,
 }
 
 func migrate(db *sql.DB) error {

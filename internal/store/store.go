@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/zenpo/fastrouter/internal/secret"
 	_ "modernc.org/sqlite"
@@ -16,6 +17,7 @@ import (
 // Node is a custom OpenAI- or Anthropic-compatible endpoint.
 type Node struct {
 	ID, Name, Prefix, Type, APIType, BaseURL string
+	Aliases                                  []string // extra prefixes that also reach this endpoint
 }
 
 // Connection is one provider account.
@@ -149,7 +151,8 @@ func (s *Store) ReplaceAll(snap *Snapshot) error {
 		}
 	}
 	for i, n := range snap.Nodes {
-		if _, err := tx.Exec(`INSERT INTO nodes VALUES (?,?,?,?,?,?,?)`, n.ID, n.Name, n.Prefix, n.Type, n.APIType, n.BaseURL, i); err != nil {
+		if _, err := tx.Exec(`INSERT INTO nodes (id,name,prefix,type,api_type,base_url,ord,aliases) VALUES (?,?,?,?,?,?,?,?)`,
+			n.ID, n.Name, n.Prefix, n.Type, n.APIType, n.BaseURL, i, strings.Join(n.Aliases, ",")); err != nil {
 			return err
 		}
 	}
@@ -207,14 +210,18 @@ func (s *Store) ReplaceAll(snap *Snapshot) error {
 // Load reads the whole configuration, decrypting secrets into memory.
 func (s *Store) Load() (*Snapshot, error) {
 	snap := &Snapshot{Settings: map[string]json.RawMessage{}}
-	rows, err := s.db.Query(`SELECT id,name,prefix,type,api_type,base_url FROM nodes ORDER BY ord`)
+	rows, err := s.db.Query(`SELECT id,name,prefix,type,api_type,base_url,COALESCE(aliases,'') FROM nodes ORDER BY ord`)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var n Node
-		if err := rows.Scan(&n.ID, &n.Name, &n.Prefix, &n.Type, &n.APIType, &n.BaseURL); err != nil {
+		var aliases string
+		if err := rows.Scan(&n.ID, &n.Name, &n.Prefix, &n.Type, &n.APIType, &n.BaseURL, &aliases); err != nil {
 			return nil, err
+		}
+		if aliases != "" {
+			n.Aliases = strings.Split(aliases, ",")
 		}
 		snap.Nodes = append(snap.Nodes, n)
 	}

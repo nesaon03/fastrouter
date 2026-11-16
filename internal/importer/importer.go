@@ -91,6 +91,11 @@ func Parse(path string) (*store.Snapshot, *Summary, error) {
 	for _, n := range b.ProviderNodes {
 		snap.Nodes = append(snap.Nodes, store.Node{ID: n.ID, Name: n.Name, Prefix: n.Prefix, Type: n.Type, APIType: n.APIType, BaseURL: n.BaseURL})
 		nodeByID[n.ID] = true
+	}
+	if renames := fixPrefixes(snap.Nodes); len(renames) > 0 {
+		warn("prefix", "custom endpoints", "duplicate prefixes fixed: "+strings.Join(renames, "; "))
+	}
+	for _, n := range snap.Nodes {
 		if owner, dup := prefixOwner[n.Prefix]; dup {
 			warn("prefix", n.Prefix, fmt.Sprintf("prefix %q is shared: %s/<model> goes to %q (first match, like 9Router); use %s/<model> to reach %q", n.Prefix, n.Prefix, owner, n.ID, n.Name))
 		} else {
