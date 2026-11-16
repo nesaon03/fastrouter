@@ -718,10 +718,15 @@ func (e *anthropicEncoder) Encode(evs []Event) []byte {
 		case EvFinish:
 			e.finish = ev.Finish
 		case EvError:
-			e.closeBlock()
-			e.out.event("error", map[string]any{"type": "error", "error": map[string]string{"type": "api_error", "message": ev.Text}})
+			// reported by Fail, which the proxy calls instead of Close
 		}
 	}
+	return e.out.take()
+}
+
+func (e *anthropicEncoder) Fail(msg string) []byte {
+	e.closeBlock()
+	e.out.event("error", map[string]any{"type": "error", "error": map[string]string{"type": "api_error", "message": msg}})
 	return e.out.take()
 }
 

@@ -720,6 +720,12 @@ func (e *geminiEncoder) Encode(evs []Event) []byte {
 	return e.out.take()
 }
 
+func (e *geminiEncoder) Fail(msg string) []byte {
+	e.flushTools()
+	e.out.data(map[string]any{"error": map[string]any{"code": 502, "message": msg, "status": "UNAVAILABLE"}})
+	return e.out.take()
+}
+
 func (e *geminiEncoder) Close() []byte {
 	e.flushTools()
 	f := e.finish

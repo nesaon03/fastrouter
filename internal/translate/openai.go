@@ -886,10 +886,18 @@ func (e *openaiEncoder) Encode(evs []Event) []byte {
 }
 
 func (e *openaiEncoder) Close() []byte {
+	var out []byte
 	if !e.finished && e.started {
-		e.Encode([]Event{{Kind: EvFinish, Finish: FinishStop}})
+		out = e.Encode([]Event{{Kind: EvFinish, Finish: FinishStop}}) // L1: keep the finish chunk
 	}
+	e.out.b = append(out, e.out.b...)
 	e.out.raw("data: [DONE]\n\n")
+	return e.out.take()
+}
+
+// Fail sends an error chunk and no [DONE], so the client sees a failure.
+func (e *openaiEncoder) Fail(msg string) []byte {
+	e.out.data(map[string]any{"error": map[string]string{"message": msg, "type": "api_error", "code": "upstream_error"}})
 	return e.out.take()
 }
 

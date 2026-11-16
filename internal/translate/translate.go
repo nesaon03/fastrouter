@@ -86,6 +86,10 @@ type Decoder interface {
 type Encoder interface {
 	Encode([]Event) []byte
 	Close() []byte // terminating frames
+	// Fail ends a stream that broke (upstream error or cut-off) with the
+	// format's error frame instead of a normal finish, so clients can tell a
+	// truncated answer from a complete one.
+	Fail(msg string) []byte
 }
 
 // NewDecoder returns a stream decoder for upstream format f.

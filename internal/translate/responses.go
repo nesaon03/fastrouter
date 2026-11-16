@@ -662,10 +662,19 @@ func (e *responsesEncoder) Encode(evs []Event) []byte {
 		case EvFinish:
 			e.finish = ev.Finish
 		case EvError:
-			e.closeItem()
-			e.ev("error", map[string]any{"code": "upstream_error", "message": ev.Text, "param": nil})
+			// reported by Fail, which the proxy calls instead of Close
 		}
 	}
+	return e.out.take()
+}
+
+func (e *responsesEncoder) Fail(msg string) []byte {
+	e.start()
+	e.closeItem()
+	resp := responseObject(e.id, e.model, e.created, "completed", e.items, e.usage, e.finish)
+	resp["status"] = "failed"
+	resp["error"] = map[string]any{"code": "server_error", "message": msg}
+	e.ev("response.failed", map[string]any{"response": resp})
 	return e.out.take()
 }
 

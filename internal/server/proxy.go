@@ -485,14 +485,21 @@ func (s *Server) finishStream(w http.ResponseWriter, a *attempt, resp *http.Resp
 		rec(resp.StatusCode)
 		return true, nil
 	}
-	if rerr != io.EOF && p.r.Context().Err() == nil {
-		log.Printf("upstream %s stream ended early: %s", a.t.Label, secret.Redact(errString(rerr, context.Cause(ctx))))
-	}
 	tail := dec.End()
 	track(tail)
+	clientCanceled := p.r.Context().Err() != nil
+	// H1: a cut-off stream or a mid-stream upstream error is not a clean finish.
+	broken := ""
+	if !clientCanceled {
+		if upErr != "" {
+			broken = "upstream error: " + secret.Redact(upErr)
+		} else if rerr != io.EOF {
+			broken = "upstream stream ended early: " + secret.Redact(errString(rerr, context.Cause(ctx)))
+		}
+	}
 
 	if !committed {
-		if !sawContent && finish != tr.FinishContentFilter && a.canRetry && p.r.Context().Err() == nil {
+		if !sawContent && finish != tr.FinishContentFilter && a.canRetry && !clientCanceled {
 			if frames == 0 || rerr != io.EOF {
 				acct.Fail(s.cfgCooldown, 0)
 			}
@@ -500,11 +507,41 @@ func (s *Server) finishStream(w http.ResponseWriter, a *attempt, resp *http.Resp
 			rec(resp.StatusCode)
 			return false, nil
 		}
-		if frames == 0 && rerr != io.EOF {
+		if frames == 0 && rerr != io.EOF && !clientCanceled { // M1: a client hang-up is not the account's fault
 			acct.Fail(s.cfgCooldown, 0)
 			rec(0)
 			return false, nil
 		}
+		if coll != nil && broken != "" { // JSON client: nothing written yet, so fail over or report it
+			acct.Fail(s.cfgCooldown, 0)
+			log.Printf("upstream %s (account %s): %s", a.t.Label, acct.ID, broken)
+			rec(http.StatusBadGateway)
+			return false, &upstreamErr{status: http.StatusBadGateway, body: []byte(broken)}
+		}
+	}
+	if clientCanceled {
+		rec(resp.StatusCode)
+		return true, nil
+	}
+	if broken != "" {
+		acct.Fail(s.cfgCooldown, 0)
+		log.Printf("upstream %s (account %s): %s", a.t.Label, acct.ID, broken)
+		switch {
+		case enc != nil:
+			pending = append(pending, enc.Encode(tail)...)
+			pending = append(pending, enc.Fail(broken)...)
+		case passthrough && upErr == "": // an upstream error frame was already relayed as-is
+			pending = append(pending, tr.NewEncoder(p.cf, a.t.Label).Fail(broken)...)
+		}
+		if !committed {
+			commit()
+		}
+		_, _ = w.Write(pending)
+		if flusher != nil {
+			flusher.Flush()
+		}
+		rec(http.StatusBadGateway)
+		return true, nil
 	}
 	acct.Succeed()
 	if coll != nil {
