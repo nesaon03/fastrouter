@@ -623,6 +623,16 @@ type anthropicEncoder struct {
 	finish       Finish
 	finished     bool
 	pendingStart bool
+	// H2: while one tool_use block streams, later tools are buffered and sent
+	// as whole blocks when the tool run ends, so interleaved argument deltas
+	// are never dropped.
+	queued   []*queuedTool
+	queuedBy map[int]*queuedTool
+}
+
+type queuedTool struct {
+	id, name string
+	args     strings.Builder
 }
 
 func newAnthropicEncoder(model string) *anthropicEncoder {
@@ -639,6 +649,22 @@ func (e *anthropicEncoder) startMsg() {
 	e.out.event("message_start", map[string]any{"type": "message_start", "message": map[string]any{
 		"id": anID(e.id), "type": "message", "role": "assistant", "model": e.model, "content": []any{},
 		"stop_reason": nil, "stop_sequence": nil, "usage": u}})
+}
+
+// flushTools closes the live tool block and sends the queued tools whole.
+func (e *anthropicEncoder) flushTools() {
+	if len(e.queued) == 0 {
+		return
+	}
+	e.closeBlock()
+	for _, q := range e.queued {
+		e.openBlock("tool_use", map[string]any{"type": "tool_use", "id": q.id, "name": q.name, "input": map[string]any{}})
+		if q.args.Len() > 0 {
+			e.delta("input_json_delta", "partial_json", q.args.String())
+		}
+		e.closeBlock()
+	}
+	e.queued, e.queuedBy = nil, nil
 }
 
 func (e *anthropicEncoder) closeBlock() {
@@ -686,6 +712,9 @@ func (e *anthropicEncoder) Encode(evs []Event) []byte {
 			continue
 		}
 		e.startMsg()
+		if ev.Kind != EvToolStart && ev.Kind != EvToolArgs && ev.Kind != EvFinish && ev.Kind != EvError {
+			e.flushTools()
+		}
 		switch ev.Kind {
 		case EvText:
 			if e.open != "text" {
@@ -709,10 +738,20 @@ func (e *anthropicEncoder) Encode(evs []Event) []byte {
 			e.openBlock("redacted_thinking", map[string]any{"type": "redacted_thinking", "data": ev.Text})
 			e.closeBlock()
 		case EvToolStart:
+			if e.open == "tool_use" || len(e.queued) > 0 {
+				q := &queuedTool{id: ev.ID, name: ev.Name}
+				if e.queuedBy == nil {
+					e.queuedBy = map[int]*queuedTool{}
+				}
+				e.queued, e.queuedBy[ev.Index] = append(e.queued, q), q
+				continue
+			}
 			e.openBlock("tool_use", map[string]any{"type": "tool_use", "id": ev.ID, "name": ev.Name, "input": map[string]any{}})
 			e.openTool = ev.Index
 		case EvToolArgs:
-			if e.open == "tool_use" && e.openTool == ev.Index {
+			if q := e.queuedBy[ev.Index]; q != nil {
+				q.args.WriteString(ev.Text)
+			} else if e.open == "tool_use" && e.openTool == ev.Index {
 				e.delta("input_json_delta", "partial_json", ev.Text)
 			}
 		case EvFinish:
@@ -725,6 +764,7 @@ func (e *anthropicEncoder) Encode(evs []Event) []byte {
 }
 
 func (e *anthropicEncoder) Fail(msg string) []byte {
+	e.flushTools()
 	e.closeBlock()
 	e.out.event("error", map[string]any{"type": "error", "error": map[string]string{"type": "api_error", "message": msg}})
 	return e.out.take()
@@ -732,6 +772,7 @@ func (e *anthropicEncoder) Fail(msg string) []byte {
 
 func (e *anthropicEncoder) Close() []byte {
 	e.startMsg()
+	e.flushTools()
 	e.closeBlock()
 	f := e.finish
 	if f == FinishNone {

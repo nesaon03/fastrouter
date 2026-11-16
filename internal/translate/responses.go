@@ -516,8 +516,12 @@ type responsesEncoder struct {
 	curType string // reasoning | message | function_call
 	text    strings.Builder
 	toolIdx map[int]int // tool index -> item index
-	usage   *Usage
-	finish  Finish
+	// H2: tools that start while another function_call item is streaming are
+	// queued and sent as complete items when the tool run ends.
+	queued   []*rsQueued
+	queuedBy map[int]*rsQueued
+	usage    *Usage
+	finish   Finish
 }
 
 func newResponsesEncoder(model string) *responsesEncoder {
@@ -573,6 +577,30 @@ func (e *responsesEncoder) closeItem() {
 	e.text.Reset()
 }
 
+type rsQueued struct {
+	index        int
+	callID, name string
+	args         strings.Builder
+}
+
+// flushTools closes the streaming function_call and sends queued tools whole.
+func (e *responsesEncoder) flushTools() {
+	if len(e.queued) == 0 {
+		return
+	}
+	q := e.queued
+	e.queued, e.queuedBy = nil, nil
+	for _, t := range q {
+		idx := e.openItem(rsItem{Type: "function_call", ID: genID("fc_", len(e.items)), CallID: t.callID, Name: t.name})
+		e.toolIdx[t.index] = idx
+		if t.args.Len() > 0 {
+			e.items[idx].Arguments = t.args.String()
+			e.ev("response.function_call_arguments.delta", map[string]any{"item_id": e.items[idx].ID, "output_index": idx, "delta": e.items[idx].Arguments})
+		}
+	}
+	e.closeItem()
+}
+
 func (e *responsesEncoder) openItem(it rsItem) int {
 	e.closeItem()
 	e.items = append(e.items, it)
@@ -619,6 +647,9 @@ func (e *responsesEncoder) Encode(evs []Event) []byte {
 			continue
 		}
 		e.start()
+		if ev.Kind != EvToolStart && ev.Kind != EvToolArgs && ev.Kind != EvFinish && ev.Kind != EvError {
+			e.flushTools()
+		}
 		switch ev.Kind {
 		case EvThinking:
 			if e.curType != "reasoning" {
@@ -645,12 +676,24 @@ func (e *responsesEncoder) Encode(evs []Event) []byte {
 			e.text.WriteString(ev.Text)
 			e.ev("response.output_text.delta", map[string]any{"item_id": e.items[e.cur].ID, "output_index": e.cur, "content_index": 0, "delta": ev.Text})
 		case EvToolStart:
+			if e.curType == "function_call" || len(e.queued) > 0 {
+				t := &rsQueued{index: ev.Index, callID: ev.ID, name: ev.Name}
+				if e.queuedBy == nil {
+					e.queuedBy = map[int]*rsQueued{}
+				}
+				e.queued, e.queuedBy[ev.Index] = append(e.queued, t), t
+				continue
+			}
 			idx := e.openItem(rsItem{Type: "function_call", ID: genID("fc_", len(e.items)), CallID: ev.ID, Name: ev.Name})
 			if e.toolIdx == nil {
 				e.toolIdx = map[int]int{}
 			}
 			e.toolIdx[ev.Index] = idx
 		case EvToolArgs:
+			if t := e.queuedBy[ev.Index]; t != nil {
+				t.args.WriteString(ev.Text)
+				continue
+			}
 			idx, ok := e.toolIdx[ev.Index]
 			if !ok {
 				continue
@@ -670,6 +713,7 @@ func (e *responsesEncoder) Encode(evs []Event) []byte {
 
 func (e *responsesEncoder) Fail(msg string) []byte {
 	e.start()
+	e.flushTools()
 	e.closeItem()
 	resp := responseObject(e.id, e.model, e.created, "completed", e.items, e.usage, e.finish)
 	resp["status"] = "failed"
@@ -680,6 +724,7 @@ func (e *responsesEncoder) Fail(msg string) []byte {
 
 func (e *responsesEncoder) Close() []byte {
 	e.start()
+	e.flushTools()
 	e.closeItem()
 	resp := responseObject(e.id, e.model, e.created, "completed", e.items, e.usage, e.finish)
 	typ := "response.completed"

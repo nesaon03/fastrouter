@@ -658,7 +658,8 @@ type oaChunk struct {
 
 type openaiDecoder struct {
 	started  bool
-	tools    map[int]int // upstream tool index -> our index
+	tools    map[int]int    // upstream tool index -> our index
+	toolIDs  map[string]int // tool call id -> our index, for providers that omit index (H2)
 	nextTool int
 	sawTools bool
 	finish   Finish
@@ -712,18 +713,33 @@ func (d *openaiDecoder) Decode(f Frame) ([]Event, error) {
 			evs = append(evs, Event{Kind: EvText, Text: *dl.Refusal})
 		}
 		for i, tc := range dl.ToolCalls {
-			up := i
-			if tc.Index != nil {
-				up = *tc.Index
-			}
 			if d.tools == nil {
-				d.tools = map[int]int{}
+				d.tools, d.toolIDs = map[int]int{}, map[string]int{}
 			}
-			idx, seen := d.tools[up]
+			var idx int
+			var seen bool
+			switch {
+			case tc.Index != nil:
+				idx, seen = d.tools[*tc.Index]
+				if !seen {
+					d.tools[*tc.Index] = d.nextTool
+				}
+			case tc.ID != "": // no index: a new id is a new tool (H2)
+				idx, seen = d.toolIDs[tc.ID]
+			case d.nextTool > 0: // no index and no id: more arguments for the latest tool
+				idx, seen = d.nextTool-1, true
+			default:
+				idx, seen = d.tools[i]
+				if !seen {
+					d.tools[i] = d.nextTool
+				}
+			}
+			if tc.ID != "" && !seen {
+				d.toolIDs[tc.ID] = d.nextTool
+			}
 			if !seen {
 				idx = d.nextTool
 				d.nextTool++
-				d.tools[up] = idx
 				d.sawTools = true
 				evs = append(evs, Event{Kind: EvToolStart, Index: idx, ID: firstNonEmpty(tc.ID, genID("call_", idx)), Name: tc.Function.Name})
 			}
