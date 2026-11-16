@@ -608,7 +608,7 @@ function NodeForm({ node, type, onClose, onSaved }) {
 
 // 9Router's Risk Notice (shared/constants/providersDisplay.js RISK_NOTICE).
 const RISK_NOTICE = "This provider uses a subscription / OAuth session that is not officially licensed for proxy or router use. The account may be restricted or banned. Use at your own risk.";
-const CLASS_LABEL = { auth: "auth", banned: "banned", quota: "quota", rate_limit: "rate limit", model: "model", bad_request: "bad request", overloaded: "overloaded", upstream: "provider error", network: "network", timeout: "timeout", empty: "empty" };
+const CLASS_LABEL = { auth: "auth / access denied", banned: "banned", quota: "quota", rate_limit: "rate limit", model: "model", bad_request: "bad request", overloaded: "overloaded", upstream: "provider error", network: "network", timeout: "timeout", empty: "empty" };
 
 function ProviderDetail({ data, id, reload, go, query }) {
   const p = data.providers.find((x) => x.id === id);
@@ -660,7 +660,8 @@ function ProviderDetail({ data, id, reload, go, query }) {
   const selected = accts.filter((a) => sel[a.id]);
   const allSel = accts.length > 0 && selected.length === accts.length;
   const ready = (a) => a.active && !a.expired && (a.status === "ok" || a.status === "needs-plugin" || a.status === "unknown-provider");
-  const statusPill = (a) => !a.active ? html`<${Badge} dot>disabled</${Badge}>` : a.cooling ? html`<${Badge} kind="warning" dot>cooling</${Badge}>`
+  const statusPill = (a) => !a.active ? html`<${Badge} dot>disabled</${Badge}>`
+    : a.status === "banned" ? html`<${Badge} kind="error" icon="cancel">banned</${Badge}>` : a.cooling ? html`<${Badge} kind="warning" dot>cooling</${Badge}>`
     : a.expired ? html`<${Badge} kind="warning" dot>expired${a.autoRefresh ? " · refreshing" : ""}</${Badge}>`
     : ready(a) ? html`<${Badge} kind="success" dot>active</${Badge}>` : html`<${Badge} kind="error" dot>${a.status === "needs-reauth" ? "sign in again" : a.status}</${Badge}>`;
   const testPill = (a) => {
@@ -718,9 +719,9 @@ function ProviderDetail({ data, id, reload, go, query }) {
               <span class="small muted">#${i + 1}</span>
               ${a.region && html`<${Badge} kind="info">${a.region}</${Badge}>`}
               ${testPill(a)}
-              ${tests[a.id] && !tests[a.id].ok && !tests[a.id].running ? html`<span class="small err-text truncate" title=${tests[a.id].message}>${tests[a.id].message}</span>`
-                : a.lastError && html`<span class="small err-text truncate" title=${a.lastError}>${a.lastError}</span>`}
             </div>
+            ${tests[a.id] && !tests[a.id].ok && !tests[a.id].running ? html`<${ErrText} text=${tests[a.id].message} />`
+              : a.lastError && html`<${ErrText} text=${(a.status === "banned" ? "Banned until you sign in again or a manual test passes. " : "") + a.lastError} />`}
           </div>
           <div class="row" style="gap:2px">
             ${isLogin && html`<button class="act" onClick=${() => setModal({ t: "signin", conn: a.id })}><${Icon} n="login" /><span>Re-auth</span></button>`}
@@ -746,6 +747,14 @@ function ProviderDetail({ data, id, reload, go, query }) {
       onYes=${() => run(async () => { for (const a of selected) await api("DELETE", `/api/admin/accounts/${a.id}`); setSel({}); await reload(); }, "Connections deleted")} />`}
     ${modal && modal.t === "delnode" && html`<${Confirm} title="Delete endpoint?" text=${`"${p.name}" and its ${p.accounts.length} account(s) will be removed. Combos that use ${p.prefix}/ models will skip them.`} onClose=${() => setModal(null)}
       onYes=${() => run(async () => { await api("DELETE", `/api/admin/nodes/${encodeURIComponent(p.id)}`); await reload(); go("providers"); }, "Endpoint deleted")} />`}`;
+}
+
+// Full error text: wraps, long ones collapse to 3 lines with a "more" toggle.
+function ErrText({ text }) {
+  const [open, setOpen] = useState(false);
+  const long = text.length > 220;
+  return html`<div class="err-text small"><div class=${long && !open ? "clamp" : ""} title=${text}>${text}</div>
+    ${long && html`<button class="linkbtn" onClick=${() => setOpen(!open)}>${open ? "Show less" : "Show more"}</button>`}</div>`;
 }
 
 // Capability icons for a model id (best effort from the name, like 9Router's badges).

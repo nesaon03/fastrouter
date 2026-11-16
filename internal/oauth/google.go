@@ -473,3 +473,61 @@ func unwrapJSON(b []byte) []byte {
 	}
 	return env.Response
 }
+
+// Code Assist hosts 9Router knows for Antigravity, in its order: the IDE's daily
+// host first, then the sandbox and production hosts.
+var codeAssistHosts = map[string][]string{
+	"antigravity": {AntigravityBase, "https://daily-cloudcode-pa.sandbox.googleapis.com", "https://cloudcode-pa.googleapis.com"},
+	"gemini-cli":  {"https://cloudcode-pa.googleapis.com"},
+}
+
+// ProbeCodeAssist sends one tiny generateContent to every known Code Assist host
+// for the account and returns, per host, the HTTP status and Google's error
+// message (never the token or the answer). Used to confirm an account-level
+// block before marking an account banned.
+func ProbeCodeAssist(ctx context.Context, c *http.Client, provider, token string, a Account, model string) []ProbeResult {
+	var out []ProbeResult
+	for _, host := range codeAssistHosts[provider] {
+		body, err := shapeCodeAssist([]byte(`{"contents":[{"role":"user","parts":[{"text":"Say OK"}]}],"generationConfig":{"maxOutputTokens":5}}`),
+			model, a, provider == "antigravity")
+		if err != nil {
+			return out
+		}
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPost, host+"/v1internal:generateContent", strings.NewReader(string(body)))
+		req.Header.Set("Content-Type", "application/json")
+		req.Header.Set("Authorization", "Bearer "+token)
+		if provider == "antigravity" {
+			req.Header.Set("User-Agent", AntigravityUserAgent)
+		} else {
+			req.Header.Set("User-Agent", "GeminiCLI/"+geminiCLIVersion+" ("+runtime.GOOS+"; "+runtime.GOARCH+"; terminal)")
+		}
+		r := ProbeResult{Host: strings.TrimPrefix(host, "https://")}
+		resp, err := c.Do(req)
+		if err != nil {
+			r.Message = "network error"
+			out = append(out, r)
+			continue
+		}
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
+		resp.Body.Close()
+		r.Status = resp.StatusCode
+		if resp.StatusCode >= 300 {
+			var v struct{ Error struct{ Message string } }
+			if json.Unmarshal(b, &v) == nil {
+				r.Message = v.Error.Message
+			}
+		}
+		out = append(out, r)
+	}
+	return out
+}
+
+// ProbeResult is one host's answer to ProbeCodeAssist.
+type ProbeResult struct {
+	Host    string
+	Status  int
+	Message string
+}
+
+// HasCodeAssistHosts reports whether ProbeCodeAssist can check this provider.
+func HasCodeAssistHosts(provider string) bool { return len(codeAssistHosts[provider]) > 0 }

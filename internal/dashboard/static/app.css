@@ -503,7 +503,9 @@ textarea.input { height:auto; padding:10px 12px; resize:vertical; line-height:1.
 .act { display:inline-flex; flex-direction:column; align-items:center; gap:1px; border:0; background:none; color:var(--muted); cursor:pointer; padding:4px 8px; border-radius:8px; font-size:10.5px; }
 .act:hover:not(:disabled) { background:var(--surface-2); color:var(--text); } .act.danger:hover { color:var(--red-fg); }
 .act:disabled { opacity:.4; cursor:default; } .act .ms { font-size:18px; }
-.err-text { color:var(--red-fg); max-width:360px; }
+.err-text { color:var(--red-fg); margin-top:6px; white-space:normal; overflow-wrap:anywhere; line-height:1.45; }
+.err-text .clamp { display:-webkit-box; -webkit-line-clamp:3; -webkit-box-orient:vertical; overflow:hidden; }
+.linkbtn { border:0; background:none; color:var(--primary); cursor:pointer; font-size:inherit; padding:0; }
 .sticky-in { width:64px; height:28px; padding:0 8px; font-size:12.5px; }
 .bubble.sm { width:36px; height:36px; border-radius:50%; background:rgba(229,106,74,.1); color:var(--primary); display:inline-flex; align-items:center; justify-content:center; }
 .mgrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(270px,1fr)); gap:8px; }

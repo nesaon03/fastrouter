@@ -381,6 +381,11 @@ func (s *Server) attempt(w http.ResponseWriter, a *attempt) (bool, *upstreamErr)
 	if resp.StatusCode >= 400 {
 		eb, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 		rec(resp.StatusCode)
+		if resp.StatusCode == 403 && a.t.Provider != nil && a.t.Provider.Login != "" {
+			if msg := upstreamMessage(eb); tosBanned(403, msg) {
+				s.noteBan(a.t.Provider.ID, acct, secret.Redact(msg))
+			}
+		}
 		if retryable(resp.StatusCode) {
 			acct.Fail(s.cfgCooldown, retryAfter(resp.Header))
 			log.Printf("upstream %s (account %s) returned %d; trying next", label, acct.ID, resp.StatusCode)

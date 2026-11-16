@@ -609,7 +609,7 @@ func (s *Server) handleAdminState(w http.ResponseWriter, r *http.Request) {
 		if psd, ok := c.Meta["providerSpecificData"].(map[string]any); ok {
 			a.Region, _ = psd["region"].(string)
 		}
-		if e, ok := c.Meta["lastError"].(string); ok && len(e) < 300 {
+		if e, ok := c.Meta["lastError"].(string); ok && len(e) < 2000 {
 			a.LastError = e // already redacted at import
 		}
 		if cs, ok := stats[c.ID]; ok {

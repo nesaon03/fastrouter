@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"github.com/zenpo/fastrouter/internal/secret"
 	"net/http"
 	"sort"
 	"strconv"
@@ -125,7 +126,7 @@ func (c *captureWriter) Flush() {}
 func errClass(status int, msg string) string {
 	l := strings.ToLower(msg)
 	switch {
-	case (status == 403 || status == 401) && (strings.Contains(l, "terms of service") || strings.Contains(l, "has been disabled") || strings.Contains(l, "suspended")):
+	case tosBanned(status, msg):
 		return "banned"
 	case status == 503 && (strings.Contains(l, "demand") || strings.Contains(l, "overloaded")):
 		return "overloaded"
@@ -179,7 +180,11 @@ func (s *Server) liveTest(ctx context.Context, st *router.State, p *router.Provi
 	pr := &proxyReq{r: r, cf: tr.OpenAI, body: body, model: label}
 	_ = scanHead(body, &pr.head)
 	cw := &captureWriter{h: http.Header{}}
+	_, busy := banChecks.LoadOrStore(a.ID, struct{}{}) // the proxy's background ban check is done inline below
 	s.route(cw, pr, []router.Target{t})
+	if !busy {
+		defer banChecks.Delete(a.ID)
+	}
 	res.Status = cw.status
 	var out struct {
 		Choices []struct {
@@ -200,6 +205,9 @@ func (s *Server) liveTest(ctx context.Context, st *router.State, p *router.Provi
 		res.Class, res.Message = "timeout", "no answer in time"
 	case cw.status == 200 && len(out.Choices) > 0:
 		res.OK, res.Message = true, "OK"
+		if connStatus(s.state.Load(), a.ID) == "banned" { // a manual retest passed: usable again
+			s.setAccountStatus(a.ID, "ok", "")
+		}
 		if strings.TrimSpace(out.Choices[0].Message.Content+out.Choices[0].Message.ReasoningContent) == "" {
 			res.Message = "OK (answered, empty text: " + out.Choices[0].FinishReason + ")"
 		}
@@ -207,7 +215,18 @@ func (s *Server) liveTest(ctx context.Context, st *router.State, p *router.Provi
 		res.Class, res.Message = "empty", "answer had no choices"
 	default:
 		res.Class = errClass(cw.status, out.Error.Message)
+		real := scrubKey(secret.Redact(strings.TrimSpace(out.Error.Message)), a.Key())
+		if res.Class == "banned" {
+			if s.confirmBanned(ctx, p.ID, a) {
+				s.setAccountStatus(a.ID, "banned", real)
+			} else { // another host 9Router would use still answers: not an account ban
+				res.Class = "auth"
+			}
+		}
 		res.Message = classMessage(res.Class, cw.status)
+		if real != "" {
+			res.Message += ": " + real
+		}
 	}
 	return res
 }
@@ -225,7 +244,7 @@ func classMessage(class string, status int) string {
 
 // LiveTest tests every matching active account, 4 at a time.
 func (s *Server) LiveTest(ctx context.Context, o LiveOptions) []LiveResult {
-	st := s.state.Load()
+	st := withBannedRoutable(s.state.Load(), o.Provider, o.Account, s.keyLimits) // a manual test may clear a ban
 	type job struct {
 		p     *router.Provider
 		a     *router.Account
@@ -272,4 +291,15 @@ func (s *Server) RefreshDue(ctx context.Context) int {
 	}
 	n := s.oauthRefresher.RunOnce(ctx)
 	return n + s.refresher.RunOnce(ctx)
+}
+
+func connStatus(st *router.State, id string) string {
+	if st.Snap != nil {
+		for _, c := range st.Snap.Connections {
+			if c.ID == id {
+				return c.Status
+			}
+		}
+	}
+	return ""
 }
