@@ -191,6 +191,16 @@ func (s *Store) ReplaceAll(snap *Snapshot) error {
 		}
 	}
 	for k, v := range snap.Settings {
+		if SealedSetting(k, v) { // M7: proxy pools and credential URLs are encrypted too
+			sec, err := s.seal(v)
+			if err != nil {
+				return err
+			}
+			if _, err := tx.Exec(`INSERT INTO settings (key,secret) VALUES (?,?)`, k, sec); err != nil {
+				return err
+			}
+			continue
+		}
 		if _, err := tx.Exec(`INSERT INTO settings (key,value) VALUES (?,?)`, k, string(v)); err != nil {
 			return err
 		}
@@ -325,10 +335,24 @@ func (s *Store) Load() (*Snapshot, error) {
 			}
 			continue
 		}
+		if !v.Valid && len(sec) > 0 {
+			var raw json.RawMessage
+			if err := s.open(sec, &raw); err != nil {
+				return nil, err
+			}
+			snap.Settings[k] = raw
+			continue
+		}
 		snap.Settings[k] = json.RawMessage(v.String)
 	}
 	rows.Close()
 	return snap, rows.Err()
+}
+
+// SealedSetting reports whether a setting is stored encrypted: 9Router's proxy
+// pools always, and any value that embeds a credential.
+func SealedSetting(k string, v json.RawMessage) bool {
+	return k == "backup.proxyPools" || secret.LooksLikeCredential(string(v))
 }
 
 // RawDB exposes the database for tests.

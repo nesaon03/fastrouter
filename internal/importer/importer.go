@@ -128,9 +128,10 @@ func Parse(path string) (*store.Snapshot, *Summary, error) {
 				psd, _ := v.(map[string]any)
 				keep := map[string]any{}
 				for pk, pv := range psd {
-					if isSecret(pk) {
-						if s, ok := pv.(string); ok && s != "" {
-							conn.Secrets["providerSpecificData."+pk] = s
+					sv, isStr := pv.(string)
+					if isSecret(pk) || (isStr && secret.LooksLikeCredential(sv)) { // M7: proxy URLs with user:pass@
+						if isStr && sv != "" {
+							conn.Secrets["providerSpecificData."+pk] = sv
 						}
 					} else {
 						keep[pk] = pv
@@ -193,6 +194,23 @@ func Parse(path string) (*store.Snapshot, *Summary, error) {
 			exp, _ := c.Meta["expiresAt"].(string)
 			warn("login", "codex", fmt.Sprintf("Codex account %q works until its access token expires (%s). FastRouter does not refresh tokens it shares with 9Router (that would sign 9Router out); sign in again from the dashboard, or set plugins.refreshImported once 9Router is retired", c.Name, firstNonEmpty(exp, "unknown")))
 		}
+	}
+	// M8: FastRouter has no per-account proxy support yet; say so instead of
+	// silently connecting directly.
+	var proxied []string
+	for _, c := range snap.Connections {
+		psd, _ := c.Meta["providerSpecificData"].(map[string]any)
+		on, _ := psd["connectionProxyEnabled"].(bool)
+		_, hasURL := c.Secrets["providerSpecificData.connectionProxyUrl"]
+		if c.Active && (on || (hasURL && psd["connectionProxyEnabled"] == nil)) {
+			proxied = append(proxied, c.Name)
+		}
+	}
+	if len(proxied) > 0 {
+		warn("proxy", "accounts", fmt.Sprintf("%d accounts used a proxy in 9Router (%s); FastRouter does not support per-account proxies yet and connects to these providers directly from this machine's IP. Deactivate them if that matters", len(proxied), strings.Join(proxied, ", ")))
+	}
+	if pools := strings.TrimSpace(string(b.ProxyPools)); pools != "" && pools != "null" && pools != "[]" && pools != "{}" {
+		warn("proxy", "pools", "9Router proxy pools were imported (encrypted) but are not used; all traffic goes direct")
 	}
 	if sum.PluginConnections > 0 {
 		warn("plugin", "oauth", fmt.Sprintf("%d login-based accounts (antigravity, cursor, opencode) are stored but need a plugin; core skips them", sum.PluginConnections))
