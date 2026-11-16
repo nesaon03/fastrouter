@@ -81,14 +81,18 @@ func (p *proxyReq) clientSetThinking() bool {
 
 func (s *Server) handleProxy(cf tr.Format) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		body, err := io.ReadAll(io.LimitReader(r.Body, maxBody))
+		body, err := readBody(r, maxBody)
+		if errors.Is(err, errTooLarge) {
+			writeError(w, cf, http.StatusRequestEntityTooLarge, "invalid_request_error", "request body is over the 64 MB limit")
+			return
+		}
 		if err != nil {
 			writeError(w, cf, http.StatusBadRequest, "invalid_request_error", "could not read request body")
 			return
 		}
 		p := &proxyReq{r: r, cf: cf, body: body}
-		if err := json.Unmarshal(body, &p.head); err != nil {
-			writeError(w, cf, http.StatusBadRequest, "invalid_request_error", "request body must be JSON")
+		if err := scanHead(body, &p.head); err != nil {
+			writeError(w, cf, http.StatusBadRequest, "invalid_request_error", err.Error())
 			return
 		}
 		p.model, p.stream = p.head.Model, p.head.Stream
@@ -223,15 +227,19 @@ func (s *Server) upstreamBody(p *proxyReq, t router.Target, uf tr.Format) ([]byt
 	// dropped, so such a body is re-encoded instead of passed through.
 	if uf == p.cf && !tr.HasTaggedSignature(p.body) {
 		b := p.body
+		newModel, addKey, addRaw := "", "", ""
 		if p.cf != tr.Gemini && t.Model != p.model {
-			b, _ = replaceTopLevelString(b, "model", t.Model)
+			newModel = t.Model
+		}
+		if p.cf == tr.OpenAI && p.stream && len(p.head.StreamOptions) == 0 {
+			addKey, addRaw = "stream_options", `{"include_usage":true}` // so usage can be tracked
+			p.injectedUsage = true
+		}
+		if newModel != "" || addKey != "" {
+			b = patchBody(b, newModel, addKey, addRaw) // one copy for both (M6)
 		}
 		if mode != "" && !p.clientSetThinking() {
 			b = injectThinking(b, p.cf, mode, &p.head)
-		}
-		if p.cf == tr.OpenAI && p.stream && len(p.head.StreamOptions) == 0 {
-			b = injectTopLevel(b, "stream_options", `{"include_usage":true}`) // so usage can be tracked
-			p.injectedUsage = true
 		}
 		return b, nil
 	}

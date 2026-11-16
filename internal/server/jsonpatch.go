@@ -9,6 +9,20 @@ import (
 // set to val, scanning the bytes once instead of decoding the whole request.
 // ok is false if the field is missing or not a string.
 func replaceTopLevelString(body []byte, key, val string) (out []byte, ok bool) {
+	span, ok := replaceTopLevelStringSpan(body, key)
+	if !ok {
+		return body, false
+	}
+	q := strconv.Quote(val)
+	out = make([]byte, 0, len(body)-(span[1]-span[0])+len(q))
+	out = append(out, body[:span[0]]...)
+	out = append(out, q...)
+	return append(out, body[span[1]:]...), true
+}
+
+// replaceTopLevelStringSpan finds the [start,end) span of the top-level
+// string value of key.
+func replaceTopLevelStringSpan(body []byte, key string) ([2]int, bool) {
 	depth := 0
 	want := []byte(strconv.Quote(key))
 	for i := 0; i < len(body); i++ {
@@ -20,7 +34,7 @@ func replaceTopLevelString(body []byte, key, val string) (out []byte, ok bool) {
 		case '"':
 			end := skipString(body, i)
 			if end < 0 {
-				return body, false
+				return [2]int{}, false
 			}
 			if depth == 1 && bytes.Equal(body[i:end], want) {
 				j := skipSpace(body, end)
@@ -29,21 +43,17 @@ func replaceTopLevelString(body []byte, key, val string) (out []byte, ok bool) {
 					if v < len(body) && body[v] == '"' {
 						vend := skipString(body, v)
 						if vend < 0 {
-							return body, false
+							return [2]int{}, false
 						}
-						q := strconv.Quote(val)
-						out = make([]byte, 0, len(body)-(vend-v)+len(q))
-						out = append(out, body[:v]...)
-						out = append(out, q...)
-						return append(out, body[vend:]...), true
+						return [2]int{v, vend}, true
 					}
-					return body, false
+					return [2]int{}, false
 				}
 			}
 			i = end - 1
 		}
 	}
-	return body, false
+	return [2]int{}, false
 }
 
 // skipString returns the index just past the JSON string starting at body[i].
