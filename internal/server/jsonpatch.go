@@ -75,3 +75,32 @@ func skipSpace(body []byte, i int) int {
 	}
 	return i
 }
+
+// renameTopLevelKey renames the top-level field oldKey to newKey (if present).
+func renameTopLevelKey(body []byte, oldKey, newKey string) []byte {
+	depth := 0
+	want := []byte(strconv.Quote(oldKey))
+	for i := 0; i < len(body); i++ {
+		switch body[i] {
+		case '{', '[':
+			depth++
+		case '}', ']':
+			depth--
+		case '"':
+			end := skipString(body, i)
+			if end < 0 {
+				return body
+			}
+			if depth == 1 && bytes.Equal(body[i:end], want) {
+				if j := skipSpace(body, end); j < len(body) && body[j] == ':' {
+					q := strconv.Quote(newKey)
+					out := make([]byte, 0, len(body)+len(q)-len(want))
+					out = append(append(append(out, body[:i]...), q...), body[end:]...)
+					return out
+				}
+			}
+			i = end - 1
+		}
+	}
+	return body
+}

@@ -17,6 +17,7 @@ import (
 	"runtime"
 	"runtime/debug"
 	"strconv"
+	"strings"
 	"syscall"
 	"text/tabwriter"
 	"time"
@@ -33,7 +34,7 @@ const usage = `fastrouter — local AI gateway
 Usage:
   fastrouter [serve] [--config path] [--host 127.0.0.1] [--port 20128]
   fastrouter import <9router-backup.json> [--config path]
-  fastrouter test-providers [--config path] [--provider id] [--json] [--no-refresh]
+  fastrouter test-providers [--config path] [--provider id] [--model id=model]... [--json] [--no-refresh]
       sends one "Say OK" (max 5 tokens) per active account and prints
       provider, account, PASS/FAIL, latency and error class (never keys or bodies)
   fastrouter service install|uninstall|status [--config path] [--host h] [--port n] [--dry-run]
@@ -87,8 +88,17 @@ func main() {
 		prov := fs.String("provider", "", "only this provider id")
 		asJSON := fs.Bool("json", false, "print JSON")
 		noRefresh := fs.Bool("no-refresh", false, "do not refresh due OAuth tokens first")
+		models := map[string]string{}
+		fs.Func("model", "provider=model to test with (repeatable)", func(v string) error {
+			k, m, ok := strings.Cut(v, "=")
+			if !ok || k == "" || m == "" {
+				return fmt.Errorf("want provider=model")
+			}
+			models[k] = m
+			return nil
+		})
 		_ = fs.Parse(args)
-		err = runProviderTest(*cfgPath, *prov, *asJSON, !*noRefresh)
+		err = runProviderTest(*cfgPath, *prov, models, *asJSON, !*noRefresh)
 	case "version":
 		fmt.Println(versionString())
 	case "service":
@@ -103,7 +113,7 @@ func main() {
 	}
 }
 
-func runProviderTest(cfgPath, provider string, asJSON, refresh bool) error {
+func runProviderTest(cfgPath, provider string, models map[string]string, asJSON, refresh bool) error {
 	cfg, err := config.Load(cfgPath)
 	if err != nil {
 		return err
@@ -126,7 +136,7 @@ func runProviderTest(cfgPath, provider string, asJSON, refresh bool) error {
 			fmt.Fprintf(os.Stderr, "refreshed %d expired sign-in token(s)\n", n)
 		}
 	}
-	res := srv.LiveTest(ctx, server.LiveOptions{Provider: provider})
+	res := srv.LiveTest(ctx, server.LiveOptions{Provider: provider, Models: models})
 	if asJSON {
 		enc := json.NewEncoder(os.Stdout)
 		enc.SetIndent("", "  ")

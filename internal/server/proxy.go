@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -293,6 +294,9 @@ func (s *Server) upstreamBody(p *proxyReq, t router.Target, uf tr.Format) ([]byt
 		if mode != "" && !p.clientSetThinking() {
 			b = injectThinking(b, p.cf, mode, &p.head)
 		}
+		if t.Provider.ID == "openai" && p.cf == tr.OpenAI && p.head.MaxTokens > 0 {
+			b = renameTopLevelKey(b, "max_tokens", "max_completion_tokens") // current OpenAI models reject max_tokens
+		}
 		return b, nil
 	}
 	ir, err := p.parse()
@@ -390,7 +394,7 @@ func (s *Server) attempt(w http.ResponseWriter, a *attempt) (bool, *upstreamErr)
 	idle := time.AfterFunc(s.cfgIdle, func() { cancel(errIdle) })
 	defer idle.Stop()
 
-	if !isEventStream(resp.Header.Get("Content-Type")) {
+	if !isEventStream(resp.Header.Get("Content-Type")) && !sniffSSE(resp) {
 		return s.finishJSON(w, a, resp, idle, &usage, rec, ctx)
 	}
 	return s.finishStream(w, a, resp, idle, &usage, rec, ctx, start)
@@ -746,6 +750,22 @@ func retryAfter(h http.Header) time.Duration {
 		return time.Duration(s) * time.Second
 	}
 	return 0
+}
+
+// sniffSSE reports whether a body without an event-stream content type is SSE
+// anyway (some upstreams, e.g. Codex, mislabel it). It keeps the peeked bytes.
+func sniffSSE(resp *http.Response) bool {
+	ct := resp.Header.Get("Content-Type")
+	if strings.HasPrefix(ct, "application/json") {
+		return false
+	}
+	br := bufio.NewReaderSize(resp.Body, 512)
+	resp.Body = struct {
+		io.Reader
+		io.Closer
+	}{br, resp.Body}
+	b, _ := br.Peek(6)
+	return bytes.HasPrefix(b, []byte("event:")) || bytes.HasPrefix(b, []byte("data:")) || bytes.HasPrefix(b, []byte(": "))
 }
 
 func isEventStream(ct string) bool {

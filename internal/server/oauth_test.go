@@ -224,3 +224,20 @@ func TestLiveTestClassifies(t *testing.T) {
 		t.Fatalf("%+v", res)
 	}
 }
+
+func TestRenameKeyAndSniffSSE(t *testing.T) {
+	b := renameTopLevelKey([]byte(`{"model":"m","messages":[{"max_tokens":1}],"max_tokens":5}`), "max_tokens", "max_completion_tokens")
+	if string(b) != `{"model":"m","messages":[{"max_tokens":1}],"max_completion_tokens":5}` {
+		t.Fatalf("%s", b)
+	}
+	resp := &http.Response{Header: http.Header{"Content-Type": {"text/plain"}}, Body: io.NopCloser(strings.NewReader("event: response.created\ndata: {}\n\n"))}
+	if !sniffSSE(resp) {
+		t.Fatal("SSE not detected")
+	}
+	if all, _ := io.ReadAll(resp.Body); !strings.HasPrefix(string(all), "event:") {
+		t.Fatal("peeked bytes lost")
+	}
+	if errClass(403, "This service has been disabled in this account for violation of Terms of Service.") != "banned" || errClass(429, "RESOURCE_EXHAUSTED quota") != "quota" {
+		t.Fatal("classes")
+	}
+}

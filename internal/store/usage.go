@@ -206,3 +206,23 @@ func (s *Store) UsageHours(since time.Time) ([]UsageBucket, error) {
 	}
 	return out, rows.Err()
 }
+
+// WorkingModels returns, per provider, the upstream model with the most
+// successful requests in the last 30 days (used to pick live-test models).
+func (s *Store) WorkingModels() (map[string]string, error) {
+	rows, err := s.db.Query(`SELECT provider, model, COUNT(*) AS n FROM usage
+		WHERE status = 200 AND ts >= ? GROUP BY provider, model ORDER BY n DESC`, time.Now().Add(-30*24*time.Hour).UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]string{}
+	for rows.Next() {
+		var p, m string
+		var n int64
+		if rows.Scan(&p, &m, &n) == nil && out[p] == "" {
+			out[p] = m
+		}
+	}
+	return out, rows.Err()
+}

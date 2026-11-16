@@ -29,7 +29,7 @@ type LiveResult struct {
 	Model    string `json:"model"`
 	OK       bool   `json:"ok"`
 	Status   int    `json:"status,omitempty"`
-	Class    string `json:"class,omitempty"` // auth | quota | rate_limit | model | bad_request | upstream | network | timeout | empty
+	Class    string `json:"class,omitempty"` // auth | banned | quota | rate_limit | model | bad_request | overloaded | upstream | network | timeout | empty
 	Message  string `json:"message"`
 	Ms       int64  `json:"ms"`
 }
@@ -41,8 +41,9 @@ type LiveOptions struct {
 	Models   map[string]string // provider id -> model to use (default: first chat model)
 }
 
-// testModel picks a cheap chat model for provider p.
-func testModel(st *router.State, p *router.Provider, override string) string {
+// testModel picks a chat model for provider p: one that recently worked for
+// this provider, else one from a combo, else a cheap catalog default.
+func testModel(st *router.State, p *router.Provider, override string, working map[string]string) string {
 	if override != "" {
 		return override
 	}
@@ -55,11 +56,33 @@ func testModel(st *router.State, p *router.Provider, override string) string {
 		}
 		return false
 	}
-	pref := map[string]string{"antigravity": "gemini-3.8-flash-low", "gemini-cli": "gemini-2.5-flash", "github": "gpt-5-mini",
-		"claude": "claude-haiku-4-5-20251001", "codex": "gpt-5.4-mini", "deepseek": "deepseek-v4.1-flash", "openai": "gpt-5-mini",
-		"gemini": "gemini-2.5-flash", "xai": "grok-4.5", "grok-cli": "grok-4.5", "vertex": "gemini-2.5-flash"}
+	pref := map[string]string{"antigravity": "gemini-3.8-flash-low", "gemini-cli": "gemini-3-flash-preview", "github": "gpt-5-mini",
+		"claude": "claude-haiku-4-5-20251001", "deepseek": "deepseek-v4.1-flash", "openai": "gpt-5-mini", "gemini": "gemini-3.8-flash",
+		"grok-cli": "grok-4.5", "vertex": "gemini-3-flash-preview", "kimi": "kimi-for-coding", "minimax-code": "MiniMax-M2.7",
+		"minimax-code-global": "MiniMax-M2.7", "openrouter": "openrouter/free"}
 	if m := pref[p.ID]; m != "" {
 		return m
+	}
+	if m := working[p.ID]; m != "" {
+		for k, v := range p.Upstream {
+			if v == m {
+				m = k
+			}
+		}
+		known := len(catalog.Models(p.ID)) == 0
+		for _, cm := range catalog.Models(p.ID) {
+			known = known || cm.ID == m
+		}
+		if known { // a model this provider still lists and that worked recently
+			return m
+		}
+	}
+	for _, c := range st.Snap.Combos {
+		for _, m := range c.Models {
+			if pre, name, ok := strings.Cut(m, "/"); ok && (pre == st.PrefixFor(p) || pre == p.ID) {
+				return name
+			}
+		}
 	}
 	for _, m := range catalog.Models(p.ID) {
 		if !skip(m.ID) {
@@ -102,6 +125,10 @@ func (c *captureWriter) Flush() {}
 func errClass(status int, msg string) string {
 	l := strings.ToLower(msg)
 	switch {
+	case (status == 403 || status == 401) && (strings.Contains(l, "terms of service") || strings.Contains(l, "has been disabled") || strings.Contains(l, "suspended")):
+		return "banned"
+	case status == 503 && (strings.Contains(l, "demand") || strings.Contains(l, "overloaded")):
+		return "overloaded"
 	case status == 401 || status == 403:
 		if strings.Contains(l, "quota") || strings.Contains(l, "billing") || strings.Contains(l, "subscription") {
 			return "quota"
@@ -130,8 +157,8 @@ func errClass(status int, msg string) string {
 }
 
 // liveTest runs the pinned "Say OK" request for one account.
-func (s *Server) liveTest(ctx context.Context, st *router.State, p *router.Provider, a *router.Account, model string) LiveResult {
-	res := LiveResult{Provider: p.ID, Account: a.ID, Name: maskEmail(a.Name), Model: model}
+func (s *Server) liveTest(ctx context.Context, st *router.State, p *router.Provider, a *router.Account, model string) (res LiveResult) {
+	res = LiveResult{Provider: p.ID, Account: a.ID, Name: maskEmail(a.Name), Model: model}
 	start := time.Now()
 	defer func() { res.Ms = time.Since(start).Milliseconds() }()
 	if model == "" {
@@ -186,7 +213,8 @@ func (s *Server) liveTest(ctx context.Context, st *router.State, p *router.Provi
 }
 
 func classMessage(class string, status int) string {
-	m := map[string]string{"auth": "credential rejected (sign in again / check key)", "quota": "quota or plan exhausted",
+	m := map[string]string{"auth": "credential rejected (sign in again / check key)", "banned": "account disabled by the provider (terms of service)",
+		"overloaded": "provider overloaded, try later", "quota": "quota or plan exhausted",
 		"rate_limit": "rate limited", "model": "model not available for this account", "bad_request": "request rejected",
 		"upstream": "provider error", "network": "could not reach the provider", "timeout": "timed out"}[class]
 	if status > 0 {
@@ -204,13 +232,17 @@ func (s *Server) LiveTest(ctx context.Context, o LiveOptions) []LiveResult {
 		model string
 	}
 	var jobs []job
+	var working map[string]string
+	if s.st != nil {
+		working, _ = s.st.WorkingModels()
+	}
 	for _, p := range st.List {
 		if p.Plugin || (o.Provider != "" && p.ID != o.Provider) {
 			continue
 		}
 		for _, a := range p.Pool.Accounts() {
 			if o.Account == "" || a.ID == o.Account {
-				jobs = append(jobs, job{p, a, testModel(st, p, o.Models[p.ID])})
+				jobs = append(jobs, job{p, a, testModel(st, p, o.Models[p.ID], working)})
 			}
 		}
 	}
