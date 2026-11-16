@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/zenpo/fastrouter/internal/router"
+	"github.com/zenpo/fastrouter/internal/config"
 	"github.com/zenpo/fastrouter/internal/store"
 )
 
@@ -194,5 +195,37 @@ func TestM10GeminiModelPath(t *testing.T) {
 		if _, ok := geminiModelPath(bad); ok {
 			t.Errorf("%q accepted", bad)
 		}
+	}
+}
+
+// M9: the config model list narrows a 9Router-restricted key, and the vision
+// fallback never reaches models outside the key's list.
+func TestM9KeyRestrictionsNarrowAndCoverVision(t *testing.T) {
+	sc, up := newScripted(t)
+	sc.reply["k"] = jsonReply(200, fixture(t, "response.openai.json"))
+	snap := &store.Snapshot{
+		Nodes:       []store.Node{node("txt", "txt", up.URL+"/v1"), node("vis", "vis", up.URL+"/v1")},
+		Connections: []store.Connection{conn("a", "txt", "k", 1), conn("b", "vis", "k", 1)},
+		Settings: map[string]json.RawMessage{
+			"capacityAdapter": json.RawMessage(`{"vision":{"enabled":true,"roundRobin":false,"models":["vis/mimo-v2.5-pro"]}}`),
+		},
+		APIKeys: []store.APIKey{{ID: "r", Name: "r", Key: "r-key", Active: true,
+			Access: json.RawMessage(`{"restricted":true,"allow":["txt/*"]}`)}},
+	}
+	cfg := testConfig()
+	cfg.KeyLimits = map[string]config.KeyLimit{"r": {Models: []string{"txt/*", "vis/*"}}}
+	s := New(cfg, snap, nil)
+	hs := httptest.NewServer(s.Handler())
+	defer func() { hs.Close(); s.Close() }()
+	hdr := map[string]string{"Authorization": "Bearer r-key"}
+	resp, _ := do(t, "POST", hs.URL+"/v1/chat/completions", `{"model":"vis/m","messages":[{"role":"user","content":"hi"}]}`, hdr)
+	if resp.StatusCode != 403 {
+		t.Fatalf("config list widened the key: %d", resp.StatusCode)
+	}
+	img := `{"model":"txt/deepseek-v4-flash","messages":[{"role":"user","content":[{"type":"text","text":"what?"},` +
+		`{"type":"image_url","image_url":{"url":"data:image/png;base64,iVBORw0KGgo="}}]}]}`
+	resp, _ = do(t, "POST", hs.URL+"/v1/chat/completions", img, hdr)
+	if got := resp.Header.Get("X-FastRouter-Model"); got != "txt/deepseek-v4-flash" {
+		t.Fatalf("restricted key reached vision model %q", got)
 	}
 }

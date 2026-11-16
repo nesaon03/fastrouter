@@ -18,7 +18,8 @@ type KeyLimit = config.KeyLimit
 // KeyInfo is a local API key's identity and limits.
 type KeyInfo struct {
 	ID, Name string
-	allow    []string // lower-case patterns; nil = unrestricted
+	allow    []string // 9Router access list, lower-case patterns; nil = unrestricted
+	cfgAllow []string // config keyLimits.models; nil = unrestricted
 	limiter  *bucket
 }
 
@@ -46,7 +47,7 @@ func buildKeys(keys []store.APIKey, limits map[string]KeyLimit) map[[32]byte]*Ke
 		}
 		if ok {
 			if len(lim.Models) > 0 {
-				ki.allow = append(ki.allow, lowerAll(lim.Models)...)
+				ki.cfgAllow = lowerAll(lim.Models) // narrows, never widens (M9)
 			}
 			if lim.RPM > 0 {
 				ki.limiter = newBucket(lim.RPM)
@@ -66,12 +67,20 @@ func lowerAll(in []string) []string {
 }
 
 // Allows reports whether the key may call model (a combo name or prefix/model).
+// The model must pass both the 9Router access list and the config list.
 func (k *KeyInfo) Allows(model string) bool {
-	if k == nil || k.allow == nil {
+	if k == nil {
 		return true
 	}
 	m := strings.ToLower(model)
-	for _, a := range k.allow {
+	return matchAny(k.allow, m) && matchAny(k.cfgAllow, m)
+}
+
+func matchAny(list []string, m string) bool {
+	if list == nil {
+		return true
+	}
+	for _, a := range list {
 		if a == m {
 			return true
 		}

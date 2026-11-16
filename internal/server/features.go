@@ -111,7 +111,14 @@ func (s *Server) visionTargets(p *proxyReq, st *router.State, targets []router.T
 	if ir, err := p.parse(); err != nil || !ir.HasImages() {
 		return targets
 	}
-	pool := st.VisionFallback()
+	// Only vision models the key may call (M9).
+	key := keyFrom(p.r.Context())
+	var pool []router.Target
+	for _, t := range st.VisionFallback() {
+		if key.Allows(t.Label) {
+			pool = append(pool, t)
+		}
+	}
 	if len(pool) == 0 {
 		return targets
 	}
