@@ -5,7 +5,7 @@ import { html, render, useState, useEffect, useCallback, useRef } from "./vendor
 /* ------------------------------------------------------------------ api */
 let csrf = "";
 let onUnauthorized = () => {};
-async function api(method, path, body) {
+async function api(method, path, body, retried) {
   const opt = { method, credentials: "same-origin", headers: {} };
   if (method !== "GET") opt.headers["X-CSRF-Token"] = csrf;
   if (body !== undefined) { opt.headers["Content-Type"] = "application/json"; opt.body = JSON.stringify(body); }
@@ -13,6 +13,14 @@ async function api(method, path, body) {
   const text = await res.text();
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch (e) { data = { error: text.trim().slice(0, 300) }; }
+  // A tab opened before a re-login or restart holds an old CSRF token: refresh it once and retry.
+  if (res.status === 403 && !retried && method !== "GET" && data && /CSRF/.test(data.error || "")) {
+    try {
+      const s = await api("GET", "/api/auth/session");
+      if (s && s.authenticated && s.csrf) { csrf = s.csrf; return api(method, path, body, true); }
+    } catch (e) { /* fall through to the original error */ }
+    onUnauthorized();
+  }
   if (res.status === 401 && !path.startsWith("/api/auth/")) onUnauthorized();
   if (!res.ok) throw new Error((data && (data.error || data.message)) || res.statusText);
   return data;
