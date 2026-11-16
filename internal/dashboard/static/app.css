@@ -2,7 +2,7 @@
    globals.css and components (MIT, decolua/9router; see NOTICE.txt). */
 
 @font-face { font-family: "Inter"; font-style: normal; font-weight: 400 700; font-display: swap; src: url(fonts/inter-latin.woff2) format("woff2"); }
-@font-face { font-family: "Material Symbols Outlined"; font-style: normal; font-weight: 400; font-display: block; src: url(fonts/material-symbols.woff2) format("woff2"); }
+@font-face { font-family: "Material Symbols Outlined"; font-style: normal; font-weight: 400; font-display: block; src: url(fonts/material-symbols.woff2?v=7cc001c) format("woff2"); }
 
 :root {
   --brand-50:#fdf1ed; --brand-100:#fadccf; --brand-200:#f4b59c; --brand-300:#ee8d6a; --brand-400:#ea7855;

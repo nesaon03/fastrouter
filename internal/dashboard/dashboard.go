@@ -7,11 +7,14 @@
 package dashboard
 
 import (
+	"crypto/sha256"
 	"embed"
+	"encoding/hex"
 	"io/fs"
 	"net/http"
 	"path"
 	"strings"
+	"sync"
 )
 
 //go:embed static
@@ -47,13 +50,25 @@ func Handler() http.Handler {
 			http.NotFound(w, r)
 			return
 		}
-		if strings.HasPrefix(p, "fonts/") || strings.HasPrefix(p, "logos/") || strings.HasPrefix(p, "vendor/") {
-			h.Set("Cache-Control", "public, max-age=86400")
-		} else {
-			h.Set("Cache-Control", "no-cache") // app code changes with each release
-		}
+		// Embedded files have no mod time, so revalidate every asset by content hash.
+		// A long max-age kept old icon-font subsets alive after upgrades.
+		h.Set("Cache-Control", "no-cache")
+		h.Set("ETag", assetETag(static, p))
 		r2 := r.Clone(r.Context())
 		r2.URL.Path = "/" + p
 		fsrv.ServeHTTP(w, r2)
 	})
+}
+
+var etags sync.Map
+
+func assetETag(fsys fs.FS, name string) string {
+	if v, ok := etags.Load(name); ok {
+		return v.(string)
+	}
+	b, _ := fs.ReadFile(fsys, name)
+	sum := sha256.Sum256(b)
+	tag := `"` + hex.EncodeToString(sum[:8]) + `"`
+	etags.Store(name, tag)
+	return tag
 }
