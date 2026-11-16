@@ -15,6 +15,7 @@ import (
 
 	"github.com/zenpo/fastrouter/internal/config"
 	"github.com/zenpo/fastrouter/internal/dashboard"
+	"github.com/zenpo/fastrouter/internal/login"
 	"github.com/zenpo/fastrouter/internal/pricing"
 	"github.com/zenpo/fastrouter/internal/router"
 	"github.com/zenpo/fastrouter/internal/saver"
@@ -37,6 +38,8 @@ type Server struct {
 	keyLimits                                        map[string]config.KeyLimit
 	st                                               *store.Store
 	tsCfg                                            config.TokenSavers
+	logins                                           *logins
+	refresher                                        *login.Refresher
 	saver                                            atomic.Pointer[saver.Saver]
 
 	pwOK sync.Map // sha256(user:pass) -> true, so bcrypt runs once per credential
@@ -55,6 +58,16 @@ func New(cfg config.Config, snap *store.Snapshot, st *store.Store) *Server {
 		keyLimits:    cfg.KeyLimits,
 		st:           st,
 		tsCfg:        cfg.TokenSavers,
+	}
+	s.logins = newLogins(cfg.Plugins.CodexCallbackPort, s.client)
+	s.refresher = &login.Refresher{Client: s.client, Endpoints: login.Default, RefreshImported: cfg.Plugins.RefreshImported,
+		OnUpdate: func(store.Connection) {
+			if err := s.ReloadFromStore(); err != nil {
+				log.Printf("reload after token refresh failed: %v", err)
+			}
+		}}
+	if st != nil {
+		s.refresher.Store = st
 	}
 	s.Reload(snap)
 	return s
@@ -80,7 +93,9 @@ func NewTransport(cfg config.Config) *http.Transport {
 
 // Reload swaps in a new routing table atomically (in-flight requests keep the old one).
 func (s *Server) Reload(snap *store.Snapshot) {
-	s.state.Store(router.Build(snap, s.keyLimits))
+	next := router.Build(snap, s.keyLimits)
+	next.CarryOver(s.state.Load())
+	s.state.Store(next)
 	t, err := pricing.New(snap.Settings["backup.pricing"])
 	if err != nil {
 		log.Printf("imported pricing overrides ignored: %v", err)
@@ -110,6 +125,10 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.Handle("GET /api/status", s.dashAuth(http.HandlerFunc(s.handleStatus)))
 	mux.Handle("GET /api/usage", s.dashAuth(http.HandlerFunc(s.handleUsage)))
+	mux.Handle("GET /api/logins", s.dashAuth(http.HandlerFunc(s.handleLogins)))
+	mux.Handle("POST /api/login/{provider}/start", s.dashAuth(requireDashboardHeader(s.handleLoginStart)))
+	mux.Handle("GET /api/login/flows/{id}", s.dashAuth(http.HandlerFunc(s.handleLoginFlow)))
+	mux.Handle("POST /api/login/flows/{id}/callback", s.dashAuth(requireDashboardHeader(s.handleLoginPaste)))
 	mux.Handle("GET /dashboard", s.dashAuth(dashboard.Handler()))
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/dashboard", http.StatusFound)

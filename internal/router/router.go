@@ -15,15 +15,18 @@ import (
 	"time"
 
 	"github.com/zenpo/fastrouter/internal/catalog"
+	"github.com/zenpo/fastrouter/internal/login"
 	"github.com/zenpo/fastrouter/internal/store"
 	"github.com/zenpo/fastrouter/internal/translate"
 )
 
 // Account is one provider credential with live health state.
 type Account struct {
-	ID, Name  string
-	key       string    // bearer / x-api-key value; never logged
-	URLs      [4]string // per-account endpoint overrides (region), by format
+	ID, Name string
+	key      string    // bearer / x-api-key value; never logged
+	URLs     [4]string // per-account endpoint overrides (region), by format
+	// AccountID is the ChatGPT account id for Codex accounts ("" otherwise).
+	AccountID string
 	coolUntil atomic.Int64
 	fails     atomic.Int32
 }
@@ -111,6 +114,7 @@ type Provider struct {
 	CacheControl     bool      // forward cache_control inside OpenAI bodies
 	ThinkingMode     string    // imported providerThinking mode ("" = auto)
 	Plugin           bool      // login provider deferred to a plugin
+	Login            string    // official-login plugin ("codex", "glm") or ""
 	Pool             *Pool
 }
 
@@ -199,7 +203,7 @@ func Build(snap *store.Snapshot, limits map[string]KeyLimit) *State {
 		if !ok {
 			return nil
 		}
-		p := &Provider{ID: c.ID, Name: c.ID, Prefix: c.PrimaryAlias(), Plugin: c.Plugin, Pool: &Pool{},
+		p := &Provider{ID: c.ID, Name: c.ID, Prefix: c.PrimaryAlias(), Plugin: c.Plugin, Login: c.Login, Pool: &Pool{},
 			PreferNative: c.PreferNative, Official: c.Official, CacheControl: c.CacheControl}
 		p.URLs[translate.OpenAI], p.URLs[translate.Anthropic] = c.ChatURL, c.MessagesURL
 		p.URLs[translate.Responses], p.URLs[translate.Gemini] = c.ResponsesURL, c.GeminiURL
@@ -240,14 +244,24 @@ func Build(snap *store.Snapshot, limits map[string]KeyLimit) *State {
 	pending := map[*Provider][]ranked{}
 	for i, c := range snap.Connections {
 		p := byID[c.Provider]
-		if p == nil || !c.Active || c.Status != "ok" || p.Plugin {
+		if p == nil || !c.Active || p.Plugin {
 			continue
 		}
 		key := c.Secrets["apiKey"]
+		var accountID string
+		if p.Login != "" {
+			// Imported before the login plugin existed: "needs-plugin" is usable now.
+			if c.Status != "ok" && c.Status != "needs-plugin" {
+				continue
+			}
+			key, accountID = login.AccessKey(c), login.CodexAccountID(c)
+		} else if c.Status != "ok" {
+			continue
+		}
 		if key == "" {
 			continue
 		}
-		a := &Account{ID: c.ID, Name: c.Name, key: key}
+		a := &Account{ID: c.ID, Name: c.Name, key: key, AccountID: accountID}
 		if psd, ok := c.Meta["providerSpecificData"].(map[string]any); ok {
 			if region, _ := psd["region"].(string); region != "" {
 				if cat, ok := catalog.Lookup(p.ID); ok && cat.Regions[region] != "" {
@@ -408,4 +422,51 @@ func (s *State) PrefixFor(p *Provider) string {
 func (s *State) Provider(key string) (*Provider, bool) {
 	p, ok := s.providers[key]
 	return p, ok
+}
+
+// CarryOver copies live state from the table being replaced: account
+// cooldowns, round-robin positions, combo rotation and key rate limits, so a
+// reload (SIGHUP, a sign-in or a token refresh) does not reset them.
+func (s *State) CarryOver(prev *State) {
+	if prev == nil {
+		return
+	}
+	accts := map[string]*Account{}
+	pools := map[string]*Pool{}
+	for _, p := range prev.List {
+		pools[p.ID] = p.Pool
+		for _, a := range p.Pool.accounts {
+			accts[a.ID] = a
+		}
+	}
+	for _, p := range s.List {
+		if old := pools[p.ID]; old != nil {
+			old.mu.Lock()
+			p.Pool.cur, p.Pool.count = old.cur, old.count
+			old.mu.Unlock()
+			if n := len(p.Pool.accounts); n > 0 {
+				p.Pool.cur %= n
+			}
+		}
+		for _, a := range p.Pool.accounts {
+			if old := accts[a.ID]; old != nil {
+				a.coolUntil.Store(old.coolUntil.Load())
+				a.fails.Store(old.fails.Load())
+			}
+		}
+	}
+	for name, c := range s.combos {
+		if old := prev.combos[name]; old != nil {
+			c.next.Store(old.next.Load())
+		}
+	}
+	oldKeys := map[string]*KeyInfo{}
+	for _, k := range prev.keys {
+		oldKeys[k.ID] = k
+	}
+	for _, k := range s.keys {
+		if old := oldKeys[k.ID]; old != nil && old.limiter != nil && k.limiter != nil && old.limiter.max == k.limiter.max {
+			k.limiter = old.limiter
+		}
+	}
 }

@@ -131,6 +131,7 @@ func serve(cfgPath, host string, port int) error {
 	defer srv.Close()
 	bg, stopBG := context.WithCancel(context.Background())
 	defer stopBG()
+	go srv.RunTokenRefresh(bg, time.Minute) // Codex accounts signed in through FastRouter
 	if hr, err := srv.Saver().StartHeadroom(bg); err != nil {
 		log.Printf("headroom autostart skipped: %v", err)
 	} else if hr != nil {

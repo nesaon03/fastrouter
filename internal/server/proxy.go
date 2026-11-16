@@ -13,6 +13,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zenpo/fastrouter/internal/login"
 	"github.com/zenpo/fastrouter/internal/router"
 	"github.com/zenpo/fastrouter/internal/saver"
 	"github.com/zenpo/fastrouter/internal/secret"
@@ -154,6 +155,14 @@ func (s *Server) route(w http.ResponseWriter, p *proxyReq, targets []router.Targ
 				w.Header().Del(saver.TagHeader)
 			}
 		}
+		var codex *login.CodexRequest
+		if t.Provider.Login == login.Codex && uf == tr.Responses {
+			if codex, err = login.ShapeCodex(upBody, firstNonEmpty(p.r.Header.Get("session_id"), p.r.Header.Get("x-session-id"))); err != nil {
+				writeError(w, p.cf, http.StatusBadRequest, "invalid_request_error", "could not build the Codex request: "+err.Error())
+				return
+			}
+			upBody = codex.Body
+		}
 		order := t.Provider.Pool.Order(time.Now())
 		for i, acct := range order {
 			u := url
@@ -167,7 +176,7 @@ func (s *Server) route(w http.ResponseWriter, p *proxyReq, targets []router.Targ
 					u += "/" + t.Model + ":generateContent"
 				}
 			}
-			a := attempt{p: p, t: t, acct: acct, uf: uf, url: u, body: upBody,
+			a := attempt{p: p, t: t, acct: acct, uf: uf, url: u, body: upBody, codex: codex,
 				canRetry: i < len(order)-1 || anyUsable(targets[ti+1:])}
 			done, uerr := s.attempt(w, &a)
 			if done || p.r.Context().Err() != nil {
@@ -248,7 +257,8 @@ type attempt struct {
 	uf       tr.Format
 	url      string
 	body     []byte
-	canRetry bool // another account or target is left to fail over to
+	codex    *login.CodexRequest // shaped Codex request (Codex targets only)
+	canRetry bool                // another account or target is left to fail over to
 }
 
 var (
@@ -272,6 +282,9 @@ func (s *Server) attempt(w http.ResponseWriter, a *attempt) (bool, *upstreamErr)
 		return false, &upstreamErr{status: 0}
 	}
 	setUpstreamHeaders(req.Header, p, a.uf, acct.Key())
+	if a.codex != nil {
+		login.CodexHeaders(req.Header, acct.Key(), acct.AccountID, a.codex)
+	}
 
 	var usage tr.Usage
 	rec := func(status int) { s.record(a, start, status, usage) }

@@ -26,6 +26,9 @@ type Provider struct {
 	Regions map[string]string
 	// Plugin is true for logins that core does not support (deferred to a plugin).
 	Plugin bool
+	// Login names the official-login plugin that handles this provider
+	// ("codex" or "glm"); its accounts use OAuth tokens instead of API keys.
+	Login string
 }
 
 var builtins = []Provider{
@@ -46,11 +49,14 @@ var builtins = []Provider{
 	{ID: "xai", ChatURL: "https://api.x.ai/v1/chat/completions"},
 	{ID: "anthropic", Aliases: []string{"claude"}, MessagesURL: "https://api.anthropic.com/v1/messages"},
 
-	// Subscription / browser logins: imported, but need the deferred plugin.
+	// Official logins handled by internal/login (ChatGPT sign-in, Z.ai sign-in).
+	{ID: "codex", Aliases: []string{"cx"}, ResponsesURL: "https://chatgpt.com/backend-api/codex/responses", Login: "codex"},
+	{ID: "glm", ChatURL: "https://api.z.ai/api/coding/paas/v4/chat/completions",
+		MessagesURL: "https://api.z.ai/api/anthropic/v1/messages?beta=true", Login: "glm"},
+
+	// Logins that need provider workarounds: imported, but left for a plugin.
 	{ID: "antigravity", Aliases: []string{"ag"}, Plugin: true},
-	{ID: "codex", Aliases: []string{"cx"}, Plugin: true},
 	{ID: "cursor", Aliases: []string{"cu"}, Plugin: true},
-	{ID: "glm", Plugin: true},
 	{ID: "opencode", Aliases: []string{"oc"}, Plugin: true},
 }
 

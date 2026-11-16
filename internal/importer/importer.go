@@ -188,8 +188,14 @@ func Parse(path string) (*store.Snapshot, *Summary, error) {
 		sum.ConnectionsByProvider[displayProvider(conn.Provider, snap.Nodes)]++
 		snap.Connections = append(snap.Connections, conn)
 	}
+	for _, c := range snap.Connections {
+		if c.Provider == "codex" && c.Active {
+			exp, _ := c.Meta["expiresAt"].(string)
+			warn("login", "codex", fmt.Sprintf("Codex account %q works until its access token expires (%s). FastRouter does not refresh tokens it shares with 9Router (that would sign 9Router out); sign in again from the dashboard, or set plugins.refreshImported once 9Router is retired", c.Name, firstNonEmpty(exp, "unknown")))
+		}
+	}
 	if sum.PluginConnections > 0 {
-		warn("plugin", "oauth", fmt.Sprintf("%d login-based accounts (antigravity, codex, cursor, glm, opencode) are stored but need the deferred plugin; core skips them", sum.PluginConnections))
+		warn("plugin", "oauth", fmt.Sprintf("%d login-based accounts (antigravity, cursor, opencode) are stored but need a plugin; core skips them", sum.PluginConnections))
 	}
 
 	// Settings (password kept exactly as-is, encrypted at rest).

@@ -29,7 +29,7 @@ func TestImportRedactedBackup(t *testing.T) {
 	}{
 		{"connections", sum.Connections, 23},
 		{"active connections", sum.ActiveConnections, 20},
-		{"plugin connections", sum.PluginConnections, 6},
+		{"plugin connections", sum.PluginConnections, 4}, // antigravity x3, cursor (codex and glm are handled by internal/login)
 		{"nodes (7 + 1 rebuilt)", len(sum.Nodes), 8},
 		{"rebuilt nodes", sum.RebuiltNodes, 1},
 		{"combos", len(sum.Combos), 4},
@@ -72,10 +72,12 @@ func TestImportRedactedBackup(t *testing.T) {
 				t.Errorf("antigravity account status = %q, want needs-plugin", c.Status)
 			}
 		}
-		if c.Provider == "codex" || c.Provider == "cursor" || c.Provider == "glm" {
-			if c.Status != "needs-plugin" {
-				t.Errorf("%s status = %q", c.Provider, c.Status)
-			}
+		want := map[string]string{"cursor": "needs-plugin", "codex": "ok", "glm": "ok"}[c.Provider]
+		if want != "" && c.Status != want {
+			t.Errorf("%s status = %q, want %q", c.Provider, c.Status, want)
+		}
+		if c.Provider == "codex" && (c.Secrets["accessToken"] == "" || c.Secrets["refreshToken"] == "") {
+			t.Error("codex tokens not kept")
 		}
 		if c.Provider == "deepseek" && c.Secrets["apiKey"] == "" {
 			t.Error("deepseek apiKey not decrypted on load")

@@ -333,3 +333,17 @@ func (s *Store) Load() (*Snapshot, error) {
 
 // RawDB exposes the database for tests.
 func (s *Store) RawDB() *sql.DB { return s.db }
+
+// SaveConnection inserts or updates one connection (sign-ins and token refresh).
+func (s *Store) SaveConnection(c Connection) error {
+	sec, err := s.seal(c.Secrets)
+	if err != nil {
+		return err
+	}
+	_, err = s.db.Exec(`INSERT INTO connections (id,provider,name,auth_type,priority,active,status,secrets,meta,ord)
+		VALUES (?,?,?,?,?,?,?,?,?,(SELECT COALESCE(MAX(ord),-1)+1 FROM connections))
+		ON CONFLICT(id) DO UPDATE SET provider=excluded.provider, name=excluded.name, auth_type=excluded.auth_type,
+		priority=excluded.priority, active=excluded.active, status=excluded.status, secrets=excluded.secrets, meta=excluded.meta`,
+		c.ID, c.Provider, c.Name, c.AuthType, c.Priority, c.Active, c.Status, sec, mustJSON(c.Meta))
+	return err
+}

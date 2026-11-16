@@ -18,7 +18,7 @@ go build -o fastrouter ./cmd/fastrouter
   - Gemini: `/v1beta/models/{model}:generateContent` and `:streamGenerateContent` (key in `x-goog-api-key` or `?key=`)
   - Model lists: `/v1/models`, `/v1beta/models`
 - Usage: `/api/usage?window=24h|7d|30d|all` (also shown on the dashboard).
-- Dashboard (read-only): `http://127.0.0.1:20128/dashboard`. Log in with your 9Router dashboard password (any username).
+- Dashboard: `http://127.0.0.1:20128/dashboard`. Log in with your 9Router dashboard password (any username). It is read-only except for the Codex/GLM sign-in buttons.
 - Health: `/health`.
 - Config: `~/.fastrouter/fastrouter.json` (created on first run). Use `--config` to pick another file, and `--host`/`--port` to override it. Listening on `0.0.0.0` is opt-in.
 - After re-importing, send `SIGHUP` to reload without restarting.
@@ -75,6 +75,20 @@ The four 9Router token savers run on every upstream request, in 9Router's order 
 - **Opt-out:** send `X-9Router-Token-Saver: off` (9Router's header) or `X-FastRouter-Token-Saver: off` to skip every saver for one request.
 - The response header `X-FastRouter-Token-Saver` lists what ran, for example `RTK:2,CAVEMAN:ultra,PONYTAIL:ultra`.
 
+## Official logins (Codex, GLM)
+
+`internal/login` handles the two providers that use their vendor's own sign-in. It uses only their documented OAuth flows and APIs: no browser-session scraping, fingerprint spoofing, traffic interception or anti-ban tricks.
+
+- **Codex (ChatGPT sign-in)**, prefix `cx/`: requests go to `chatgpt.com/backend-api/codex/responses` in Responses format and are shaped like 9Router's codex executor. That means always streamed (folded back to JSON for non-stream clients), `store:false`, default Codex instructions, server item ids stripped, flat function tools, Codex reasoning defaults, the responses-lite form for the GPT-6.x models, and only the fields Codex accepts. The `ChatGPT-Account-ID`, `session_id` and `originator` headers are set as 9Router does.
+- **GLM (Z.ai coding plan)**, prefix `glm/`: requests go to `api.z.ai`'s OpenAI endpoint (`/api/coding/paas/v4`) or Anthropic endpoint, whichever matches the client, with the coding-plan key.
+- **Token refresh:** a background job checks every minute and refreshes a Codex access token 10 minutes before it expires, or when its last refresh is over 8 days old (9Router's rules). A refresh token that OpenAI rejects marks the account `needs-reauth`. GLM's coding-plan key has no refresh grant (the same as the official CLI), so a GLM account only needs a new sign-in if Z.ai revokes the key.
+- **Imported Codex accounts are not refreshed by default.** OpenAI rotates refresh tokens, and the running 9Router holds the same one, so a FastRouter refresh would sign 9Router out. The imported access token keeps working until it expires. Then use **Sign in again** on the dashboard, which creates FastRouter's own session that does refresh. Once 9Router is retired you can set `"plugins": {"refreshImported": true}` instead.
+- **Dashboard sign-in:** the Sign-ins section lists Codex/GLM accounts with **Sign in again** and **Add account** buttons.
+  - Codex opens the ChatGPT sign-in and catches the redirect on `http://localhost:1455/auth/callback`, the port registered for the Codex client, only while a sign-in is pending. If that port is busy (for example, the Codex CLI is signing in), paste the address the browser ends on into the dashboard.
+  - GLM opens Z.ai's sign-in page, and FastRouter polls until it finishes, then creates or reuses the `zcode-api-key` coding-plan key.
+  - Tokens are stored encrypted and never shown. Sign-in POSTs need the `X-FastRouter-Dashboard: 1` header, which blocks cross-site form posts.
+- Re-importing a 9Router backup replaces the accounts, including tokens refreshed or signed in through FastRouter.
+
 ## Usage and limits
 
 - Every attempt records account, model, key, status, latency and token counts (input, cached, cache-write, output, reasoning) from the provider's usage fields.
@@ -101,7 +115,7 @@ The four 9Router token savers run on every upstream request, in 9Router's order 
 
 Custom endpoints that share a prefix are renamed so each one is reachable, and the importer prints a warning listing every rename. For your setup: `deepseek` keeps `custom` and also answers to `ds2`, `neon` becomes `neon`, `atria` becomes `atria`, and `deepseek ultr fast` becomes `og` (9Router's own prefix for it). Any other clash gets a prefix made from the endpoint name. An endpoint is always reachable by its id too.
 
-Custom models whose provider no longer exists are flagged, not imported. Login-based accounts (antigravity, codex, cursor, glm, opencode) are stored but marked `needs-plugin`. The summary prints names and counts only.
+Custom models whose provider no longer exists are flagged, not imported. Codex and GLM accounts are usable through the official-login plugin (below). Antigravity, Cursor and OpenCode accounts are stored but marked `needs-plugin`; FastRouter builds no workaround for them. The summary prints names and counts only.
 
 ## Tests and benchmarks
 

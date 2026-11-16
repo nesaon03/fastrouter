@@ -50,6 +50,9 @@ type Config struct {
 	// TokenSavers override the imported 9Router token-saver settings. A field
 	// left out uses the imported value (9Router's default if never set).
 	TokenSavers TokenSavers `json:"tokenSavers"`
+
+	// Plugins configures the official-login providers (Codex, GLM).
+	Plugins Plugins `json:"plugins"`
 }
 
 // TokenSavers mirror 9Router's settings of the same names.
@@ -65,6 +68,16 @@ type TokenSavers struct {
 	CompressUserMessages *bool     `json:"headroomCompressUserMessages,omitempty"`
 	// HeadroomAutostart runs `headroom proxy` (if on PATH) for a localhost URL. Off by default.
 	HeadroomAutostart bool `json:"headroomAutostart,omitempty"`
+}
+
+// Plugins configures official-login providers.
+type Plugins struct {
+	// RefreshImported lets FastRouter refresh Codex tokens imported from 9Router.
+	// Off by default: OpenAI rotates refresh tokens, so refreshing a token that a
+	// running 9Router also uses signs that 9Router out.
+	RefreshImported bool `json:"refreshImported,omitempty"`
+	// CodexCallbackPort is the local OAuth callback port (default 1455, Codex's own).
+	CodexCallbackPort int `json:"codexCallbackPort,omitempty"`
 }
 
 // KeyLimit limits one local API key.
