@@ -48,7 +48,10 @@ type Server struct {
 // New builds a server from config and a loaded snapshot. st may be nil (tests).
 func New(cfg config.Config, snap *store.Snapshot, st *store.Store) *Server {
 	s := &Server{
-		client:       &http.Client{Transport: NewTransport(cfg)},
+		client: &http.Client{Transport: NewTransport(cfg),
+			// H3: never follow redirects. Go would copy x-api-key / x-goog-api-key
+			// (and replay the body) to another host; LLM APIs never redirect.
+			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }},
 		rec:          newRecorder(st),
 		start:        time.Now(),
 		cfgFirstByte: time.Duration(cfg.FirstByteTimeout),

@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -122,5 +123,41 @@ func TestM1ClientCancelDoesNotCoolDownAccount(t *testing.T) {
 	time.Sleep(100 * time.Millisecond)
 	if firstAccount(t, s, "zz").CoolingDown(time.Now()) {
 		t.Fatal("client cancel put a healthy account in cooldown")
+	}
+}
+
+// H3: upstream keys are never sent to another host on redirect.
+func TestH3RedirectsAreNotFollowed(t *testing.T) {
+	var leaked atomic.Bool
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("x-api-key") != "" || r.Header.Get("Authorization") != "" {
+			leaked.Store(true)
+		}
+	}))
+	defer other.Close()
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, other.URL+"/steal", http.StatusTemporaryRedirect)
+	}))
+	defer up.Close()
+	_, hs := newTestServer(t, &store.Snapshot{Nodes: []store.Node{anthropicNode("n1", "an", up.URL+"/v1")},
+		Connections: []store.Connection{conn("a1", "n1", "secret-key", 1)}})
+	resp, body := do(t, "POST", hs.URL+"/v1/messages", `{"model":"an/m","max_tokens":5,"messages":[{"role":"user","content":"hi"}]}`, nil)
+	if leaked.Load() {
+		t.Fatal("API key was forwarded to the redirect target")
+	}
+	if resp.StatusCode != http.StatusBadGateway || !strings.Contains(body, "redirect") {
+		t.Fatalf("%d %s", resp.StatusCode, body)
+	}
+}
+
+// M3: the final failover error comes back in the client's format.
+func TestM3FinalErrorUsesClientShape(t *testing.T) {
+	sc, up := newScripted(t)
+	sc.reply["k"] = jsonReply(529, `{"type":"error","error":{"type":"overloaded_error","message":"Overloaded"}}`)
+	_, hs := newTestServer(t, &store.Snapshot{Nodes: []store.Node{anthropicNode("n1", "an", up.URL+"/v1")},
+		Connections: []store.Connection{conn("a1", "n1", "k", 1)}})
+	resp, body := do(t, "POST", hs.URL+"/v1/chat/completions", `{"model":"an/m","messages":[{"role":"user","content":"hi"}]}`, nil)
+	if resp.StatusCode != 529 || strings.Contains(body, `"type":"error"`) || !strings.Contains(body, `"message":"Overloaded"`) {
+		t.Fatalf("%d %s", resp.StatusCode, body)
 	}
 }

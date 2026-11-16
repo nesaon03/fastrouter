@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -29,6 +30,7 @@ type upstreamErr struct {
 	status int
 	body   []byte
 	header http.Header
+	uf     tr.Format // format of body (M3)
 }
 
 // reqHead is the part of a client body read on every request. The raw fields
@@ -192,7 +194,7 @@ func (s *Server) route(w http.ResponseWriter, p *proxyReq, targets []router.Targ
 		}
 	}
 	if last != nil {
-		s.writeUpstream(w, p.cf, p.cf, last)
+		s.writeUpstream(w, p.cf, last.uf, last) // M3: translate when the last upstream spoke another format
 		return
 	}
 	msg := "no upstream could serve this model"
@@ -300,6 +302,12 @@ func (s *Server) attempt(w http.ResponseWriter, a *attempt) (bool, *upstreamErr)
 	}
 	defer resp.Body.Close()
 
+	if resp.StatusCode >= 300 && resp.StatusCode < 400 { // H3: a redirect is an upstream fault
+		rec(resp.StatusCode)
+		acct.Fail(s.cfgCooldown, 0)
+		log.Printf("upstream %s (account %s) answered with a redirect (%d); not followed", label, acct.ID, resp.StatusCode)
+		return false, &upstreamErr{status: http.StatusBadGateway, body: []byte(fmt.Sprintf("upstream redirected (HTTP %d); redirects are not followed", resp.StatusCode))}
+	}
 	if resp.StatusCode >= 400 {
 		eb, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
 		rec(resp.StatusCode)
@@ -307,7 +315,7 @@ func (s *Server) attempt(w http.ResponseWriter, a *attempt) (bool, *upstreamErr)
 			acct.Fail(s.cfgCooldown, retryAfter(resp.Header))
 			log.Printf("upstream %s (account %s) returned %d; trying next", label, acct.ID, resp.StatusCode)
 		}
-		return false, &upstreamErr{status: resp.StatusCode, body: eb, header: resp.Header}
+		return false, &upstreamErr{status: resp.StatusCode, body: eb, header: resp.Header, uf: a.uf}
 	}
 	firstTimer.Stop()
 	idle := time.AfterFunc(s.cfgIdle, func() { cancel(errIdle) })
