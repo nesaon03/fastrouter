@@ -16,6 +16,7 @@ import (
 
 	"github.com/zenpo/fastrouter/internal/catalog"
 	"github.com/zenpo/fastrouter/internal/login"
+	"github.com/zenpo/fastrouter/internal/oauth"
 	"github.com/zenpo/fastrouter/internal/store"
 	"github.com/zenpo/fastrouter/internal/translate"
 )
@@ -27,6 +28,8 @@ type Account struct {
 	URLs     [4]string // per-account endpoint overrides (region), by format
 	// AccountID is the ChatGPT account id for Codex accounts ("" otherwise).
 	AccountID string
+	// Extra is non-secret per-account data OAuth adapters need (projectId, orgId, ...).
+	Extra     map[string]string
 	coolUntil atomic.Int64
 	fails     atomic.Int32
 }
@@ -267,11 +270,14 @@ func Build(snap *store.Snapshot, limits map[string]KeyLimit) *State {
 		key := c.Secrets["apiKey"]
 		var accountID string
 		if p.Login != "" {
-			// Imported before the login plugin existed: "needs-plugin" is usable now.
-			if c.Status != "ok" && c.Status != "needs-plugin" {
+			// Imported before FastRouter supported the sign-in: usable now.
+			if c.Status != "ok" && c.Status != "needs-plugin" && c.Status != "unknown-provider" {
 				continue
 			}
 			key, accountID = login.AccessKey(c), login.CodexAccountID(c)
+			if p.Login == "oauth" {
+				key = oauth.AccessKey(c)
+			}
 		} else if c.Status != "ok" {
 			continue
 		}
@@ -279,6 +285,9 @@ func Build(snap *store.Snapshot, limits map[string]KeyLimit) *State {
 			continue
 		}
 		a := &Account{ID: c.ID, Name: c.Name, key: key, AccountID: accountID}
+		if p.Login == "oauth" {
+			a.Extra = oauth.Extra(c)
+		}
 		if psd, ok := c.Meta["providerSpecificData"].(map[string]any); ok {
 			if region, _ := psd["region"].(string); region != "" {
 				if cat, ok := catalog.Lookup(p.ID); ok && cat.Regions[region] != "" {
@@ -524,4 +533,11 @@ func (s *State) CarryOver(prev *State) {
 			k.limiter = old.limiter
 		}
 	}
+}
+
+// Only returns a copy of p whose pool holds just account a (for per-account tests).
+func (p *Provider) Only(a *Account) *Provider {
+	cp := *p
+	cp.Pool = &Pool{accounts: []*Account{a}, sticky: 1}
+	return &cp
 }

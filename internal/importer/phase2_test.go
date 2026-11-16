@@ -32,12 +32,12 @@ func TestImportedPhase2Settings(t *testing.T) {
 	for _, tg := range pool {
 		if !tg.Provider.Plugin && tg.Provider.Pool.Size() > 0 {
 			usable++
-			if tg.Label != "xmtp/mimo-v2.5-pro" {
+			if tg.Label != "xmtp/mimo-v2.5-pro" && !strings.HasPrefix(tg.Label, "ag/") {
 				t.Fatalf("unexpected usable vision target %s", tg.Label)
 			}
 		}
 	}
-	if len(pool) == 0 || usable != 1 {
+	if len(pool) == 0 || usable < 1 {
 		t.Fatalf("vision pool %d targets, %d usable in core", len(pool), usable)
 	}
 }

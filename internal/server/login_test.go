@@ -75,9 +75,9 @@ func TestGLMTargetUsesAPIKeyStyleAuth(t *testing.T) {
 }
 
 func TestPluginProvidersStayParked(t *testing.T) {
-	_, hs := newTestServer(t, &store.Snapshot{Connections: []store.Connection{{ID: "a", Provider: "antigravity", Active: true, Status: "needs-plugin",
+	_, hs := newTestServer(t, &store.Snapshot{Connections: []store.Connection{{ID: "a", Provider: "cursor", Active: true, Status: "needs-plugin",
 		Secrets: map[string]string{"accessToken": "x"}, Meta: map[string]any{}}}})
-	resp, body := post(t, hs.URL, `{"model":"ag/gemini-3-pro","messages":[{"role":"user","content":"hi"}]}`)
+	resp, body := post(t, hs.URL, `{"model":"cu/claude-4-sonnet","messages":[{"role":"user","content":"hi"}]}`)
 	if resp.StatusCode != http.StatusBadGateway || !strings.Contains(body, "needs the login plugin") {
 		t.Fatalf("%d %s", resp.StatusCode, body)
 	}

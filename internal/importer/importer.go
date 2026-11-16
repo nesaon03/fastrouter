@@ -213,7 +213,7 @@ func Parse(path string) (*store.Snapshot, *Summary, error) {
 		warn("proxy", "pools", "9Router proxy pools were imported (encrypted) but are not used; all traffic goes direct")
 	}
 	if sum.PluginConnections > 0 {
-		warn("plugin", "oauth", fmt.Sprintf("%d login-based accounts (antigravity, cursor, opencode) are stored but need a plugin; core skips them", sum.PluginConnections))
+		warn("plugin", "oauth", fmt.Sprintf("%d login-based accounts (cursor, opencode) are stored but need a plugin; core skips them", sum.PluginConnections))
 	}
 
 	// Settings (password kept exactly as-is, encrypted at rest).

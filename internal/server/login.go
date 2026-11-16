@@ -14,10 +14,12 @@ import (
 	"time"
 
 	"github.com/zenpo/fastrouter/internal/login"
+	"github.com/zenpo/fastrouter/internal/oauth"
 	"github.com/zenpo/fastrouter/internal/store"
 )
 
-// Sign-in flows started from the dashboard (Codex and GLM only).
+// Sign-in flows started from the dashboard: Codex and GLM (internal/login)
+// and the subscription providers in internal/oauth.
 
 const flowTTL = 10 * time.Minute
 
@@ -32,6 +34,11 @@ type loginFlow struct {
 	result  string // connection id once saved
 
 	verifier, state, redirect string // Codex PKCE
+
+	// internal/oauth sign-ins
+	spec           *oauth.Spec
+	pend           *oauth.Pending
+	userCode, hint string
 }
 
 func (f *loginFlow) set(status, msg, conn string) {
@@ -44,7 +51,7 @@ func (f *loginFlow) view() map[string]any {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	return map[string]any{"id": f.ID, "provider": f.Provider, "kind": f.Kind, "url": f.URL, "status": f.status,
-		"message": f.message, "connectionId": f.result}
+		"message": f.message, "connectionId": f.result, "userCode": f.userCode, "hint": f.hint}
 }
 
 type logins struct {
@@ -113,8 +120,8 @@ func (s *Server) handleLoginStart(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	prov := r.PathValue("provider")
-	if !login.Handles(prov) {
-		http.Error(w, "only codex and glm sign-ins are supported", http.StatusNotFound)
+	if !login.Handles(prov) && !oauth.Handles(prov) {
+		http.Error(w, "this provider has no sign-in", http.StatusNotFound)
 		return
 	}
 	var in struct {
@@ -132,6 +139,14 @@ func (s *Server) handleLoginStart(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	f := &loginFlow{ID: login.RandomID(12), Provider: prov, ConnID: in.ConnectionID, created: time.Now(), status: "pending"}
+	if spec, ok := oauth.Get(prov); ok {
+		if err := s.startOAuth(r, f, spec); err != nil {
+			http.Error(w, "could not start the sign-in: "+err.Error(), http.StatusBadGateway)
+			return
+		}
+		writeJSON(w, f.view())
+		return
+	}
 	switch prov {
 	case login.Codex:
 		f.Kind = "browser"
@@ -173,12 +188,25 @@ func (s *Server) handleLoginFlow(w http.ResponseWriter, r *http.Request) {
 // for when the local callback port could not be used.
 func (s *Server) handleLoginPaste(w http.ResponseWriter, r *http.Request) {
 	f := s.logins.get(r.PathValue("id"))
-	if f == nil || f.Provider != login.Codex {
-		http.Error(w, "unknown or expired Codex sign-in", http.StatusNotFound)
+	if f == nil || (f.Provider != login.Codex && f.spec == nil) {
+		http.Error(w, "unknown or expired sign-in", http.StatusNotFound)
 		return
 	}
 	var in struct {
-		URL string `json:"url"`
+		URL  string `json:"url"`
+		Text string `json:"text"`
+	}
+	if f.spec != nil {
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&in); err != nil {
+			http.Error(w, "expected {\"url\": ...} or {\"text\": ...}", http.StatusBadRequest)
+			return
+		}
+		if err := s.pasteOAuth(r.Context(), f, firstNonEmpty(in.Text, in.URL)); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, f.view())
+		return
 	}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 16<<10)).Decode(&in); err != nil {
 		http.Error(w, "expected {\"url\": ...}", http.StatusBadRequest)
@@ -368,11 +396,12 @@ func (s *Server) ReloadFromStore() error {
 	return nil
 }
 
-// RunTokenRefresh refreshes Codex tokens in the background until ctx ends.
+// RunTokenRefresh refreshes Codex and other OAuth tokens in the background until ctx ends.
 func (s *Server) RunTokenRefresh(ctx context.Context, every time.Duration) {
 	if s.st == nil {
 		return
 	}
+	go s.oauthRefresher.Run(ctx, every)
 	s.refresher.Run(ctx, every)
 }
 

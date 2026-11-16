@@ -132,8 +132,29 @@ func (s *Server) handleProviderTest(w http.ResponseWriter, r *http.Request) {
 	var in struct {
 		Category string `json:"category"` // oauth | free | apikey | custom | all
 		Provider string `json:"provider"`
+		Account  string `json:"account"`
+		Mode     string `json:"mode"`  // "" = free read-only check; "chat" = one tiny "Say OK" request
+		Model    string `json:"model"` // chat mode: model to use (default: a cheap chat model)
 	}
 	if !decodeStrict(w, r, &in) {
+		return
+	}
+	if in.Mode == "chat" {
+		o := LiveOptions{Provider: in.Provider, Account: in.Account}
+		if in.Model != "" && in.Provider != "" {
+			o.Models = map[string]string{in.Provider: in.Model}
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 3*time.Minute)
+		defer cancel()
+		res := s.LiveTest(ctx, o)
+		passed := 0
+		for _, x := range res {
+			if x.OK {
+				passed++
+			}
+		}
+		adminJSON(w, http.StatusOK, map[string]any{"results": res,
+			"summary": map[string]int{"total": len(res), "passed": passed, "failed": len(res) - passed}})
 		return
 	}
 	st := s.state.Load()

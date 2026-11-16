@@ -3,6 +3,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"flag"
 	"fmt"
@@ -17,6 +18,7 @@ import (
 	"runtime/debug"
 	"strconv"
 	"syscall"
+	"text/tabwriter"
 	"time"
 
 	"github.com/zenpo/fastrouter/internal/config"
@@ -31,6 +33,9 @@ const usage = `fastrouter — local AI gateway
 Usage:
   fastrouter [serve] [--config path] [--host 127.0.0.1] [--port 20128]
   fastrouter import <9router-backup.json> [--config path]
+  fastrouter test-providers [--config path] [--provider id] [--json] [--no-refresh]
+      sends one "Say OK" (max 5 tokens) per active account and prints
+      provider, account, PASS/FAIL, latency and error class (never keys or bodies)
   fastrouter service install|uninstall|status [--config path] [--host h] [--port n] [--dry-run]
   fastrouter version | --version
 
@@ -78,6 +83,12 @@ func main() {
 			os.Exit(2)
 		}
 		err = runImport(*cfgPath, file)
+	case "test-providers":
+		prov := fs.String("provider", "", "only this provider id")
+		asJSON := fs.Bool("json", false, "print JSON")
+		noRefresh := fs.Bool("no-refresh", false, "do not refresh due OAuth tokens first")
+		_ = fs.Parse(args)
+		err = runProviderTest(*cfgPath, *prov, *asJSON, !*noRefresh)
 	case "version":
 		fmt.Println(versionString())
 	case "service":
@@ -90,6 +101,59 @@ func main() {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
+}
+
+func runProviderTest(cfgPath, provider string, asJSON, refresh bool) error {
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return err
+	}
+	st, err := store.Open(cfg.DataDir)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	snap, err := st.Load()
+	if err != nil {
+		return err
+	}
+	log.SetOutput(io.Discard) // keep the table clean; log lines never carry secrets anyway
+	srv := server.New(cfg, snap, st)
+	defer srv.Close()
+	ctx := context.Background()
+	if refresh {
+		if n := srv.RefreshDue(ctx); n > 0 {
+			fmt.Fprintf(os.Stderr, "refreshed %d expired sign-in token(s)\n", n)
+		}
+	}
+	res := srv.LiveTest(ctx, server.LiveOptions{Provider: provider})
+	if asJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(res)
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "PROVIDER\tACCOUNT\tMODEL\tRESULT\tLATENCY\tERROR")
+	pass := 0
+	for _, r := range res {
+		result, errText := "PASS", ""
+		if r.OK {
+			pass++
+		} else {
+			result, errText = "FAIL", r.Class+": "+r.Message
+		}
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%s\t%dms\t%s\n", r.Provider, firstNonEmptyStr(r.Name, r.Account), r.Model, result, r.Ms, errText)
+	}
+	_ = tw.Flush()
+	fmt.Printf("\n%d/%d accounts passed\n", pass, len(res))
+	return nil
+}
+
+func firstNonEmptyStr(a, b string) string {
+	if a != "" {
+		return a
+	}
+	return b
 }
 
 func runImport(cfgPath, file string) error {

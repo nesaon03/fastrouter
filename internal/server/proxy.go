@@ -17,6 +17,7 @@ import (
 	"time"
 
 	"github.com/zenpo/fastrouter/internal/login"
+	"github.com/zenpo/fastrouter/internal/oauth"
 	"github.com/zenpo/fastrouter/internal/router"
 	"github.com/zenpo/fastrouter/internal/saver"
 	"github.com/zenpo/fastrouter/internal/secret"
@@ -143,6 +144,14 @@ func (s *Server) route(w http.ResponseWriter, p *proxyReq, targets []router.Targ
 	var reasons []string
 	for ti, t := range targets {
 		uf, url := t.Provider.Pick(p.cf)
+		var ad *oauth.Adapter
+		if t.Provider.Login == "oauth" {
+			if ad = oauth.AdapterFor(t.Provider.ID); ad != nil && ad.Route != nil {
+				var f string
+				f, url = ad.Route(t.Model, p.stream, oauth.Account{})
+				uf = oauthFormat(f)
+			}
+		}
 		switch {
 		case t.Provider.Plugin:
 			reasons = append(reasons, t.Label+": needs the login plugin (not in core yet)")
@@ -176,7 +185,7 @@ func (s *Server) route(w http.ResponseWriter, p *proxyReq, targets []router.Targ
 			upBody = codex.Body
 		}
 		gemModel := ""
-		if uf == tr.Gemini {
+		if uf == tr.Gemini && (ad == nil || ad.Route == nil) {
 			var ok bool
 			if gemModel, ok = geminiModelPath(t.Model); !ok {
 				writeError(w, p.cf, http.StatusBadRequest, "invalid_request_error", "invalid model name for a Gemini upstream")
@@ -189,14 +198,27 @@ func (s *Server) route(w http.ResponseWriter, p *proxyReq, targets []router.Targ
 			if acct.URLs[uf] != "" {
 				u = acct.URLs[uf]
 			}
-			if uf == tr.Gemini {
+			body := upBody
+			if ad != nil {
+				oa := oauth.Account{ID: acct.ID, Extra: acct.Extra}
+				if ad.Route != nil {
+					_, u = ad.Route(t.Model, p.stream, oa)
+				}
+				if ad.Body != nil {
+					if body, err = ad.Body(upBody, t.Model, p.stream, oa); err != nil {
+						writeError(w, p.cf, http.StatusBadRequest, "invalid_request_error", "could not build the "+t.Provider.ID+" request: "+err.Error())
+						return
+					}
+				}
+			}
+			if gemModel != "" {
 				if p.stream {
 					u += "/" + gemModel + ":streamGenerateContent?alt=sse"
 				} else {
 					u += "/" + gemModel + ":generateContent"
 				}
 			}
-			a := attempt{p: p, t: t, acct: acct, uf: uf, url: u, body: upBody, codex: codex,
+			a := attempt{p: p, t: t, acct: acct, uf: uf, url: u, body: body, codex: codex, ad: ad,
 				canRetry: i < len(order)-1 || anyUsable(targets[ti+1:])}
 			live := s.inflightFor(t.Provider.ID)
 			live.Add(1)
@@ -223,6 +245,19 @@ func (s *Server) route(w http.ResponseWriter, p *proxyReq, targets []router.Targ
 		msg += ": " + strings.Join(reasons, "; ")
 	}
 	writeError(w, p.cf, http.StatusBadGateway, "api_error", msg)
+}
+
+// oauthFormat maps an adapter's wire-format name to the translator format.
+func oauthFormat(f string) tr.Format {
+	switch f {
+	case oauth.FmtAnthropic:
+		return tr.Anthropic
+	case oauth.FmtResponses:
+		return tr.Responses
+	case oauth.FmtGemini:
+		return tr.Gemini
+	}
+	return tr.OpenAI
 }
 
 func anyUsable(ts []router.Target) bool {
@@ -287,6 +322,7 @@ type attempt struct {
 	url      string
 	body     []byte
 	codex    *login.CodexRequest // shaped Codex request (Codex targets only)
+	ad       *oauth.Adapter      // OAuth provider adapter (nil otherwise)
 	canRetry bool                // another account or target is left to fail over to
 }
 
@@ -313,6 +349,9 @@ func (s *Server) attempt(w http.ResponseWriter, a *attempt) (bool, *upstreamErr)
 	setUpstreamHeaders(req.Header, p, a.uf, acct.Key())
 	if a.codex != nil {
 		login.CodexHeaders(req.Header, acct.Key(), acct.AccountID, a.codex)
+	}
+	if a.ad != nil && a.ad.Headers != nil {
+		a.ad.Headers(req.Header, acct.Key(), p.stream, oauth.Account{ID: acct.ID, Extra: acct.Extra})
 	}
 
 	var usage tr.Usage
@@ -345,6 +384,9 @@ func (s *Server) attempt(w http.ResponseWriter, a *attempt) (bool, *upstreamErr)
 		return false, &upstreamErr{status: resp.StatusCode, body: eb, header: resp.Header, uf: a.uf}
 	}
 	firstTimer.Stop()
+	if a.ad != nil && a.ad.Response != nil {
+		resp.Body = a.ad.Response(resp.Body)
+	}
 	idle := time.AfterFunc(s.cfgIdle, func() { cancel(errIdle) })
 	defer idle.Stop()
 

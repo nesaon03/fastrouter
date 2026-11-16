@@ -22,6 +22,7 @@ import (
 
 	"github.com/zenpo/fastrouter/internal/catalog"
 	"github.com/zenpo/fastrouter/internal/login"
+	"github.com/zenpo/fastrouter/internal/oauth"
 	"github.com/zenpo/fastrouter/internal/router"
 	"github.com/zenpo/fastrouter/internal/store"
 )
@@ -524,6 +525,8 @@ type adminAccount struct {
 	LastUsedAt string `json:"lastUsedAt,omitempty"`
 	LastStatus int    `json:"lastStatus,omitempty"`
 	LastError  string `json:"lastError,omitempty"`
+	Email      string `json:"email,omitempty"` // masked
+	Refresh    bool   `json:"autoRefresh,omitempty"`
 }
 
 type adminProvider struct {
@@ -533,6 +536,9 @@ type adminProvider struct {
 	Aliases  []string       `json:"aliases"`
 	Kind     string         `json:"kind"` // apikey | login | plugin | openai-compatible | anthropic-compatible
 	Login    string         `json:"login,omitempty"`
+	Flow     string         `json:"flow,omitempty"` // sign-in kind: browser | device | paste
+	Risk     bool           `json:"risk,omitempty"` // show the Risk Notice
+	Website  string         `json:"website,omitempty"`
 	Regions  []string       `json:"regions,omitempty"`
 	BaseURL  string         `json:"baseUrl,omitempty"`
 	APIType  string         `json:"apiType,omitempty"`
@@ -588,6 +594,15 @@ func (s *Server) handleAdminState(w http.ResponseWriter, r *http.Request) {
 			}
 			a.ExpiresAt, _ = c.Meta["expiresAt"].(string)
 			a.Expired = login.Expired(c, now)
+		} else if oauth.Handles(c.Provider) {
+			if oauth.AccessKey(c) != "" || oauth.Secret(c, "refreshToken") != "" || oauth.Secret(c, "serviceAccount") != "" {
+				a.KeyHint = "signed in"
+			}
+			a.ExpiresAt, _ = c.Meta["expiresAt"].(string)
+			exp := oauth.ExpiresAt(c)
+			a.Expired = !exp.IsZero() && !now.Before(exp)
+			a.Email = maskEmail(oauth.Meta(c, "email"))
+			a.Refresh = oauth.Secret(c, "refreshToken") != "" || c.Provider == "github" || c.Provider == "vertex"
 		} else {
 			a.KeyHint = maskSecret(c.Secrets["apiKey"])
 		}
@@ -620,6 +635,14 @@ func (s *Server) handleAdminState(w http.ResponseWriter, r *http.Request) {
 		}
 		p := adminProvider{ID: c.ID, Name: c.ID, Prefix: c.PrimaryAlias(), Aliases: append([]string{c.ID}, c.Aliases...), Kind: kind,
 			Login: c.Login, Usable: usable[c.ID], Accounts: sortAccts(acctsBy[c.ID]), Extra: c.Extra}
+		if sp, ok := oauth.Get(c.ID); ok {
+			p.Flow, p.Risk = sp.Kind, sp.Risk
+		} else if c.Login == "codex" {
+			p.Flow, p.Risk = "browser", true
+		} else if c.Login == "glm" {
+			p.Flow = "device"
+		}
+		p.Website = providerSite[c.ID]
 		if d, ok := catalog.Info(c.ID); ok {
 			p.Name, p.Color, p.KeyURL = d.Name, d.Color, d.KeyURL
 			p.Category, p.Priority, p.TextIcon, p.NoAuth = d.Category, d.Priority, d.TextIcon, d.NoAuth
@@ -1582,16 +1605,36 @@ func extraReachable(sn *store.Snapshot, c *catalog.Provider) bool {
 
 // unsupportedReason says why a 9Router provider cannot be routed yet, and
 // what to do instead when there is a workaround.
+// providerSite is 9Router's "Sign up / Learn more" link for sign-in providers.
+var providerSite = map[string]string{"antigravity": "https://antigravity.google", "claude": "https://claude.ai", "cline": "https://cline.bot",
+	"clinepass": "https://cline.bot", "codebuddy-cn": "https://copilot.tencent.com", "codex": "https://chatgpt.com/codex",
+	"gemini-cli": "https://github.com/google-gemini/gemini-cli", "github": "https://github.com/features/copilot", "glm": "https://z.ai",
+	"grok-cli": "https://x.ai", "kilocode": "https://kilocode.ai", "kimi": "https://www.kimi.com/code", "ollama": "https://ollama.com",
+	"vertex": "https://cloud.google.com/vertex-ai", "codebuddy-intl": "https://www.codebuddy.ai", "minimax-code": "https://agent.minimax.cn",
+	"minimax-code-global": "https://agent.minimax.io", "iflow": "https://iflow.cn", "cursor": "https://cursor.com", "opencode": "https://opencode.ai"}
+
 func unsupportedReason(id string, d catalog.Display) string {
 	switch id {
-	case "ollama", "ollama-local":
-		return "Native Ollama API not supported yet. Add it as OpenAI Compatible (https://ollama.com/v1 or http://localhost:11434/v1)."
-	case "azure", "bedrock", "bedrock-xai", "vertex", "vertex-partner", "cloudflare-ai":
+	case "ollama-local":
+		return "Local Ollama: add it as OpenAI Compatible with http://localhost:11434/v1."
+	case "azure", "bedrock", "bedrock-xai", "vertex-partner", "cloudflare-ai":
 		return "Needs a per-account endpoint. Add it as OpenAI Compatible with your deployment's base URL."
 	case "commandcode":
 		return "Uses its own wire protocol, not supported yet."
-	case "kimi":
-		return "Sign-in and Kimi's client headers are not supported yet. Moonshot API keys work through OpenAI Compatible (https://api.moonshot.ai/v1)."
+	case "kiro":
+		return "Kiro speaks AWS's binary event-stream protocol (CodeWhisperer); not ported yet."
+	case "qoder", "qoder-cn":
+		return "Qoder uses its own encrypted request protocol; not ported yet."
+	case "zed":
+		return "Zed signs in with an RSA key exchange and its own completion format; not ported yet."
+	case "xai":
+		return "Use an xAI API key on the xAI card, or sign in with Grok CLI."
+	case "gitlab":
+		return "GitLab Duo needs your own GitLab OAuth application (client id); not supported yet."
+	case "muse", "xiaomi-mimo":
+		return "Sign-in not ported yet. A plain API key works through OpenAI Compatible."
+	case "trae", "windsurf", "kimchi", "nous":
+		return "Sign-in not ported yet."
 	}
 	switch d.Category {
 	case "webCookie":

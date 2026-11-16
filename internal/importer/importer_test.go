@@ -29,7 +29,7 @@ func TestImportRedactedBackup(t *testing.T) {
 	}{
 		{"connections", sum.Connections, 23},
 		{"active connections", sum.ActiveConnections, 20},
-		{"plugin connections", sum.PluginConnections, 4}, // antigravity x3, cursor (codex and glm are handled by internal/login)
+		{"plugin connections", sum.PluginConnections, 1}, // cursor (antigravity is handled by internal/oauth, codex and glm by internal/login)
 		{"nodes (7 + 1 rebuilt)", len(sum.Nodes), 8},
 		{"rebuilt nodes", sum.RebuiltNodes, 1},
 		{"combos", len(sum.Combos), 4},
@@ -68,8 +68,8 @@ func TestImportRedactedBackup(t *testing.T) {
 	for _, c := range snap.Connections {
 		if c.Provider == "antigravity" {
 			prios[c.Priority] = true
-			if c.Status != "needs-plugin" {
-				t.Errorf("antigravity account status = %q, want needs-plugin", c.Status)
+			if c.Status != "ok" { // signed in through internal/oauth now
+				t.Errorf("antigravity account status = %q, want ok", c.Status)
 			}
 		}
 		want := map[string]string{"cursor": "needs-plugin", "codex": "ok", "glm": "ok"}[c.Provider]

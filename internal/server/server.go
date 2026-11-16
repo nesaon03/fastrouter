@@ -17,6 +17,7 @@ import (
 	"github.com/zenpo/fastrouter/internal/config"
 	"github.com/zenpo/fastrouter/internal/dashboard"
 	"github.com/zenpo/fastrouter/internal/login"
+	"github.com/zenpo/fastrouter/internal/oauth"
 	"github.com/zenpo/fastrouter/internal/pricing"
 	"github.com/zenpo/fastrouter/internal/router"
 	"github.com/zenpo/fastrouter/internal/saver"
@@ -43,6 +44,7 @@ type Server struct {
 	tsCfg                                            config.TokenSavers
 	logins                                           *logins
 	refresher                                        *login.Refresher
+	oauthRefresher                                   *oauth.Refresher
 	saver                                            atomic.Pointer[saver.Saver]
 
 	allowedHosts map[string]bool // M5: extra hosts trusted in open (keyless) mode
@@ -87,8 +89,10 @@ func New(cfg config.Config, snap *store.Snapshot, st *store.Store) *Server {
 				log.Printf("reload after token refresh failed: %v", err)
 			}
 		}}
+	s.oauthRefresher = &oauth.Refresher{Client: s.client, RefreshImported: cfg.Plugins.RefreshImported, OnUpdate: s.refresher.OnUpdate}
 	if st != nil {
 		s.refresher.Store = st
+		s.oauthRefresher.Store = st
 	}
 	s.Reload(snap)
 	return s
@@ -151,6 +155,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/login/{provider}/start", s.adminWrite(s.handleLoginStart))
 	mux.Handle("GET /api/login/flows/{id}", s.dashAuth(http.HandlerFunc(s.handleLoginFlow)))
 	mux.Handle("POST /api/login/flows/{id}/callback", s.adminWrite(s.handleLoginPaste))
+	mux.HandleFunc("GET /callback", s.handleOAuthCallback) // browser redirect; matched by the flow's random state
 
 	// Dashboard session and admin API (see admin.go).
 	mux.HandleFunc("GET /api/auth/session", s.handleSession)
