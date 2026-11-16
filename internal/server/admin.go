@@ -541,6 +541,10 @@ type adminProvider struct {
 	Color    string         `json:"color,omitempty"`
 	KeyURL   string         `json:"keyUrl,omitempty"`
 	Extra    bool           `json:"extra,omitempty"`
+	Category string         `json:"category,omitempty"` // 9Router section: oauth | free | freeTier | apikey | webCookie
+	Priority int            `json:"priority,omitempty"`
+	TextIcon string         `json:"textIcon,omitempty"`
+	NoAuth   bool           `json:"noAuth,omitempty"`
 }
 
 // modelGroup is one provider's section in the dashboard's model picker.
@@ -618,6 +622,7 @@ func (s *Server) handleAdminState(w http.ResponseWriter, r *http.Request) {
 			Login: c.Login, Usable: usable[c.ID], Accounts: sortAccts(acctsBy[c.ID]), Extra: c.Extra}
 		if d, ok := catalog.Info(c.ID); ok {
 			p.Name, p.Color, p.KeyURL = d.Name, d.Color, d.KeyURL
+			p.Category, p.Priority, p.TextIcon, p.NoAuth = d.Category, d.Priority, d.TextIcon, d.NoAuth
 		}
 		for r := range c.Regions {
 			p.Regions = append(p.Regions, r)
@@ -695,11 +700,15 @@ func (s *Server) handleAdminState(w http.ResponseWriter, r *http.Request) {
 		Name     string `json:"name"`
 		Color    string `json:"color"`
 		Category string `json:"category"`
+		Priority int    `json:"priority"`
+		TextIcon string `json:"textIcon,omitempty"`
+		KeyURL   string `json:"keyUrl,omitempty"`
+		Reason   string `json:"reason"`
 	}
 	others := []other{}
 	for id, d := range catalog.DisplayAll() {
-		if !known[id] && (d.Category == "oauth" || d.Category == "webCookie" || d.Category == "free" || d.Category == "freeTier") {
-			others = append(others, other{id, d.Name, d.Color, d.Category})
+		if !known[id] && d.LLM {
+			others = append(others, other{id, d.Name, d.Color, d.Category, d.Priority, d.TextIcon, d.KeyURL, unsupportedReason(id, d)})
 		}
 	}
 	sort.Slice(others, func(i, j int) bool { return others[i].Name < others[j].Name })
@@ -1569,4 +1578,26 @@ func extraReachable(sn *store.Snapshot, c *catalog.Provider) bool {
 		}
 	}
 	return false
+}
+
+// unsupportedReason says why a 9Router provider cannot be routed yet, and
+// what to do instead when there is a workaround.
+func unsupportedReason(id string, d catalog.Display) string {
+	switch id {
+	case "ollama", "ollama-local":
+		return "Native Ollama API not supported yet. Add it as OpenAI Compatible (https://ollama.com/v1 or http://localhost:11434/v1)."
+	case "azure", "bedrock", "bedrock-xai", "vertex", "vertex-partner", "cloudflare-ai":
+		return "Needs a per-account endpoint. Add it as OpenAI Compatible with your deployment's base URL."
+	case "commandcode":
+		return "Uses its own wire protocol, not supported yet."
+	case "kimi":
+		return "Sign-in and Kimi's client headers are not supported yet. Moonshot API keys work through OpenAI Compatible (https://api.moonshot.ai/v1)."
+	}
+	switch d.Category {
+	case "webCookie":
+		return "Browser-session (cookie) providers are not supported."
+	case "oauth", "free":
+		return "Sign-in is not supported yet."
+	}
+	return "Not supported yet."
 }

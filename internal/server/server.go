@@ -54,6 +54,8 @@ type Server struct {
 	pwOK sync.Map // sha256(user:pass) -> true, so bcrypt runs once per credential
 
 	sticky stickyStore // smart-combo session picks
+
+	hr *saver.HeadroomCtl // Token Saver page: install / start / stop Headroom
 }
 
 // New builds a server from config and a loaded snapshot. st may be nil (tests).
@@ -73,6 +75,7 @@ func New(cfg config.Config, snap *store.Snapshot, st *store.Store) *Server {
 		st:           st,
 		tsCfg:        cfg.TokenSavers,
 		allowedHosts: map[string]bool{},
+		hr:           newHeadroomCtl(cfg.DataDir),
 	}
 	for _, h := range cfg.AllowedHosts {
 		s.allowedHosts[strings.ToLower(strings.TrimSpace(h))] = true
@@ -171,6 +174,16 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PATCH /api/admin/settings", s.adminWrite(s.handleSettingsUpdate))
 	mux.Handle("GET /api/admin/logs/stream", s.adminRead(s.handleLogStream))
 	mux.Handle("DELETE /api/admin/logs", s.adminWrite(s.handleLogClear))
+	mux.Handle("POST /api/admin/providers/test", s.adminWrite(s.handleProviderTest))
+	mux.Handle("GET /api/admin/quota", s.adminRead(s.handleQuota))
+	mux.Handle("GET /api/admin/headroom", s.adminRead(s.handleHeadroomStatus))
+	mux.Handle("POST /api/admin/headroom/install", s.adminWrite(s.handleHeadroomInstall))
+	mux.Handle("POST /api/admin/headroom/uninstall", s.adminWrite(s.handleHeadroomUninstall))
+	mux.Handle("POST /api/admin/headroom/start", s.adminWrite(s.handleHeadroomStart))
+	mux.Handle("POST /api/admin/headroom/stop", s.adminWrite(s.handleHeadroomStop))
+	mux.Handle("POST /api/admin/headroom/restart", s.adminWrite(s.handleHeadroomRestart))
+	mux.Handle("GET /api/admin/skills", s.adminRead(s.handleSkillList))
+	mux.HandleFunc("GET /skills/{name}/SKILL.md", s.handleSkill)
 
 	// The SPA itself is static and public; all data comes from the APIs above.
 	mux.Handle("GET /dashboard", dashboard.Handler())
