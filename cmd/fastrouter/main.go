@@ -129,6 +129,13 @@ func serve(cfgPath, host string, port int) error {
 	}
 	srv := server.New(cfg, snap, st)
 	defer srv.Close()
+	bg, stopBG := context.WithCancel(context.Background())
+	defer stopBG()
+	if hr, err := srv.Saver().StartHeadroom(bg); err != nil {
+		log.Printf("headroom autostart skipped: %v", err)
+	} else if hr != nil {
+		log.Printf("started headroom proxy (pid %d)", hr.Process.Pid)
+	}
 
 	addr := net.JoinHostPort(cfg.Host, strconv.Itoa(cfg.Port))
 	hs := &http.Server{
