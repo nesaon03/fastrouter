@@ -41,6 +41,11 @@ type Provider struct {
 // Display is how the dashboard shows a provider.
 type Display struct {
 	Name, Color, Category, KeyURL string
+	TextIcon                      string // fallback initials when there is no logo
+	Priority                      int    // 9Router's sort order (999 = unset)
+	LLM                           bool   // listed on 9Router's Providers page (chat models)
+	NoAuth                        bool   // works without any account (e.g. OpenCode Free)
+	APIKeyMode                    bool   // 9Router also accepts a plain API key for this provider
 }
 
 // Model is one model id a provider lists.

@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Generate internal/catalog/registry_gen.go from a JSON dump of 9Router's
-provider registry (MIT, decolua/9router). Usage: gen_catalog.py reg.json out.go"""
+provider registry (MIT, decolua/9router). Usage: gen_catalog.py reg.json out.go
+Make reg.json with: node scripts/dump_registry.mjs <9router checkout> > reg.json"""
 import json, sys
 
 CORE = {"deepseek", "openrouter", "opencode-go", "xiaomi-tokenplan", "openai", "gemini", "nvidia", "xai", "anthropic",
@@ -11,12 +12,16 @@ reg = json.load(open(sys.argv[1]))
 reg.sort(key=lambda x: x["id"])
 
 def q(s):
-    return json.dumps(s or "")
+    return json.dumps(s or "", ensure_ascii=False)
+
+# Sign-in providers whose API-key mode is a plain OpenAI-compatible endpoint
+# (no client-specific headers), so an API key routes like any other.
+APIKEY_MODE = {"xiaomi-mimo", "muse", "nous"}
 
 def routable(x):
     if x["id"] in CORE or x.get("noAuth") or x.get("hidden"):
         return None
-    if x["category"] not in ("apikey", "freeTier") or x.get("authType") not in (None, "apikey"):
+    if x["id"] not in APIKEY_MODE and (x["category"] not in ("apikey", "freeTier") or x.get("authType") not in (None, "apikey")):
         return None
     kinds = x.get("serviceKinds")
     if kinds and "llm" not in kinds:
@@ -62,10 +67,19 @@ out += ["}", "", "// display holds names, colours and key pages for every 9Route
 for x in reg:
     if x.get("hidden"):
         continue
-    out.append(f'\t{q(x["id"])}: {{Name: {q(x.get("name") or x["id"])}, Color: {q(x.get("color"))}, Category: {q(x["category"])}, KeyURL: {q(x.get("keyUrl"))}}},')
+    llm = "llm" in (x.get("serviceKinds") or ["llm"])
+    line = f'\t{q(x["id"])}: {{Name: {q(x.get("name") or x["id"])}, Color: {q(x.get("color"))}, Category: {q(x["category"])}, KeyURL: {q(x.get("keyUrl"))}'
+    line += f', TextIcon: {q(x.get("textIcon"))}, Priority: {x.get("priority") or 999}'
+    if llm:
+        line += ", LLM: true"
+    if x.get("noAuth"):
+        line += ", NoAuth: true"
+    if "apikey" in (x.get("authModes") or []):
+        line += ", APIKeyMode: true"
+    out.append(line + "},")
 out += ["}", "", "// models are the LLM ids 9Router lists per provider, for the model picker.", "var models = map[string][]Model{"]
 for x in reg:
-    ms = [m for m in x["models"] if m.get("id")]
+    ms = [m for m in x["models"] if m.get("id") and m.get("kind") in (None, "llm")]
     if not ms:
         continue
     out.append(f'\t{q(x["id"])}: {{' + ", ".join(f'{{{q(m["id"])}, {q(m.get("name") or m["id"])}}}' for m in ms) + "},")
