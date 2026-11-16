@@ -145,6 +145,19 @@ func (s *Store) ReplaceAll(snap *Snapshot) error {
 		return err
 	}
 	defer tx.Rollback()
+	// Per-account counters survive a config rewrite (dashboard edits).
+	stats := map[string][4]any{}
+	if rows, err := tx.Query(`SELECT id,last_used_at,last_status,uses,failures FROM connections`); err == nil {
+		for rows.Next() {
+			var id string
+			var at sql.NullString
+			var st, uses, fails sql.NullInt64
+			if rows.Scan(&id, &at, &st, &uses, &fails) == nil {
+				stats[id] = [4]any{at, st, uses, fails}
+			}
+		}
+		rows.Close()
+	}
 	for _, t := range []string{"nodes", "connections", "combos", "api_keys", "custom_models", "warnings", "settings"} {
 		if _, err := tx.Exec("DELETE FROM " + t); err != nil {
 			return err
@@ -164,6 +177,11 @@ func (s *Store) ReplaceAll(snap *Snapshot) error {
 		if _, err := tx.Exec(`INSERT INTO connections (id,provider,name,auth_type,priority,active,status,secrets,meta,ord) VALUES (?,?,?,?,?,?,?,?,?,?)`,
 			c.ID, c.Provider, c.Name, c.AuthType, c.Priority, c.Active, c.Status, sec, mustJSON(c.Meta), i); err != nil {
 			return err
+		}
+		if v, ok := stats[c.ID]; ok {
+			if _, err := tx.Exec(`UPDATE connections SET last_used_at=?, last_status=?, uses=?, failures=? WHERE id=?`, v[0], v[1], v[2], v[3], c.ID); err != nil {
+				return err
+			}
 		}
 	}
 	for i, c := range snap.Combos {
@@ -353,6 +371,34 @@ func (s *Store) Load() (*Snapshot, error) {
 // pools always, and any value that embeds a credential.
 func SealedSetting(k string, v json.RawMessage) bool {
 	return k == "backup.proxyPools" || secret.LooksLikeCredential(string(v))
+}
+
+// ConnStats are an account's request counters.
+type ConnStats struct {
+	LastUsedAt string
+	LastStatus int
+	Uses       int64
+	Failures   int64
+}
+
+// ConnectionStats returns request counters by connection id.
+func (s *Store) ConnectionStats() (map[string]ConnStats, error) {
+	rows, err := s.db.Query(`SELECT id,last_used_at,last_status,uses,failures FROM connections`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]ConnStats{}
+	for rows.Next() {
+		var id string
+		var at sql.NullString
+		var st, uses, fails sql.NullInt64
+		if err := rows.Scan(&id, &at, &st, &uses, &fails); err != nil {
+			return nil, err
+		}
+		out[id] = ConnStats{at.String, int(st.Int64), uses.Int64, fails.Int64}
+	}
+	return out, rows.Err()
 }
 
 // RawDB exposes the database for tests.

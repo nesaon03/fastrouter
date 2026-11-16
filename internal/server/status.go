@@ -1,7 +1,9 @@
 package server
 
 import (
+	"github.com/zenpo/fastrouter/internal/store"
 	"net/http"
+	"regexp"
 	"strings"
 	"time"
 )
@@ -60,7 +62,7 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 		"apiKeys":      len(snap.APIKeys),
 		"customModels": len(snap.CustomModels),
 		"models":       st.Models,
-		"warnings":     snap.Warnings,
+		"warnings":     maskWarnings(snap.Warnings),
 	})
 }
 
@@ -68,8 +70,25 @@ func (s *Server) handleStatus(w http.ResponseWriter, r *http.Request) {
 func maskEmail(s string) string {
 	at := strings.IndexByte(s, '@')
 	if at < 0 {
+		// OAuth subjects such as "google-oauth2|user_01AB…" identify a person too.
+		if bar := strings.IndexByte(s, '|'); bar > 0 && len(s)-bar > 8 {
+			return s[:bar+1] + "…" + s[len(s)-4:]
+		}
 		return s
 	}
 	keep := min(2, at)
 	return s[:keep] + "***" + s[at:]
+}
+
+var emailRe = regexp.MustCompile(`[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}`)
+
+// maskWarnings masks any email address quoted in import warnings.
+func maskWarnings(ws []store.Warning) []store.Warning {
+	out := make([]store.Warning, len(ws))
+	for i, w := range ws {
+		w.Subject = emailRe.ReplaceAllStringFunc(w.Subject, maskEmail)
+		w.Message = emailRe.ReplaceAllStringFunc(w.Message, maskEmail)
+		out[i] = w
+	}
+	return out
 }

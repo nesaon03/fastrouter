@@ -45,6 +45,10 @@ type Server struct {
 
 	allowedHosts map[string]bool // M5: extra hosts trusted in open (keyless) mode
 
+	sessions   sessionStore // dashboard logins
+	loginLimit loginLimiter
+	adminMu    sync.Mutex // serialises dashboard writes
+
 	pwOK sync.Map // sha256(user:pass) -> true, so bcrypt runs once per credential
 }
 
@@ -136,12 +140,36 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/status", s.dashAuth(http.HandlerFunc(s.handleStatus)))
 	mux.Handle("GET /api/usage", s.dashAuth(http.HandlerFunc(s.handleUsage)))
 	mux.Handle("GET /api/logins", s.dashAuth(http.HandlerFunc(s.handleLogins)))
-	mux.Handle("POST /api/login/{provider}/start", s.dashAuth(requireDashboardHeader(s.handleLoginStart)))
+	mux.Handle("POST /api/login/{provider}/start", s.adminWrite(s.handleLoginStart))
 	mux.Handle("GET /api/login/flows/{id}", s.dashAuth(http.HandlerFunc(s.handleLoginFlow)))
-	mux.Handle("POST /api/login/flows/{id}/callback", s.dashAuth(requireDashboardHeader(s.handleLoginPaste)))
-	mux.Handle("GET /dashboard", s.dashAuth(dashboard.Handler()))
+	mux.Handle("POST /api/login/flows/{id}/callback", s.adminWrite(s.handleLoginPaste))
+
+	// Dashboard session and admin API (see admin.go).
+	mux.HandleFunc("GET /api/auth/session", s.handleSession)
+	mux.HandleFunc("POST /api/auth/login", s.handleLoginPassword)
+	mux.Handle("POST /api/auth/logout", s.adminWrite(s.handleLogout))
+	mux.Handle("POST /api/auth/password", s.adminWrite(s.handleSetPassword))
+	mux.Handle("GET /api/admin/state", s.adminRead(s.handleAdminState))
+	mux.Handle("POST /api/admin/accounts", s.adminWrite(s.handleAccountCreate))
+	mux.Handle("POST /api/admin/accounts/reorder", s.adminWrite(s.handleAccountReorder))
+	mux.Handle("PATCH /api/admin/accounts/{id}", s.adminWrite(s.handleAccountUpdate))
+	mux.Handle("DELETE /api/admin/accounts/{id}", s.adminWrite(s.handleAccountDelete))
+	mux.Handle("POST /api/admin/nodes", s.adminWrite(s.handleNodeCreate))
+	mux.Handle("PATCH /api/admin/nodes/{id}", s.adminWrite(s.handleNodeUpdate))
+	mux.Handle("DELETE /api/admin/nodes/{id}", s.adminWrite(s.handleNodeDelete))
+	mux.Handle("POST /api/admin/combos", s.adminWrite(s.handleComboCreate))
+	mux.Handle("PATCH /api/admin/combos/{id}", s.adminWrite(s.handleComboUpdate))
+	mux.Handle("DELETE /api/admin/combos/{id}", s.adminWrite(s.handleComboDelete))
+	mux.Handle("POST /api/admin/keys", s.adminWrite(s.handleKeyCreate))
+	mux.Handle("PATCH /api/admin/keys/{id}", s.adminWrite(s.handleKeyUpdate))
+	mux.Handle("DELETE /api/admin/keys/{id}", s.adminWrite(s.handleKeyDelete))
+	mux.Handle("PATCH /api/admin/settings", s.adminWrite(s.handleSettingsUpdate))
+
+	// The SPA itself is static and public; all data comes from the APIs above.
+	mux.Handle("GET /dashboard", dashboard.Handler())
+	mux.Handle("GET /dashboard/{path...}", dashboard.Handler())
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/dashboard", http.StatusFound)
+		http.Redirect(w, r, "/dashboard/", http.StatusFound)
 	})
 	return mux
 }
@@ -188,6 +216,10 @@ func (s *Server) auth(f tr.Format, next http.Handler) http.Handler {
 func (s *Server) dashAuth(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		hash := s.state.Load().Snap.DashboardPassword
+		if s.sessionFrom(r) != nil && (hash != "" || s.openDashboardOK(r)) {
+			next.ServeHTTP(w, r)
+			return
+		}
 		if hash == "" {
 			if !isLoopback(r.RemoteAddr) {
 				http.Error(w, "dashboard is local-only until a password is set", http.StatusForbidden)

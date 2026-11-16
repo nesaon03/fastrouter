@@ -86,18 +86,6 @@ func (l *logins) add(f *loginFlow) {
 	l.flows[f.ID] = f
 }
 
-// requireDashboardHeader blocks cross-site form posts: a custom header forces
-// a CORS preflight that FastRouter never answers.
-func requireDashboardHeader(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		if r.Header.Get("X-FastRouter-Dashboard") != "1" {
-			http.Error(w, "missing X-FastRouter-Dashboard header", http.StatusForbidden)
-			return
-		}
-		next(w, r)
-	}
-}
-
 // handleLogins lists Codex and GLM accounts and their sign-in state. No secrets.
 func (s *Server) handleLogins(w http.ResponseWriter, r *http.Request) {
 	type row struct {

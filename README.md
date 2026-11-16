@@ -18,7 +18,13 @@ go build -o fastrouter ./cmd/fastrouter
   - Gemini: `/v1beta/models/{model}:generateContent` and `:streamGenerateContent` (key in `x-goog-api-key` or `?key=`)
   - Model lists: `/v1/models`, `/v1beta/models`
 - Usage: `/api/usage?window=24h|7d|30d|all` (also shown on the dashboard).
-- Dashboard: `http://127.0.0.1:20128/dashboard`. Log in with your 9Router dashboard password (any username). It is read-only except for the Codex/GLM sign-in buttons.
+- Dashboard: `http://127.0.0.1:20128/dashboard/`. Log in with your 9Router dashboard password. Laid out like 9Router's (orange theme, light/dark), it is embedded in the binary as prebuilt static files (Preact + htm, no Node at run time):
+  - **Dashboard:** endpoint URLs with copy buttons, provider/account/combo counts, 24h traffic and import notes.
+  - **Providers:** provider cards with logos and per-account status; add, edit, pause and delete accounts; drag to set account priority; add/edit/delete OpenAI- or Anthropic-compatible endpoints; Codex/GLM sign-in.
+  - **Combos & Vision:** create, edit and delete combos (drag to order models, fallback or round-robin) and the vision-fallback model list.
+  - **Usage**, **Quota Tracker** (FastRouter's own per-account counters; provider balances aren't fetched), **API Keys** (keys are generated in the browser and shown once), **CLI Tools** (copy-paste setup for Claude Code, Codex, OpenCode, Cline, Roo, Kilo, Continue, Droid, Cursor, cURL and the SDKs).
+  - **Settings:** token savers (RTK, Caveman, Ponytail, Headroom), per-provider thinking and account rotation, vision fallback, dashboard password.
+  - Every change goes through `/api/admin/*`, which needs a session cookie (HttpOnly, SameSite=Strict, 24h), an `X-CSRF-Token` header, a JSON body and a same-origin `Origin`. Inputs are validated, secrets are write-only (only `••••` plus the last four characters come back), and changes are saved to SQLite and applied live without a restart. Five wrong passwords lock an IP out for a minute. Token-saver fields set in the config file show as locked.
 - Health: `/health`.
 - Config: `~/.fastrouter/fastrouter.json` (created on first run). Use `--config` to pick another file, and `--host`/`--port` to override it. Listening on `0.0.0.0` is opt-in.
 - After re-importing, send `SIGHUP` to reload without restarting.
@@ -88,7 +94,7 @@ The four 9Router token savers run on every upstream request, in 9Router's order 
 - **Dashboard sign-in:** the Sign-ins section lists Codex/GLM accounts with **Sign in again** and **Add account** buttons.
   - Codex opens the ChatGPT sign-in and catches the redirect on `http://localhost:1455/auth/callback`, the port registered for the Codex client, only while a sign-in is pending. If that port is busy (for example, the Codex CLI is signing in), paste the address the browser ends on into the dashboard.
   - GLM opens Z.ai's sign-in page, and FastRouter polls until it finishes, then creates or reuses the `zcode-api-key` coding-plan key.
-  - Tokens are stored encrypted and never shown. Sign-in POSTs need the `X-FastRouter-Dashboard: 1` header, which blocks cross-site form posts.
+  - Tokens are stored encrypted and never shown. Sign-in POSTs need a dashboard session and its CSRF token, like every other dashboard write.
 - Re-importing a 9Router backup replaces the accounts, including tokens refreshed or signed in through FastRouter.
 
 ## Usage and limits

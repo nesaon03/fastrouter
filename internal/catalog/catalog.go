@@ -77,6 +77,9 @@ var byKey = func() map[string]*Provider {
 	return m
 }()
 
+// All returns the built-in providers in catalog order.
+func All() []Provider { return builtins }
+
 // Lookup finds a built-in provider by id or alias.
 func Lookup(idOrAlias string) (*Provider, bool) {
 	p, ok := byKey[idOrAlias]

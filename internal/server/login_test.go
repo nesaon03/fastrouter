@@ -111,11 +111,11 @@ func TestDashboardCodexSignInFlow(t *testing.T) {
 	hs := httptest.NewServer(s.Handler())
 	defer hs.Close()
 
-	// Cross-site posts without the dashboard header are refused.
-	if resp, _ := do(t, "POST", hs.URL+"/api/login/codex/start", `{}`, nil); resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("missing header: %d", resp.StatusCode)
+	// Posts without a dashboard session and CSRF token are refused.
+	if resp, _ := do(t, "POST", hs.URL+"/api/login/codex/start", `{}`, map[string]string{"Content-Type": "application/json"}); resp.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("no session: %d", resp.StatusCode)
 	}
-	hdr := map[string]string{"X-FastRouter-Dashboard": "1"}
+	hdr := adminSession(t, hs.URL, "")
 	resp, body := do(t, "POST", hs.URL+"/api/login/codex/start", `{"connectionId":"old"}`, hdr)
 	if resp.StatusCode != 200 {
 		t.Fatalf("%d %s", resp.StatusCode, body)
