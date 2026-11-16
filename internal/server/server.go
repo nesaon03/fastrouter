@@ -30,10 +30,12 @@ var Version = "0.2.0-phase2"
 
 // Server routes client requests to upstreams.
 type Server struct {
-	state  atomic.Pointer[router.State]
-	client *http.Client
-	rec    *recorder
-	start  time.Time
+	state atomic.Pointer[router.State]
+	// inflight counts open upstream attempts per provider (usage graph).
+	inflight sync.Map // provider id -> *atomic.Int64
+	client   *http.Client
+	rec      *recorder
+	start    time.Time
 
 	cfgFirstByte, cfgIdle, cfgCooldown, cfgEmptyWait time.Duration
 	keyLimits                                        map[string]config.KeyLimit
@@ -50,6 +52,8 @@ type Server struct {
 	adminMu    sync.Mutex // serialises dashboard writes
 
 	pwOK sync.Map // sha256(user:pass) -> true, so bcrypt runs once per credential
+
+	sticky stickyStore // smart-combo session picks
 }
 
 // New builds a server from config and a loaded snapshot. st may be nil (tests).
@@ -139,6 +143,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/health", s.handleHealth)
 	mux.Handle("GET /api/status", s.dashAuth(http.HandlerFunc(s.handleStatus)))
 	mux.Handle("GET /api/usage", s.dashAuth(http.HandlerFunc(s.handleUsage)))
+	mux.Handle("GET /api/usage/requests", s.dashAuth(http.HandlerFunc(s.handleUsageRequests)))
 	mux.Handle("GET /api/logins", s.dashAuth(http.HandlerFunc(s.handleLogins)))
 	mux.Handle("POST /api/login/{provider}/start", s.adminWrite(s.handleLoginStart))
 	mux.Handle("GET /api/login/flows/{id}", s.dashAuth(http.HandlerFunc(s.handleLoginFlow)))
@@ -164,6 +169,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PATCH /api/admin/keys/{id}", s.adminWrite(s.handleKeyUpdate))
 	mux.Handle("DELETE /api/admin/keys/{id}", s.adminWrite(s.handleKeyDelete))
 	mux.Handle("PATCH /api/admin/settings", s.adminWrite(s.handleSettingsUpdate))
+	mux.Handle("GET /api/admin/logs/stream", s.adminRead(s.handleLogStream))
+	mux.Handle("DELETE /api/admin/logs", s.adminWrite(s.handleLogClear))
 
 	// The SPA itself is static and public; all data comes from the APIs above.
 	mux.Handle("GET /dashboard", dashboard.Handler())

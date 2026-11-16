@@ -22,6 +22,7 @@ import (
 
 	"github.com/zenpo/fastrouter/internal/catalog"
 	"github.com/zenpo/fastrouter/internal/login"
+	"github.com/zenpo/fastrouter/internal/router"
 	"github.com/zenpo/fastrouter/internal/store"
 )
 
@@ -467,8 +468,15 @@ func cleanModels(in []string, max int) ([]string, error) {
 
 // prefixTaken reports whether a model prefix already reaches another provider.
 func prefixTaken(sn *store.Snapshot, prefix, exceptNode string) bool {
-	if _, ok := catalog.Lookup(prefix); ok {
+	if catalog.Reserved(prefix) {
 		return true
+	}
+	if c, ok := catalog.Lookup(prefix); ok {
+		for _, conn := range sn.Connections {
+			if conn.Provider == c.ID {
+				return true // an extra provider already in use
+			}
+		}
 	}
 	for _, n := range sn.Nodes {
 		if n.ID == exceptNode {
@@ -530,6 +538,24 @@ type adminProvider struct {
 	APIType  string         `json:"apiType,omitempty"`
 	Usable   int            `json:"usable"`
 	Accounts []adminAccount `json:"accounts"`
+	Color    string         `json:"color,omitempty"`
+	KeyURL   string         `json:"keyUrl,omitempty"`
+	Extra    bool           `json:"extra,omitempty"`
+}
+
+// modelGroup is one provider's section in the dashboard's model picker.
+type modelGroup struct {
+	Provider string        `json:"provider"`
+	Name     string        `json:"name"`
+	Prefix   string        `json:"prefix"`
+	Plugin   bool          `json:"plugin,omitempty"`
+	Models   []pickerModel `json:"models"`
+}
+
+type pickerModel struct {
+	ID     string `json:"id"` // full routable name, prefix/model
+	Name   string `json:"name"`
+	Custom bool   `json:"custom,omitempty"`
 }
 
 func (s *Server) handleAdminState(w http.ResponseWriter, r *http.Request) {
@@ -589,7 +615,10 @@ func (s *Server) handleAdminState(w http.ResponseWriter, r *http.Request) {
 			kind = "login"
 		}
 		p := adminProvider{ID: c.ID, Name: c.ID, Prefix: c.PrimaryAlias(), Aliases: append([]string{c.ID}, c.Aliases...), Kind: kind,
-			Login: c.Login, Usable: usable[c.ID], Accounts: sortAccts(acctsBy[c.ID])}
+			Login: c.Login, Usable: usable[c.ID], Accounts: sortAccts(acctsBy[c.ID]), Extra: c.Extra}
+		if d, ok := catalog.Info(c.ID); ok {
+			p.Name, p.Color, p.KeyURL = d.Name, d.Color, d.KeyURL
+		}
 		for r := range c.Regions {
 			p.Regions = append(p.Regions, r)
 		}
@@ -626,24 +655,54 @@ func (s *Server) handleAdminState(w http.ResponseWriter, r *http.Request) {
 		keys = append(keys, key{k.ID, k.Name, k.Active, maskSecret(k.Key), acc.Restricted, acc.Allow})
 	}
 	type combo struct {
-		ID       string   `json:"id"`
-		Name     string   `json:"name"`
-		Kind     string   `json:"kind"`
-		Strategy string   `json:"strategy"`
-		Models   []string `json:"models"`
+		ID          string   `json:"id"`
+		Name        string   `json:"name"`
+		Kind        string   `json:"kind"`
+		Strategy    string   `json:"strategy"`
+		Models      []string `json:"models"`
+		SmartPolicy string   `json:"smartPolicy,omitempty"`
+		RouterModel string   `json:"routerModel,omitempty"`
+		JudgeModel  string   `json:"judgeModel,omitempty"`
+		Threshold   float64  `json:"confidenceThreshold,omitempty"`
 	}
 	combos := []combo{}
+	opts := comboOptions(sn)
 	for _, c := range sn.Combos {
 		m := c.Models
 		if m == nil {
 			m = []string{}
 		}
-		combos = append(combos, combo{c.ID, c.Name, c.Kind, c.Strategy, m})
+		cb := combo{ID: c.ID, Name: c.Name, Kind: c.Kind, Strategy: c.Strategy, Models: m}
+		if o := opts[c.Name]; o != nil {
+			cb.SmartPolicy, _ = o["smartPolicy"].(string)
+			cb.RouterModel, _ = o["routerModel"].(string)
+			cb.JudgeModel, _ = o["judgeModel"].(string)
+			cb.Threshold, _ = o["confidenceThreshold"].(float64)
+		}
+		combos = append(combos, cb)
 	}
 	models := append([]string{}, st.Models...)
 	for _, m := range sn.CustomModels {
 		models = append(models, m.ProviderAlias+"/"+m.ID)
 	}
+	groups := modelGroups(st, sn, provs)
+	known := map[string]bool{}
+	for _, c := range catalog.All() {
+		known[c.ID] = true
+	}
+	type other struct {
+		ID       string `json:"id"`
+		Name     string `json:"name"`
+		Color    string `json:"color"`
+		Category string `json:"category"`
+	}
+	others := []other{}
+	for id, d := range catalog.DisplayAll() {
+		if !known[id] && (d.Category == "oauth" || d.Category == "webCookie" || d.Category == "free" || d.Category == "freeTier") {
+			others = append(others, other{id, d.Name, d.Color, d.Category})
+		}
+	}
+	sort.Slice(others, func(i, j int) bool { return others[i].Name < others[j].Name })
 	adminJSON(w, http.StatusOK, map[string]any{
 		"version":     Version,
 		"uptimeSec":   int(time.Since(s.start).Seconds()),
@@ -652,6 +711,8 @@ func (s *Server) handleAdminState(w http.ResponseWriter, r *http.Request) {
 		"combos":      combos,
 		"keys":        keys,
 		"models":      models,
+		"modelGroups": groups,
+		"others":      others,
 		"settings":    s.settingsView(sn),
 		"warnings":    maskWarnings(sn.Warnings),
 	})
@@ -765,6 +826,9 @@ func (s *Server) handleAccountCreate(w http.ResponseWriter, r *http.Request) {
 			}
 			if c.Login != "" {
 				return bad("%s accounts are added with the sign-in button", c.ID)
+			}
+			if c.Extra && !extraReachable(sn, c) {
+				return bad("the prefix %q is used by one of your custom endpoints; rename that endpoint's prefix first", c.PrimaryAlias())
 			}
 			if in.Region != "" {
 				if c.Regions[in.Region] == "" {
@@ -1047,12 +1111,45 @@ func (s *Server) handleNodeDelete(w http.ResponseWriter, r *http.Request) {
 // ---- combos ----
 
 type comboIn struct {
-	Name     *string  `json:"name"`
-	Strategy *string  `json:"strategy"`
-	Models   []string `json:"models"`
+	Name        *string  `json:"name"`
+	Strategy    *string  `json:"strategy"`
+	Models      []string `json:"models"`
+	SmartPolicy *string  `json:"smartPolicy"`
+	RouterModel *string  `json:"routerModel"`
+	JudgeModel  *string  `json:"judgeModel"`
+	Threshold   *float64 `json:"confidenceThreshold"`
+}
+
+var comboStrategies = map[string]bool{"fallback": true, "round-robin": true, "smart": true, "fusion": true}
+var smartPolicies = map[string]bool{"smart": true, "strict": true, "per-turn": true}
+
+// comboOptions reads settings.comboStrategies (9Router's per-combo options, by name).
+func comboOptions(sn *store.Snapshot) map[string]map[string]any {
+	m := map[string]map[string]any{}
+	_ = json.Unmarshal(sn.Settings["comboStrategies"], &m)
+	return m
+}
+
+func setComboOptions(sn *store.Snapshot, m map[string]map[string]any) {
+	b, _ := json.Marshal(m)
+	sn.Settings["comboStrategies"] = b
+}
+
+func cleanOptModel(v string) (string, error) {
+	v = strings.TrimSpace(v)
+	if v == "" {
+		return "", nil
+	}
+	m, err := cleanModels([]string{v}, 1)
+	if err != nil {
+		return "", err
+	}
+	return m[0], nil
 }
 
 func applyCombo(sn *store.Snapshot, c *store.Combo, in comboIn) error {
+	opts := comboOptions(sn)
+	oldName := c.Name
 	if in.Name != nil {
 		n := strings.TrimSpace(*in.Name)
 		if !comboNameRe.MatchString(n) {
@@ -1066,8 +1163,8 @@ func applyCombo(sn *store.Snapshot, c *store.Combo, in comboIn) error {
 		c.Name = n
 	}
 	if in.Strategy != nil {
-		if *in.Strategy != "fallback" && *in.Strategy != "round-robin" {
-			return bad("strategy must be fallback or round-robin")
+		if !comboStrategies[*in.Strategy] {
+			return bad("strategy must be fallback, round-robin, smart or fusion")
 		}
 		c.Strategy = *in.Strategy
 	}
@@ -1078,6 +1175,46 @@ func applyCombo(sn *store.Snapshot, c *store.Combo, in comboIn) error {
 		}
 		c.Models = m
 	}
+	o := opts[oldName]
+	if o == nil {
+		o = map[string]any{}
+	}
+	delete(opts, oldName)
+	if in.SmartPolicy != nil {
+		if !smartPolicies[*in.SmartPolicy] {
+			return bad("smart policy must be smart, strict or per-turn")
+		}
+		o["smartPolicy"] = *in.SmartPolicy
+	}
+	if in.Threshold != nil {
+		if *in.Threshold < 0.1 || *in.Threshold > 1 {
+			return bad("confidence threshold must be between 0.1 and 1")
+		}
+		o["confidenceThreshold"] = *in.Threshold
+	}
+	for key, v := range map[string]*string{"routerModel": in.RouterModel, "judgeModel": in.JudgeModel} {
+		if v == nil {
+			continue
+		}
+		m, err := cleanOptModel(*v)
+		if err != nil {
+			return err
+		}
+		if m == "" {
+			delete(o, key)
+		} else {
+			o[key] = m
+		}
+	}
+	if c.Strategy == "fallback" || c.Strategy == "" {
+		delete(o, "fallbackStrategy")
+	} else {
+		o["fallbackStrategy"] = c.Strategy
+	}
+	if len(o) > 0 {
+		opts[c.Name] = o
+	}
+	setComboOptions(sn, opts)
 	return nil
 }
 
@@ -1124,6 +1261,11 @@ func (s *Server) handleComboDelete(w http.ResponseWriter, r *http.Request) {
 		for i, c := range sn.Combos {
 			if c.ID == id {
 				sn.Combos = append(sn.Combos[:i], sn.Combos[i+1:]...)
+				opts := comboOptions(sn)
+				if _, ok := opts[c.Name]; ok {
+					delete(opts, c.Name)
+					setComboOptions(sn, opts)
+				}
 				return nil
 			}
 		}
@@ -1361,4 +1503,57 @@ func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	s.writeResult(w, err, map[string]bool{"ok": true})
+}
+
+// modelGroups lists routable models per provider that has accounts: 9Router's
+// catalog ids plus custom models, each as the full prefix/model name.
+func modelGroups(st *router.State, sn *store.Snapshot, provs []adminProvider) []modelGroup {
+	custom := map[string][]store.CustomModel{}
+	for _, m := range sn.CustomModels {
+		if p, ok := st.Provider(m.ProviderAlias); ok && (m.Type == "" || m.Type == "llm") {
+			custom[p.ID] = append(custom[p.ID], m)
+		}
+	}
+	out := []modelGroup{}
+	for _, ap := range provs {
+		p, ok := st.Provider(ap.ID)
+		if !ok || len(ap.Accounts) == 0 {
+			continue
+		}
+		prefix := st.PrefixFor(p)
+		g := modelGroup{Provider: ap.ID, Name: ap.Name, Prefix: prefix, Plugin: p.Plugin, Models: []pickerModel{}}
+		seen := map[string]bool{}
+		for _, m := range custom[p.ID] {
+			if !seen[m.ID] {
+				seen[m.ID] = true
+				g.Models = append(g.Models, pickerModel{ID: prefix + "/" + m.ID, Name: firstNonEmpty(m.Name, m.ID), Custom: true})
+			}
+		}
+		for _, m := range catalog.Models(ap.ID) {
+			if !seen[m.ID] {
+				seen[m.ID] = true
+				g.Models = append(g.Models, pickerModel{ID: prefix + "/" + m.ID, Name: m.Name})
+			}
+		}
+		out = append(out, g)
+	}
+	return out
+}
+
+// extraReachable reports whether a generated provider still has a model
+// prefix that no custom endpoint uses.
+func extraReachable(sn *store.Snapshot, c *catalog.Provider) bool {
+	taken := map[string]bool{}
+	for _, n := range sn.Nodes {
+		taken[n.ID], taken[n.Prefix] = true, true
+		for _, a := range n.Aliases {
+			taken[a] = true
+		}
+	}
+	for _, k := range append([]string{c.ID}, c.Aliases...) {
+		if !taken[k] {
+			return true
+		}
+	}
+	return false
 }

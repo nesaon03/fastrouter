@@ -33,6 +33,19 @@ type Provider struct {
 	// Login names the official-login plugin that handles this provider
 	// ("codex" or "glm"); its accounts use OAuth tokens instead of API keys.
 	Login string
+	// Extra marks providers generated from 9Router's registry (registry_gen.go).
+	// They never shadow a custom endpoint's prefix.
+	Extra bool
+}
+
+// Display is how the dashboard shows a provider.
+type Display struct {
+	Name, Color, Category, KeyURL string
+}
+
+// Model is one model id a provider lists.
+type Model struct {
+	ID, Name string
 }
 
 var builtins = []Provider{
@@ -65,20 +78,42 @@ var builtins = []Provider{
 	{ID: "opencode", Aliases: []string{"oc"}, Plugin: true},
 }
 
-var byKey = func() map[string]*Provider {
-	m := map[string]*Provider{}
-	for i := range builtins {
-		p := &builtins[i]
-		m[p.ID] = p
-		for _, a := range p.Aliases {
-			m[a] = p
+var all = append(append([]Provider{}, builtins...), extras...)
+
+var byKey, reserved = func() (map[string]*Provider, map[string]bool) {
+	m, core := map[string]*Provider{}, map[string]bool{}
+	for i := range all {
+		p := &all[i]
+		for _, k := range append([]string{p.ID}, p.Aliases...) {
+			if _, taken := m[k]; !taken {
+				m[k] = p
+			}
+			if !p.Extra {
+				core[k] = true
+			}
 		}
 	}
-	return m
+	return m, core
 }()
 
-// All returns the built-in providers in catalog order.
-func All() []Provider { return builtins }
+// All returns the built-in providers: the core list, then the generated extras.
+func All() []Provider { return all }
+
+// Reserved reports whether k is an id or alias of a core provider. Custom
+// endpoints may not use these prefixes; extras give way to custom endpoints.
+func Reserved(k string) bool { return reserved[k] }
+
+// Info returns display details for any 9Router provider id.
+func Info(id string) (Display, bool) {
+	d, ok := display[id]
+	return d, ok
+}
+
+// DisplayAll returns display details for every known provider id.
+func DisplayAll() map[string]Display { return display }
+
+// Models returns the model ids 9Router lists for a provider.
+func Models(id string) []Model { return models[id] }
 
 // Lookup finds a built-in provider by id or alias.
 func Lookup(idOrAlias string) (*Provider, bool) {

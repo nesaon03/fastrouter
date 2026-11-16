@@ -142,7 +142,14 @@ type Combo struct {
 	Name       string
 	Models     []string
 	RoundRobin bool
-	next       atomic.Uint64
+	// Strategy is fallback, round-robin, smart (a router model picks the
+	// order) or fusion (every model answers, a judge writes the reply).
+	Strategy    string
+	SmartPolicy string  // smart: "smart" (switch on high confidence), "strict" or "per-turn"
+	Threshold   float64 // smart: confidence needed to switch a session's model
+	RouterModel string  // smart: model that picks; default the first combo model
+	JudgeModel  string  // fusion: model that writes the answer; default the first combo model
+	next        atomic.Uint64
 }
 
 // Target is one (provider, upstream model) candidate.
@@ -211,14 +218,23 @@ func Build(snap *store.Snapshot, limits map[string]KeyLimit) *State {
 		add(p, append([]string{c.ID}, c.Aliases...)...)
 		return p
 	}
+	isExtra := func(id string) bool { c, ok := catalog.Lookup(id); return ok && c.Extra }
 	for _, c := range snap.Connections {
-		builtin(c.Provider)
+		if !isExtra(c.Provider) {
+			builtin(c.Provider)
+		}
 	}
 	for _, n := range snap.Nodes {
-		if _, isBuiltin := catalog.Lookup(n.Prefix); isBuiltin {
+		if catalog.Reserved(n.Prefix) {
 			continue
 		}
 		add(nodeProvider(n, n.Prefix), append([]string{n.ID, n.Prefix}, n.Aliases...)...)
+	}
+	// Generated extras come after custom endpoints, so an endpoint keeps its prefix.
+	for _, c := range snap.Connections {
+		if isExtra(c.Provider) {
+			builtin(c.Provider)
+		}
 	}
 	// Nodes whose prefix collides with a built-in are still reachable by id.
 	for _, n := range snap.Nodes {
@@ -285,11 +301,30 @@ func Build(snap *store.Snapshot, limits map[string]KeyLimit) *State {
 		}
 	}
 
+	var comboOpts map[string]struct {
+		SmartPolicy         string  `json:"smartPolicy"`
+		ConfidenceThreshold float64 `json:"confidenceThreshold"`
+		RouterModel         string  `json:"routerModel"`
+		JudgeModel          string  `json:"judgeModel"`
+	}
+	_ = json.Unmarshal(snap.Settings["comboStrategies"], &comboOpts)
 	for _, c := range snap.Combos {
 		if c.Kind != "" || len(c.Models) == 0 {
 			continue // e.g. webSearch combos are not chat models
 		}
-		s.combos[c.Name] = &Combo{Name: c.Name, Models: c.Models, RoundRobin: c.Strategy == "round-robin"}
+		o := comboOpts[c.Name]
+		cb := &Combo{Name: c.Name, Models: c.Models, RoundRobin: c.Strategy == "round-robin", Strategy: c.Strategy,
+			SmartPolicy: o.SmartPolicy, Threshold: o.ConfidenceThreshold, RouterModel: o.RouterModel, JudgeModel: o.JudgeModel}
+		if cb.SmartPolicy == "" {
+			cb.SmartPolicy = "smart"
+		}
+		if cb.Threshold > 1 {
+			cb.Threshold /= 100 // stored as a percentage
+		}
+		if cb.Threshold <= 0 {
+			cb.Threshold = 0.8
+		}
+		s.combos[c.Name] = cb
 		s.Models = append(s.Models, c.Name)
 	}
 	s.visionCaps = map[string]bool{}
@@ -380,6 +415,32 @@ func (s *State) Resolve(model string) ([]Target, error) {
 	return s.resolve(model, 0)
 }
 
+// Combo returns the combo with this name.
+func (s *State) Combo(name string) (*Combo, bool) {
+	c, ok := s.combos[name]
+	return c, ok
+}
+
+// ResolveModels resolves an ordered model list (as a fallback chain) into
+// targets, skipping names that do not resolve.
+func (s *State) ResolveModels(name string, models []string) ([]Target, error) {
+	return s.resolveList(name, models, 0)
+}
+
+func (s *State) resolveList(name string, models []string, depth int) ([]Target, error) {
+	var out []Target
+	for _, m := range models {
+		ts, err := s.resolve(m, depth+1)
+		if err == nil {
+			out = append(out, ts...)
+		}
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("%w: combo %q has no usable models", ErrModelNotFound, name)
+	}
+	return out, nil
+}
+
 func (s *State) resolve(model string, depth int) ([]Target, error) {
 	if c, ok := s.combos[model]; ok && depth < 3 {
 		models := c.Models
@@ -387,17 +448,7 @@ func (s *State) resolve(model string, depth int) ([]Target, error) {
 			start := int(c.next.Add(1)-1) % len(models)
 			models = append(append([]string{}, models[start:]...), models[:start]...)
 		}
-		var out []Target
-		for _, m := range models {
-			ts, err := s.resolve(m, depth+1)
-			if err == nil {
-				out = append(out, ts...)
-			}
-		}
-		if len(out) == 0 {
-			return nil, fmt.Errorf("%w: combo %q has no usable models", ErrModelNotFound, model)
-		}
-		return out, nil
+		return s.resolveList(model, models, depth)
 	}
 	prefix, name, ok := strings.Cut(model, "/")
 	if !ok || name == "" {

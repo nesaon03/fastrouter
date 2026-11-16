@@ -77,8 +77,7 @@ func fixPrefixes(nodes []store.Node) []string {
 }
 
 func isBuiltinKey(k string) bool {
-	_, ok := catalog.Lookup(k)
-	return ok
+	return catalog.Reserved(k)
 }
 
 func contains(list []string, v string) bool {

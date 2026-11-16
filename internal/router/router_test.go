@@ -65,3 +65,23 @@ func TestUpstreamModelID(t *testing.T) {
 		}
 	}
 }
+
+// Catalog extras (groq, atria, ...) must not take a prefix from a custom
+// endpoint, while core prefixes stay reserved.
+func TestCustomEndpointKeepsExtraPrefix(t *testing.T) {
+	snap := &store.Snapshot{
+		Nodes: []store.Node{{ID: "n1", Name: "My Groq", Prefix: "groq", Type: "openai-compatible", BaseURL: "https://gw.example/v1"}},
+		Connections: []store.Connection{
+			{ID: "a", Provider: "n1", Active: true, Status: "ok", Priority: 1, Secrets: map[string]string{"apiKey": "k1"}},
+			{ID: "b", Provider: "cerebras", Active: true, Status: "ok", Priority: 1, Secrets: map[string]string{"apiKey": "k2"}},
+		},
+	}
+	st := Build(snap, nil)
+	tg, err := st.Resolve("groq/llama")
+	if err != nil || tg[0].Provider.ID != "n1" {
+		t.Fatalf("groq/ should go to the custom endpoint: %v %+v", err, tg)
+	}
+	if tg, err := st.Resolve("cerebras/llama"); err != nil || tg[0].Provider.ID != "cerebras" {
+		t.Fatalf("extra provider: %v %+v", err, tg)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net"
 	"net/http"
@@ -19,6 +20,7 @@ import (
 
 	"github.com/zenpo/fastrouter/internal/config"
 	"github.com/zenpo/fastrouter/internal/importer"
+	"github.com/zenpo/fastrouter/internal/logring"
 	"github.com/zenpo/fastrouter/internal/server"
 	"github.com/zenpo/fastrouter/internal/store"
 )
@@ -44,6 +46,7 @@ var (
 )
 
 func main() {
+	log.SetOutput(io.MultiWriter(os.Stderr, logring.Default)) // Console Log page
 	args := os.Args[1:]
 	cmd := "serve"
 	if len(args) > 0 && args[0] != "" && args[0][0] != '-' {

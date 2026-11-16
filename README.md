@@ -17,13 +17,16 @@ go build -o fastrouter ./cmd/fastrouter
   - Anthropic Messages: `/v1/messages`, plus `/v1/messages/count_tokens` (a local estimate)
   - Gemini: `/v1beta/models/{model}:generateContent` and `:streamGenerateContent` (key in `x-goog-api-key` or `?key=`)
   - Model lists: `/v1/models`, `/v1beta/models`
-- Usage: `/api/usage?window=24h|7d|30d|all` (also shown on the dashboard).
+- Usage: `/api/usage?period=today|24h|7d|30d|60d|all` (totals by provider, model, account and key, a time series, the last 20 requests and in-flight counts) and `/api/usage/requests?period=…&provider=…&limit=…&offset=…` (one row per attempt). Both need a dashboard session or the old dashboard auth; account emails are masked.
 - Dashboard: `http://127.0.0.1:20128/dashboard/`. Log in with your 9Router dashboard password. Laid out like 9Router's (orange theme, light/dark), it is embedded in the binary as prebuilt static files (Preact + htm, no Node at run time):
   - **Dashboard:** endpoint URLs with copy buttons, provider/account/combo counts, 24h traffic and import notes.
-  - **Providers:** provider cards with logos and per-account status; add, edit, pause and delete accounts; drag to set account priority; add/edit/delete OpenAI- or Anthropic-compatible endpoints; Codex/GLM sign-in.
-  - **Combos & Vision:** create, edit and delete combos (drag to order models, fallback or round-robin) and the vision-fallback model list.
-  - **Usage**, **Quota Tracker** (FastRouter's own per-account counters; provider balances aren't fetched), **API Keys** (keys are generated in the browser and shown once), **CLI Tools** (copy-paste setup for Claude Code, Codex, OpenCode, Cline, Roo, Kilo, Continue, Droid, Cursor, cURL and the SDKs).
-  - **Settings:** token savers (RTK, Caveman, Ponytail, Headroom), per-provider thinking and account rotation, vision fallback, dashboard password.
+  - **Providers:** every provider FastRouter can route, configured or not (the 14 core ones plus 45 API-key providers generated from 9Router's registry, such as Groq, Cerebras, Mistral, Together and Fireworks), with search and an All / Configured / Not configured filter. Then sign-in providers, your custom endpoints, and the other 9Router providers that FastRouter doesn't support (greyed out). Add, edit, pause and delete accounts; drag to set account priority; add/edit/delete OpenAI- or Anthropic-compatible endpoints; Codex/GLM sign-in.
+  - **Combos & Vision:** create, edit and delete combos with four strategies (Fallback, Round-robin, Smart Router, Fusion) and the vision-fallback model list. Models are chosen in a searchable picker grouped by provider, with logos and friendly endpoint names; search supports `-exclude` and `/regex/`. The same picker is used for key allow-lists.
+  - **Usage:** Overview and Details tabs; Today / 24h / 7D / 30D / 60D / All; cards for requests, input, cached and output tokens and estimated cost; a provider topology graph (FastRouter in the middle, the last request's edge in orange, failures in red, in-flight edges animated, zoom and pan); recent requests; a tokens / requests / cost chart; and per-provider, model, account and key tables. Details is a paginated request log.
+  - **Token Saver:** RTK, Caveman, Ponytail and Headroom.
+  - **Console Log:** the server log live over SSE (`/api/admin/logs/stream`), coloured by level, with filter, pause and Clear. The last 1,000 lines are kept in memory, redacted (keys, tokens, emails) before they are stored.
+  - **Quota Tracker** (FastRouter's own per-account counters; provider balances aren't fetched), **API Keys** (keys are generated in the browser and shown once), **CLI Tools** (copy-paste setup for Claude Code, Codex, OpenCode, Cline, Roo, Kilo, Continue, Droid, Cursor, cURL and the SDKs).
+  - **Settings:** per-provider thinking and account rotation, vision fallback, dashboard password.
   - Every change goes through `/api/admin/*`, which needs a session cookie (HttpOnly, SameSite=Strict, 24h), an `X-CSRF-Token` header, a JSON body and a same-origin `Origin`. Inputs are validated, secrets are write-only (only `••••` plus the last four characters come back), and changes are saved to SQLite and applied live without a restart. Five wrong passwords lock an IP out for a minute. Token-saver fields set in the config file show as locked.
 - Health: `/health`.
 - Config: `~/.fastrouter/fastrouter.json` (created on first run). Use `--config` to pick another file, and `--host`/`--port` to override it. Listening on `0.0.0.0` is opt-in.
@@ -39,7 +42,10 @@ Model names are `prefix/model`, for example `ds/deepseek-v4.1-flash`, or a combo
   - If an upstream fails before sending its first byte (a connection error, 401/402/403/404/408/429/5xx, or the first-byte timeout), the router tries the next account in the pool, then the next combo model.
   - Failed accounts cool down with exponential backoff and honour `Retry-After`.
   - A 400 is returned to the client unchanged.
-- **Pools and combos:** Pools are round-robin with a sticky limit, or fill-first by priority, taken from your 9Router provider strategies. Combos are fallback or round-robin.
+- **Pools and combos:** Pools are round-robin with a sticky limit, or fill-first by priority, taken from your 9Router provider strategies. Combos are fallback, round-robin, smart or fusion:
+  - **Smart Router** (9Router's System One combo): a router model (default: the combo's first model) gets the last user message and the candidate list and answers with JSON `{choice, confidence}`. The pick is tried first, then the rest in order. Picks are sticky per conversation for 2 hours (by `session_id`/`x-session-id` header, or a hash of key and first message). Policies: `smart` switches only when confidence ≥ the threshold (0.8), `strict` never switches, `per-turn` follows every pick. The router call has an 8-second limit and fails open to the listed order.
+  - **Fusion:** every model answers in parallel (non-streaming, tools stripped). Once two have answered, stragglers get 8 seconds more, with a 90-second cap. No answers gives 503 and one answer is returned as-is. Otherwise a judge model (default: the first model) gets the panel's answers and replies in the client's format, streaming if asked.
+  - Options live in settings `comboStrategies[name]` (`smartPolicy`, `confidenceThreshold`, `routerModel`, `judgeModel`), the same place 9Router keeps them, so imported smart and fusion combos work.
 - **Timeouts:** There is a first-byte timeout and an idle timeout between chunks. A client disconnect cancels the upstream request.
 - **Secrets:** API keys, tokens and the dashboard password are AES-256-GCM encrypted in SQLite, using `secret.key` (0600) in the data dir. Logs pass through a redactor.
 - **Keyless mode:** with no local API key (or no dashboard password), only loopback clients are trusted, and only when the `Host` is `localhost`, `127.0.0.1` or `::1` and any `Origin` is one of those too. That blocks DNS rebinding and browser CSRF. Add a tunnel host name to `allowedHosts` in the config to trust it, or better, create an API key.
@@ -128,7 +134,7 @@ Custom models whose provider no longer exists are flagged, not imported. Codex a
 ## Tests and benchmarks
 
 ```sh
-go test ./...      # importer, translators + goldens, passthrough, translated paths, fallback, usage, limits
+go test ./...      # importer, translators + goldens, passthrough, translated paths, fallback, smart/fusion combos, usage, limits, admin API, log stream
 go test ./internal/translate -update   # regenerate golden files after an intended change
 go test -run '^$' -bench . -benchtime 3s ./internal/server/
 ```

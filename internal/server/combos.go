@@ -1,0 +1,467 @@
+package server
+
+import (
+	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"fmt"
+	"log"
+	"net/http"
+	"sort"
+	"strings"
+	"sync"
+	"time"
+
+	"github.com/zenpo/fastrouter/internal/router"
+	tr "github.com/zenpo/fastrouter/internal/translate"
+)
+
+// Smart and fusion combos, after 9Router's combo service (MIT, decolua/9router):
+//   - smart: a router model reads the latest user turn and picks which combo
+//     model should answer; the rest stay as fallbacks. The pick sticks to the
+//     session (prompt cache stays warm) unless the policy says otherwise.
+//   - fusion: every combo model answers in parallel (no tools, no streaming),
+//     then a judge model writes one final answer from the panel's replies.
+
+const (
+	smartTimeout     = 8 * time.Second
+	smartStateChars  = 2000
+	stickyTTL        = 2 * time.Hour
+	stickyMax        = 5000
+	fusionHardLimit  = 90 * time.Second
+	fusionGraceAfter = 8 * time.Second
+)
+
+type stickyEntry struct {
+	model string
+	used  time.Time
+}
+
+type stickyStore struct {
+	mu sync.Mutex
+	m  map[string]stickyEntry
+}
+
+func (ss *stickyStore) get(key string, models []string) string {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	e, ok := ss.m[key]
+	if !ok || time.Since(e.used) > stickyTTL || !contains(models, e.model) {
+		delete(ss.m, key)
+		return ""
+	}
+	e.used = time.Now()
+	ss.m[key] = e
+	return e.model
+}
+
+func (ss *stickyStore) set(key, model string) {
+	ss.mu.Lock()
+	defer ss.mu.Unlock()
+	if ss.m == nil {
+		ss.m = map[string]stickyEntry{}
+	}
+	if len(ss.m) >= stickyMax {
+		for k, e := range ss.m {
+			if time.Since(e.used) > stickyTTL || len(ss.m) >= stickyMax {
+				delete(ss.m, k)
+			}
+		}
+	}
+	ss.m[key] = stickyEntry{model, time.Now()}
+}
+
+func contains(list []string, v string) bool {
+	for _, x := range list {
+		if x == v {
+			return true
+		}
+	}
+	return false
+}
+
+// specialCombo serves smart and fusion combos.
+func (s *Server) specialCombo(w http.ResponseWriter, p *proxyReq, st *router.State, c *router.Combo) {
+	if c.Strategy == "fusion" {
+		s.fusion(w, p, st, c)
+		return
+	}
+	order := s.smartOrder(p, c)
+	targets, err := st.ResolveModels(c.Name, order)
+	if err != nil {
+		writeError(w, p.cf, http.StatusNotFound, "model_not_found", err.Error())
+		return
+	}
+	s.route(w, p, s.visionTargets(p, st, targets))
+}
+
+// sessionKey identifies a conversation: the client's session header, else a
+// hash of the API key and the first user turn (stable across a chat).
+func sessionKey(p *proxyReq) string {
+	for _, h := range []string{"session_id", "x-session-id", "x-claude-code-session-id"} {
+		if v := p.r.Header.Get(h); v != "" {
+			return v
+		}
+	}
+	ir, err := p.parse()
+	if err != nil {
+		return ""
+	}
+	for _, m := range ir.Messages {
+		if m.Role == "user" {
+			if t := partsText(m.Parts); t != "" {
+				keyID := ""
+				if k := keyFrom(p.r.Context()); k != nil {
+					keyID = k.ID
+				}
+				sum := sha256.Sum256([]byte(keyID + "\x00" + t))
+				return hex.EncodeToString(sum[:12])
+			}
+		}
+	}
+	return ""
+}
+
+func partsText(ps []tr.Part) string {
+	var b strings.Builder
+	for _, p := range ps {
+		if p.Type == tr.PartText && p.Text != "" {
+			if b.Len() > 0 {
+				b.WriteByte(' ')
+			}
+			b.WriteString(p.Text)
+		}
+	}
+	return b.String()
+}
+
+// lastUserText is the latest user turn's text, capped.
+func lastUserText(ir *tr.Request) string {
+	for i := len(ir.Messages) - 1; i >= 0; i-- {
+		if ir.Messages[i].Role == "user" {
+			if t := strings.TrimSpace(partsText(ir.Messages[i].Parts)); t != "" {
+				if len(t) > smartStateChars {
+					t = t[:smartStateChars]
+				}
+				return t
+			}
+		}
+	}
+	return ""
+}
+
+type smartPick struct {
+	Choice        string             `json:"choice"`
+	Confidence    *float64           `json:"confidence"`
+	Probabilities map[string]float64 `json:"probabilities"`
+}
+
+// smartOrder returns the combo's models with the chosen one first.
+func (s *Server) smartOrder(p *proxyReq, c *router.Combo) []string {
+	models := c.Models
+	if len(models) <= 1 {
+		return models
+	}
+	sid := ""
+	if c.SmartPolicy != "per-turn" {
+		if sid = sessionKey(p); sid != "" {
+			sid = c.Name + ":" + sid
+		}
+	}
+	sticky := ""
+	if sid != "" {
+		sticky = s.sticky.get(sid, models)
+	}
+	first := func(m string) []string {
+		out := []string{m}
+		for _, x := range models {
+			if x != m {
+				out = append(out, x)
+			}
+		}
+		return out
+	}
+	if sticky != "" && c.SmartPolicy == "strict" {
+		return first(sticky)
+	}
+	pick, err := s.smartChoice(p, c)
+	conf := 0.0
+	if pick != nil && pick.Confidence != nil {
+		conf = *pick.Confidence
+	}
+	switch {
+	case err != nil:
+		log.Printf("COMBO %s: smart router failed (%v); keeping %s", c.Name, err, firstNonEmpty(sticky, "the listed order"))
+	case sticky != "":
+		if pick.Choice != sticky && conf >= c.Threshold {
+			log.Printf("COMBO %s: smart router switched %s -> %s (confidence %.2f)", c.Name, sticky, pick.Choice, conf)
+			s.sticky.set(sid, pick.Choice)
+			return orderByPick(models, pick)
+		}
+		log.Printf("COMBO %s: smart router kept %s for this session", c.Name, sticky)
+	case pick.Confidence != nil && conf < c.Threshold:
+		log.Printf("COMBO %s: smart router unsure (%.2f < %.2f); using the listed order", c.Name, conf, c.Threshold)
+	default:
+		log.Printf("COMBO %s: smart router picked %s (confidence %.2f)", c.Name, pick.Choice, conf)
+		if sid != "" {
+			s.sticky.set(sid, pick.Choice)
+		}
+		return orderByPick(models, pick)
+	}
+	if sticky != "" {
+		return first(sticky)
+	}
+	return models
+}
+
+func orderByPick(models []string, pick *smartPick) []string {
+	others := []string{}
+	for _, m := range models {
+		if m != pick.Choice {
+			others = append(others, m)
+		}
+	}
+	sort.SliceStable(others, func(i, j int) bool { return pick.Probabilities[others[i]] > pick.Probabilities[others[j]] })
+	return append([]string{pick.Choice}, others...)
+}
+
+// smartChoice asks the router model which combo model fits the request.
+func (s *Server) smartChoice(p *proxyReq, c *router.Combo) (*smartPick, error) {
+	ir, err := p.parse()
+	if err != nil {
+		return nil, err
+	}
+	state := lastUserText(ir)
+	if state == "" {
+		return nil, fmt.Errorf("no user text to classify")
+	}
+	routerModel := firstNonEmpty(c.RouterModel, c.Models[0])
+	var list strings.Builder
+	for _, m := range c.Models {
+		list.WriteString("- " + m + "\n")
+	}
+	zero := 0.0
+	q := &tr.Request{
+		System: []tr.Part{{Type: tr.PartText, Text: "You route requests to the most appropriate model. Answer with one JSON object and nothing else."}},
+		Messages: []tr.Message{{Role: "user", Parts: []tr.Part{{Type: tr.PartText, Text: "Which of these configured models is the most appropriate for this request?\n\nModels:\n" +
+			list.String() + "\nRequest:\n" + state + "\n\nReply with JSON only: {\"choice\": \"<model from the list>\", \"confidence\": <0 to 1>, \"probabilities\": {\"<model>\": <0 to 1>}}"}}}},
+		MaxTokens: 300, Temperature: &zero,
+	}
+	ctx, cancel := context.WithTimeout(p.r.Context(), smartTimeout)
+	defer cancel()
+	resp, err := s.internalCall(ctx, p.r, q, routerModel)
+	if err != nil {
+		return nil, err
+	}
+	text := partsText(resp.Parts)
+	i, j := strings.IndexByte(text, '{'), strings.LastIndexByte(text, '}')
+	if i < 0 || j < i {
+		return nil, fmt.Errorf("router model %s did not answer with JSON", routerModel)
+	}
+	var pick smartPick
+	if err := json.Unmarshal([]byte(text[i:j+1]), &pick); err != nil {
+		return nil, fmt.Errorf("router model %s: %v", routerModel, err)
+	}
+	pick.Choice = strings.TrimSpace(pick.Choice)
+	if !contains(c.Models, pick.Choice) {
+		return nil, fmt.Errorf("router model %s chose %q, which is not in the combo", routerModel, pick.Choice)
+	}
+	return &pick, nil
+}
+
+// bufWriter collects an internal response.
+type bufWriter struct {
+	h      http.Header
+	status int
+	buf    bytes.Buffer
+}
+
+func (b *bufWriter) Header() http.Header { return b.h }
+func (b *bufWriter) Write(p []byte) (int, error) {
+	if b.status == 0 {
+		b.status = http.StatusOK
+	}
+	return b.buf.Write(p)
+}
+func (b *bufWriter) WriteHeader(code int) {
+	if b.status == 0 {
+		b.status = code
+	}
+}
+func (b *bufWriter) Flush() {}
+
+// internalCall sends ir to model through normal routing (accounts, fallback,
+// usage records) as a non-streaming OpenAI request and parses the answer.
+func (s *Server) internalCall(ctx context.Context, parent *http.Request, ir *tr.Request, model string) (*tr.Response, error) {
+	r := *ir
+	r.Model, r.Stream = model, false
+	body, err := tr.EmitRequest(tr.OpenAI, &r, tr.EmitOptions{Model: model})
+	if err != nil {
+		return nil, err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "/v1/chat/completions", bytes.NewReader(body))
+	if err != nil {
+		return nil, err
+	}
+	req.RemoteAddr = parent.RemoteAddr
+	p := &proxyReq{r: req, cf: tr.OpenAI, body: body, model: model}
+	if err := scanHead(body, &p.head); err != nil {
+		return nil, err
+	}
+	targets, err := s.state.Load().Resolve(model)
+	if err != nil {
+		return nil, err
+	}
+	bw := &bufWriter{h: http.Header{}}
+	s.route(bw, p, targets)
+	if bw.status != http.StatusOK {
+		return nil, fmt.Errorf("%s: HTTP %d %s", model, bw.status, upstreamMessage(bw.buf.Bytes()))
+	}
+	resp, err := tr.ParseResponse(tr.OpenAI, bw.buf.Bytes())
+	if err != nil {
+		return nil, fmt.Errorf("%s: %v", model, err)
+	}
+	return resp, nil
+}
+
+// flattenTools turns tool calls and results into prose so panel models keep
+// the context without being able to call tools.
+func flattenTools(ms []tr.Message) []tr.Message {
+	out := make([]tr.Message, 0, len(ms))
+	for _, m := range ms {
+		nm := tr.Message{Role: m.Role}
+		for _, p := range m.Parts {
+			switch p.Type {
+			case tr.PartToolCall:
+				nm.Parts = append(nm.Parts, tr.Part{Type: tr.PartText, Text: fmt.Sprintf("[called tool %s with %s]", p.ToolName, p.Args)})
+			case tr.PartToolResult:
+				nm.Parts = append(nm.Parts, tr.Part{Type: tr.PartText, Text: "[tool result: " + partsText(p.Result) + "]"})
+			case tr.PartThinking, tr.PartRedactedThinking:
+			default:
+				nm.Parts = append(nm.Parts, p)
+			}
+		}
+		if len(nm.Parts) > 0 {
+			out = append(out, nm)
+		}
+	}
+	return out
+}
+
+func judgePrompt(answers []string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "You are the JUDGE in a model-fusion panel. %d expert models independently answered the user's most recent request. Their responses are below, anonymized by source.\n\n", len(answers))
+	b.WriteString("Do NOT mention that multiple models were used, and do NOT refer to the sources. Produce ONE authoritative final answer addressed directly to the user.\n\n")
+	b.WriteString("First, internally analyze the panel along these dimensions: consensus (points most sources agree on — treat as higher-confidence), contradictions (where they disagree — resolve with your own judgment), partial coverage, unique insights only one source surfaced, and blind spots every source missed. Then write the best possible final answer grounded in that analysis — more complete and correct than any single response, with no filler.\n\n")
+	b.WriteString("=== PANEL RESPONSES ===\n")
+	for i, a := range answers {
+		fmt.Fprintf(&b, "[Source %d]\n%s\n\n", i+1, a)
+	}
+	b.WriteString("=== END PANEL RESPONSES ===\n\nNow write the final answer to the user's original request.")
+	return b.String()
+}
+
+// fusion fans the request out to every combo model, then has the judge answer.
+func (s *Server) fusion(w http.ResponseWriter, p *proxyReq, st *router.State, c *router.Combo) {
+	panel := c.Models
+	judge := firstNonEmpty(c.JudgeModel, panel[0])
+	if len(panel) == 1 {
+		s.routeModel(w, p, st, panel[0])
+		return
+	}
+	ir, err := p.parse()
+	if err != nil {
+		writeError(w, p.cf, http.StatusBadRequest, "invalid_request_error", err.Error())
+		return
+	}
+	q := *ir
+	q.Tools, q.ToolChoice, q.ParallelToolCalls = nil, nil, nil
+	q.Messages = flattenTools(ir.Messages)
+	log.Printf("FUSION %s: panel of %d, judge %s", c.Name, len(panel), judge)
+
+	ctx, cancel := context.WithTimeout(p.r.Context(), fusionHardLimit)
+	defer cancel()
+	type result struct {
+		i    int
+		text string
+		err  error
+	}
+	ch := make(chan result, len(panel))
+	for i, m := range panel {
+		go func(i int, m string) {
+			resp, err := s.internalCall(ctx, p.r, &q, m)
+			text := ""
+			if err == nil {
+				if text = strings.TrimSpace(partsText(resp.Parts)); text == "" {
+					err = fmt.Errorf("%s: empty answer", m)
+				}
+			}
+			ch <- result{i, text, err}
+		}(i, m)
+	}
+	answers := make([]string, len(panel))
+	quorum := min(2, len(panel))
+	ok, got := 0, 0
+	var grace <-chan time.Time
+collect:
+	for got < len(panel) {
+		select {
+		case r := <-ch:
+			got++
+			if r.err != nil {
+				log.Printf("FUSION %s: %v", c.Name, r.err)
+				continue
+			}
+			answers[r.i] = r.text
+			if ok++; ok == quorum && grace == nil && got < len(panel) {
+				grace = time.After(fusionGraceAfter)
+			}
+		case <-grace:
+			log.Printf("FUSION %s: %d of %d answered; not waiting for the rest", c.Name, ok, len(panel))
+			break collect
+		case <-ctx.Done():
+			break collect
+		}
+	}
+	var texts, from []string
+	for i, a := range answers {
+		if a != "" {
+			texts, from = append(texts, a), append(from, panel[i])
+		}
+	}
+	switch len(texts) {
+	case 0:
+		writeError(w, p.cf, http.StatusServiceUnavailable, "api_error", "all fusion panel models failed")
+		return
+	case 1:
+		log.Printf("FUSION %s: only %s answered; replying with it directly", c.Name, from[0])
+		s.routeModel(w, p, st, from[0])
+		return
+	}
+	j := *ir
+	j.Messages = append(append([]tr.Message{}, ir.Messages...), tr.Message{Role: "user", Parts: []tr.Part{{Type: tr.PartText, Text: judgePrompt(texts)}}})
+	body, err := tr.EmitRequest(p.cf, &j, tr.EmitOptions{Model: judge})
+	if err != nil {
+		writeError(w, p.cf, http.StatusInternalServerError, "api_error", "could not build the judge request: "+err.Error())
+		return
+	}
+	p2 := &proxyReq{r: p.r, cf: p.cf, body: body, model: judge, stream: p.stream}
+	if err := scanHead(body, &p2.head); err != nil {
+		writeError(w, p.cf, http.StatusInternalServerError, "api_error", err.Error())
+		return
+	}
+	p2.model, p2.stream = judge, p.stream
+	log.Printf("FUSION %s: judging %d answers with %s", c.Name, len(texts), judge)
+	s.routeModel(w, p2, st, judge)
+}
+
+func (s *Server) routeModel(w http.ResponseWriter, p *proxyReq, st *router.State, model string) {
+	targets, err := st.Resolve(model)
+	if err != nil {
+		writeError(w, p.cf, http.StatusNotFound, "model_not_found", err.Error())
+		return
+	}
+	s.route(w, p, targets)
+}

@@ -100,7 +100,7 @@ type UsageRow struct {
 
 // UsageReport aggregates usage since a time, grouped by "account", "model" or "key".
 func (s *Store) UsageReport(since time.Time, by string) ([]UsageRow, error) {
-	col := map[string]string{"account": "u.connection_id", "model": "u.provider || '/' || u.model", "key": "u.key_id"}[by]
+	col := map[string]string{"account": "u.connection_id", "model": "u.provider || '/' || u.model", "key": "u.key_id", "provider": "u.provider"}[by]
 	if col == "" {
 		col = "u.connection_id"
 	}
@@ -128,6 +128,81 @@ func (s *Store) UsageReport(since time.Time, by string) ([]UsageRow, error) {
 			r.Provider = ""
 		}
 		out = append(out, r)
+	}
+	return out, rows.Err()
+}
+
+// UsageEntry is one recorded attempt, for the recent-requests list.
+type UsageEntry struct {
+	At        string  `json:"at"`
+	Provider  string  `json:"provider"`
+	Model     string  `json:"model"`
+	Account   string  `json:"account,omitempty"`
+	KeyID     string  `json:"keyId,omitempty"`
+	Status    int     `json:"status"`
+	LatencyMs int64   `json:"latency_ms"`
+	Input     int64   `json:"input_tokens"`
+	Output    int64   `json:"output_tokens"`
+	CacheRead int64   `json:"cache_read_tokens"`
+	Cost      float64 `json:"cost_usd"`
+}
+
+// UsageEntries lists attempts newest first. provider filters when not "".
+func (s *Store) UsageEntries(since time.Time, provider string, limit, offset int) ([]UsageEntry, int64, error) {
+	where := `u.ts >= ?`
+	args := []any{since.UTC().Format(time.RFC3339Nano)}
+	if provider != "" {
+		where += ` AND u.provider = ?`
+		args = append(args, provider)
+	}
+	var total int64
+	if err := s.db.QueryRow(`SELECT COUNT(*) FROM usage u WHERE `+where, args...).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := s.db.Query(`SELECT u.ts, COALESCE(u.provider,''), u.model, COALESCE(c.name,''), COALESCE(u.key_id,''), u.status, u.latency_ms,
+		u.input, u.output, u.cache_read, u.cost FROM usage u LEFT JOIN connections c ON c.id = u.connection_id
+		WHERE `+where+` ORDER BY u.ts DESC LIMIT ? OFFSET ?`, append(args, limit, offset)...)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	out := []UsageEntry{}
+	for rows.Next() {
+		var e UsageEntry
+		if err := rows.Scan(&e.At, &e.Provider, &e.Model, &e.Account, &e.KeyID, &e.Status, &e.LatencyMs, &e.Input, &e.Output, &e.CacheRead, &e.Cost); err != nil {
+			return nil, 0, err
+		}
+		out = append(out, e)
+	}
+	return out, total, rows.Err()
+}
+
+// UsageBucket is one hour of traffic (UTC hour start).
+type UsageBucket struct {
+	Hour     time.Time
+	Requests int64
+	Tokens   int64
+	Cost     float64
+}
+
+// UsageHours aggregates traffic per UTC hour since a time.
+func (s *Store) UsageHours(since time.Time) ([]UsageBucket, error) {
+	rows, err := s.db.Query(`SELECT substr(ts,1,13), COUNT(*), SUM(input+output), SUM(cost) FROM usage WHERE ts >= ? GROUP BY 1 ORDER BY 1`,
+		since.UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := []UsageBucket{}
+	for rows.Next() {
+		var h string
+		var b UsageBucket
+		if err := rows.Scan(&h, &b.Requests, &b.Tokens, &b.Cost); err != nil {
+			return nil, err
+		}
+		if b.Hour, err = time.Parse("2006-01-02T15", h); err == nil {
+			out = append(out, b)
+		}
 	}
 	return out, rows.Err()
 }

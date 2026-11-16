@@ -123,6 +123,10 @@ func (s *Server) handleProxy(cf tr.Format) http.HandlerFunc {
 		if s.bypass(w, p, st) {
 			return
 		}
+		if c, ok := st.Combo(p.model); ok && (c.Strategy == "smart" || c.Strategy == "fusion") {
+			s.specialCombo(w, p, st, c)
+			return
+		}
 		targets, err := st.Resolve(p.model)
 		if err != nil {
 			writeError(w, cf, http.StatusNotFound, "model_not_found", err.Error())
@@ -194,7 +198,10 @@ func (s *Server) route(w http.ResponseWriter, p *proxyReq, targets []router.Targ
 			}
 			a := attempt{p: p, t: t, acct: acct, uf: uf, url: u, body: upBody, codex: codex,
 				canRetry: i < len(order)-1 || anyUsable(targets[ti+1:])}
+			live := s.inflightFor(t.Provider.ID)
+			live.Add(1)
 			done, uerr := s.attempt(w, &a)
+			live.Add(-1)
 			if done || p.r.Context().Err() != nil {
 				return
 			}

@@ -1,6 +1,6 @@
 // FastRouter dashboard: a small Preact + htm SPA (no build step).
 // Structure and look follow 9Router's dashboard (MIT, decolua/9router).
-import { html, render, useState, useEffect, useCallback } from "./vendor/preact-htm.js";
+import { html, render, useState, useEffect, useCallback, useRef } from "./vendor/preact-htm.js";
 
 /* ------------------------------------------------------------------ api */
 let csrf = "";
@@ -50,15 +50,17 @@ const PROVIDERS = {
   opencode: { name: "OpenCode Free", color: "#E87040" },
 };
 function provMeta(p) {
-  const m = PROVIDERS[p.id];
-  if (m) return { ...m, logo: `logos/${p.id}.png` };
-  if (p.kind === "anthropic-compatible") return { name: p.name, color: "#D97757", logo: "logos/anthropic-m.png" };
-  return { name: p.name, color: "#6366F1", logo: p.apiType === "responses" ? "logos/oai-r.png" : "logos/oai-cc.png" };
+  if (p.kind && p.kind.endsWith("compatible")) {
+    const anth = p.kind === "anthropic-compatible";
+    return { name: p.name, color: anth ? "#D97757" : "#6366F1", logo: anth ? "logos/anthropic-m.png" : p.apiType === "responses" ? "logos/oai-r.png" : "logos/oai-cc.png" };
+  }
+  const m = PROVIDERS[p.id] || {};
+  return { name: p.name || m.name || p.id, color: p.color || m.color || "#6366F1", key: p.keyUrl || m.key, logo: `logos/${p.id}.png` };
 }
-function Logo({ p, lg }) {
+function Logo({ p, lg, xs }) {
   const m = provMeta(p);
   const [bad, setBad] = useState(false);
-  return html`<div class="logo ${lg ? "lg" : ""}" style=${`background:${m.color}18`}>
+  return html`<div class="logo ${lg ? "lg" : ""} ${xs ? "xs" : ""}" style=${`background:${m.color}18`}>
     ${bad ? html`<div class="logo-fallback" style=${`background:${m.color}`}>${m.name.slice(0, 2).toUpperCase()}</div>`
           : html`<img src=${m.logo} alt="" onError=${() => setBad(true)} />`}</div>`;
 }
@@ -142,28 +144,109 @@ function useDrag(items, onMove) {
 }
 const move = (arr, a, b) => { const c = arr.slice(); const [x] = c.splice(a, 1); c.splice(b, 0, x); return c; };
 
-function ModelListEditor({ models, setModels, known }) {
+/* -------------------------------------------------------- model picker */
+// Searchable picker grouped by provider, after 9Router's ModelSelectModal.
+const splitModel = (id) => { const i = id.indexOf("/"); return i < 0 ? ["", id] : [id.slice(0, i), id.slice(i + 1)]; };
+const findProvider = (data, pre) => data.providers.find((p) => p.prefix === pre || p.id === pre || (p.aliases || []).includes(pre));
+function modelInfo(data, id) {
+  const combo = data.combos.find((c) => c.name === id);
+  if (combo) return { combo, label: id };
+  const [pre, m] = splitModel(id);
+  const p = pre ? findProvider(data, pre) : null;
+  if (!p) return { label: id };
+  const g = (data.modelGroups || []).find((x) => x.provider === p.id);
+  const mm = g && g.models.find((x) => x.id === p.prefix + "/" + m);
+  return { p, label: m, name: mm && mm.name !== m ? mm.name : "" };
+}
+function ModelTag({ data, id }) {
+  const i = modelInfo(data, id);
+  return html`<span class="mtag" title=${i.name ? `${id} — ${i.name}` : id}>
+    ${i.p ? html`<${Logo} p=${i.p} xs />` : html`<span class="mtag-ic"><${Icon} n=${i.combo ? "layers" : id.includes("*") ? "filter_alt" : "help"} /></span>`}
+    ${i.p ? html`<span class="mtag-prov">${provMeta(i.p).name}</span>` : i.combo ? html`<span class="mtag-prov">Combo</span>` : ""}
+    <span class="mono truncate">${i.label}</span></span>`;
+}
+// Space-separated terms must all match; "-term" excludes; "/re/" is a regex.
+function matcher(q) {
+  q = q.trim();
+  if (!q) return () => true;
+  if (q.length > 2 && q.startsWith("/") && q.endsWith("/")) {
+    try { const re = new RegExp(q.slice(1, -1), "i"); return (s) => re.test(s); } catch (e) { return () => false; }
+  }
+  const terms = q.toLowerCase().split(/\s+/);
+  return (s) => { s = s.toLowerCase(); return terms.every((t) => (t[0] === "-" ? t.length === 1 || !s.includes(t.slice(1)) : s.includes(t))); };
+}
+function ModelPicker({ data, selected = [], multi, onPick, onClose, title, combos = true, exclude }) {
+  const [q, setQ] = useState("");
+  const [custom, setCustom] = useState("");
+  const [shut, setShut] = useState({});
+  const ok = matcher(q);
+  const sel = new Set(selected);
+  const cs = combos ? data.combos.filter((c) => c.name !== exclude && ok(`combo ${c.name} ${c.models.join(" ")}`)) : [];
+  const groups = (data.modelGroups || []).map((g) => {
+    const p = data.providers.find((x) => x.id === g.provider) || { id: g.provider, name: g.name };
+    return { g, p, models: g.models.filter((m) => ok(`${g.name} ${g.prefix} ${m.id} ${m.name}`)) };
+  }).filter((x) => x.models.length);
+  const total = cs.length + groups.reduce((n, x) => n + x.models.length, 0);
+  const chip = (id, label, tag) => html`<button type="button" class="pick-chip ${sel.has(id) ? "on" : ""}" title=${id} onClick=${() => onPick(id)}>
+    ${sel.has(id) && html`<${Icon} n="check" />`}<span class="truncate">${label}</span>${tag && html`<span class="tag">${tag}</span>`}</button>`;
+  const addCustom = () => { const v = custom.trim(); if (v) { onPick(v); setCustom(""); } };
+  return html`<${Modal} wide title=${title || (multi ? "Add models" : "Select model")} icon="neurology" onClose=${onClose}
+    foot=${html`<span class="small muted grow">${multi ? `${selected.length} selected · click to add or remove` : "Click a model to choose it"}</span>
+      <button class="btn primary" onClick=${onClose}>${multi ? "Done" : "Cancel"}</button>`}>
+    <div class="picker">
+      <div class="picker-search"><${Icon} n="search" /><input class="input" autofocus placeholder="Search models, providers or prefixes… (-exclude, /regex/)" value=${q} onInput=${(e) => setQ(e.target.value)} />
+        <span class="small muted">${total} match${total === 1 ? "" : "es"}</span></div>
+      <div class="picker-list">
+        ${cs.length > 0 && html`<div class="pick-group"><div class="pick-head"><span class="mtag-ic"><${Icon} n="layers" /></span><span class="strong">Combos</span><span class="count">${cs.length}</span></div>
+          <div class="pick-chips">${cs.map((c) => chip(c.name, c.name, c.strategy && c.strategy !== "fallback" ? STRATEGY[c.strategy].short : ""))}</div></div>`}
+        ${groups.map(({ g, p, models }) => html`<div class="pick-group" key=${g.provider}>
+          <button type="button" class="pick-head" onClick=${() => setShut({ ...shut, [g.provider]: !shut[g.provider] })}>
+            <${Logo} p=${p} xs /><span class="strong">${g.name}</span><span class="mono small muted">${g.prefix}/</span>
+            ${g.plugin && html`<${Badge} icon="extension">needs plugin</${Badge}>`}<span class="count">${models.length}</span>
+            <span class="grow"></span><${Icon} n=${shut[g.provider] && !q ? "expand_more" : "expand_less"} /></button>
+          ${!(shut[g.provider] && !q) && html`<div class="pick-chips">${models.map((m) => chip(m.id, m.name || splitModel(m.id)[1], m.custom ? "custom" : ""))}</div>`}</div>`)}
+        ${total === 0 && html`<div class="empty" style="padding:28px"><div class="bubble"><${Icon} n="search_off" /></div><p class="small muted">No model matches “${q}”. Type its id below.</p></div>`}
+      </div>
+      <div class="row" style="gap:8px"><input class="input mono grow" placeholder="Not listed? Type prefix/model, e.g. ds/deepseek-chat" value=${custom}
+          onInput=${(e) => setCustom(e.target.value)} onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); addCustom(); } }} />
+        <button type="button" class="btn secondary" disabled=${!custom.trim()} onClick=${addCustom}><${Icon} n="add" />Use</button></div>
+    </div></${Modal}>`;
+}
+// One model chosen through the picker (router / judge model).
+function ModelSelect({ data, value, onChange, placeholder, exclude }) {
+  const [open, setOpen] = useState(false);
+  return html`<div class="row" style="gap:8px">
+    <button type="button" class="input model-select" onClick=${() => setOpen(true)}>${value ? html`<${ModelTag} data=${data} id=${value} />` : html`<span class="muted">${placeholder}</span>`}
+      <span class="grow"></span><${Icon} n="unfold_more" /></button>
+    ${value && html`<button type="button" class="icon-btn" title="Clear" onClick=${() => onChange("")}><${Icon} n="close" /></button>`}
+    ${open && html`<${ModelPicker} data=${data} selected=${value ? [value] : []} exclude=${exclude} onPick=${(id) => { onChange(id); setOpen(false); }} onClose=${() => setOpen(false)} />`}</div>`;
+}
+
+function ModelListEditor({ models, setModels, data, exclude, globs }) {
   const [add, setAdd] = useState("");
+  const [pick, setPick] = useState(false);
   const [props, cls] = useDrag(models, (a, b) => setModels(move(models, a, b)));
   const push = () => { const v = add.trim(); if (v && !models.includes(v)) setModels([...models, v]); setAdd(""); };
+  const toggle = (id) => setModels(models.includes(id) ? models.filter((x) => x !== id) : [...models, id]);
   const small = "width:24px;height:24px";
   return html`<div class="col" style="gap:10px">
     <div class="model-list">
-      ${models.length === 0 && html`<div class="section small muted" style="text-align:center">No models yet. Add one below.</div>`}
+      ${models.length === 0 && html`<div class="section small muted" style="text-align:center">No models yet. Pick some below.</div>`}
       ${models.map((m, i) => html`<div class="model-item ${cls(i)}" key=${m} ...${props(i)}>
         <span class="handle" title="Drag to reorder"><${Icon} n="drag_indicator" /></span>
-        <span class="idx">${i + 1}</span><code title=${m}>${m}</code>
+        <span class="idx">${i + 1}</span><${ModelTag} data=${data} id=${m} />
         <button type="button" class="icon-btn" style=${small} disabled=${i === 0} onClick=${() => setModels(move(models, i, i - 1))} aria-label="Move up"><${Icon} n="arrow_upward" style="font-size:15px" /></button>
         <button type="button" class="icon-btn" style=${small} disabled=${i === models.length - 1} onClick=${() => setModels(move(models, i, i + 1))} aria-label="Move down"><${Icon} n="arrow_downward" style="font-size:15px" /></button>
         <button type="button" class="icon-btn danger" style=${small} onClick=${() => setModels(models.filter((x) => x !== m))} aria-label="Remove"><${Icon} n="close" style="font-size:15px" /></button>
       </div>`)}
     </div>
     <div class="row">
-      <input class="input mono grow" list="known-models" placeholder="prefix/model or combo name, e.g. ds/deepseek-v4-flash" value=${add}
+      <button type="button" class="btn primary" onClick=${() => setPick(true)}><${Icon} n="add_circle" />Browse models</button>
+      <input class="input mono grow" placeholder=${globs ? "or type a model, combo or glob like ds/*" : "or type prefix/model"} value=${add}
         onInput=${(e) => setAdd(e.target.value)} onKeyDown=${(e) => { if (e.key === "Enter") { e.preventDefault(); push(); } }} />
-      <button type="button" class="btn secondary" onClick=${push}><${Icon} n="add" />Add</button>
+      <button type="button" class="btn secondary" disabled=${!add.trim()} onClick=${push}><${Icon} n="add" />Add</button>
     </div>
-    <datalist id="known-models">${(known || []).map((m) => html`<option value=${m} />`)}</datalist>
+    ${pick && html`<${ModelPicker} multi data=${data} selected=${models} exclude=${exclude} onPick=${toggle} onClose=${() => setPick(false)} />`}
   </div>`;
 }
 
@@ -171,13 +254,17 @@ function ModelListEditor({ models, setModels, known }) {
 const NAV = [
   { id: "endpoint", label: "Dashboard", icon: "api", title: "Endpoint & Overview", sub: "Your local endpoint, connected providers and today's traffic" },
   { id: "providers", label: "Providers", icon: "dns", title: "Providers", sub: "Accounts behind each model prefix" },
-  { id: "combos", label: "Combos & Vision", icon: "layers", title: "Combos & Vision Adapter", sub: "Named model chains with fallback or round-robin" },
+  { id: "combos", label: "Combos & Vision", icon: "layers", title: "Combos & Vision Adapter", sub: "Named model chains: fallback, round-robin, smart router or fusion" },
   { id: "usage", label: "Usage", icon: "bar_chart", title: "Usage", sub: "Requests, tokens and estimated cost" },
   { id: "quota", label: "Quota Tracker", icon: "data_usage", title: "Quota Tracker", sub: "Account health, cooldowns and failure rates" },
   { id: "keys", label: "API Keys", icon: "vpn_key", title: "API Keys", sub: "Local keys your tools use to call FastRouter" },
-  { id: "cli", label: "CLI Tools", icon: "terminal", title: "CLI Tools", sub: "Copy-paste setup for coding agents and SDKs" },
+  { id: "token-saver", label: "Token Saver", icon: "savings", title: "Token Saver", sub: "Shrink what goes upstream: RTK, Caveman, Ponytail and Headroom" },
+  { id: "cli", label: "CLI Tools", icon: "code_blocks", title: "CLI Tools", sub: "Copy-paste setup for coding agents and SDKs" },
 ];
-const SYSTEM = [{ id: "settings", label: "Settings", icon: "settings", title: "Settings", sub: "Token savers, thinking, vision fallback and routing" }];
+const SYSTEM = [
+  { id: "console-log", label: "Console Log", icon: "terminal", title: "Console Log", sub: "Live server log, redacted, newest at the bottom" },
+  { id: "settings", label: "Settings", icon: "settings", title: "Settings", sub: "Thinking, routing strategy, vision fallback and password" },
+];
 
 function useHash() {
   const [h, setH] = useState(location.hash.slice(2) || "endpoint");
@@ -273,7 +360,8 @@ function EndpointPage({ data, go }) {
     </div>
     <div class="grid g2">
       <div class="card"><div class="card-title"><h2><${Icon} n="trending_up" />Top models · 24h</h2><a class="btn ghost sm" href="#/usage">Details</a></div>
-        ${usage && usage.models && usage.models.length ? html`<table class="table"><tbody>${usage.models.slice(0, 6).map((r) => html`<tr><td class="mono small">${r.key}</td><td class="num">${fmt(r.requests)} req</td><td class="num muted">${money(r.cost_usd)}</td></tr>`)}</tbody></table>`
+        ${usage && usage.models && usage.models.length ? html`<table class="table"><tbody>${usage.models.slice(0, 6).map((r) => { const [pid, m] = splitModel(r.key); const p = data.providers.find((x) => x.id === pid);
+          return html`<tr><td class="small">${p ? html`<div class="row" style="gap:8px"><${Logo} p=${p} xs /><span class="muted">${provMeta(p).name} /</span><span class="mono">${m}</span></div>` : html`<span class="mono">${r.key}</span>`}</td><td class="num">${fmt(r.requests)} req</td><td class="num muted">${money(r.cost_usd)}</td></tr>`; })}</tbody></table>`
           : html`<div class="empty" style="padding:20px"><p class="muted small">No requests in the last 24 hours.</p></div>`}</div>
       <div class="card"><div class="card-title"><h2><${Icon} n="info" />Import notes</h2><span class="muted small">${data.warnings.length}</span></div>
         <div class="col" style="gap:8px;max-height:260px;overflow:auto">${data.warnings.length === 0 ? html`<p class="muted small">Nothing to review.</p>` :
@@ -284,7 +372,7 @@ function EndpointPage({ data, go }) {
 /* ----------------------------------------------------------- providers */
 function statusOf(p) {
   if (p.kind === "plugin") return html`<${Badge} icon="extension">Needs plugin</${Badge}>`;
-  if (p.accounts.length === 0) return html`<span class="muted">Not configured</span>`;
+  if (p.accounts.length === 0) return html`<span class="muted small">Not configured</span>`;
   const active = p.accounts.filter((a) => a.active);
   if (active.length === 0) return html`<${Badge} icon="pause_circle">Disabled</${Badge}>`;
   const cooling = active.filter((a) => a.cooling).length;
@@ -295,36 +383,65 @@ function statusOf(p) {
 }
 const KIND_DOT = { apikey: "#f59e0b", login: "#3b82f6", plugin: "#9ca3af", "openai-compatible": "#f97316", "anthropic-compatible": "#f97316" };
 
+const OTHER_KIND = { oauth: "Sign-in (OAuth)", webCookie: "Web session", free: "Free tier", freeTier: "Free tier" };
 function ProvidersPage({ data, reload, go, query }) {
   const [modal, setModal] = useState(/(^|&)add\b/.test(query) ? { t: "account" } : null);
+  const [q, setQ] = useState("");
+  const [show, setShow] = useState("all");
+  const ok = matcher(q);
   const toggleAll = (p, on) => run(async () => { for (const a of p.accounts) await api("PATCH", `/api/admin/accounts/${a.id}`, { active: on }); await reload(); }, on ? "Provider enabled" : "Provider disabled");
-  const section = (title, icon, list, action) => html`<div>
-    <div class="sec-head"><h2><${Icon} n=${icon} style="color:var(--primary)" />${title}<span class="count">${list.length}</span></h2>${action}</div>
-    <div class="prov-grid">${list.map((p) => html`<div class="card xs hover" key=${p.id} onClick=${() => go("providers/" + encodeURIComponent(p.id))}
-        style=${p.accounts.length && p.accounts.every((a) => !a.active) ? "opacity:.55" : ""}>
-      <div class="prov-card"><div class="row grow" style="gap:12px"><${Logo} p=${p} />
-        <div class="grow"><div class="prov-name truncate">${provMeta(p).name}</div>
-          <div class="prov-meta"><span class="sdot" style=${`background:${KIND_DOT[p.kind]}`}></span><span class="muted mono">${p.prefix}/</span>${statusOf(p)}</div></div></div>
-        ${p.accounts.length > 0 && p.kind !== "plugin" && html`<${Toggle} sm on=${p.accounts.some((a) => a.active)} title="Enable or disable every account" onChange=${(v) => toggleAll(p, v)} />`}
-      </div></div>`)}</div></div>`;
+  const visible = (p) => ok(`${provMeta(p).name} ${p.id} ${p.prefix} ${(p.aliases || []).join(" ")}`) &&
+    (show === "all" || (show === "configured") === (p.accounts.length > 0));
+  const byName = (a, b) => (b.accounts.length > 0) - (a.accounts.length > 0) || provMeta(a).name.localeCompare(provMeta(b).name);
+  const card = (p) => html`<div class="card xs hover ${p.accounts.length ? "" : "unset"}" key=${p.id} onClick=${() => go("providers/" + encodeURIComponent(p.id))}
+      style=${p.accounts.length && p.accounts.every((a) => !a.active) ? "opacity:.55" : ""}>
+    <div class="prov-card"><div class="row grow" style="gap:12px;min-width:0"><${Logo} p=${p} />
+      <div class="grow" style="min-width:0"><div class="prov-name truncate">${provMeta(p).name}</div>
+        <div class="prov-meta"><span class="sdot" style=${`background:${KIND_DOT[p.kind]}`}></span><span class="muted mono">${p.prefix}/</span>${statusOf(p)}</div></div></div>
+      ${p.accounts.length > 0 && p.kind !== "plugin" ? html`<${Toggle} sm on=${p.accounts.some((a) => a.active)} title="Enable or disable every account" onChange=${(v) => toggleAll(p, v)} />`
+        : p.kind === "apikey" && html`<span class="add-hint"><${Icon} n="add" /></span>`}
+    </div></div>`;
+  const section = (title, icon, all, action, note) => {
+    const list = all.filter(visible).sort(byName);
+    const conf = all.filter((p) => p.accounts.length > 0).length;
+    if (!list.length && (q || show !== "all")) return "";
+    return html`<div>
+      <div class="sec-head"><h2><${Icon} n=${icon} style="color:var(--primary)" />${title}<span class="count">${conf} / ${all.length}</span></h2>${action}</div>
+      ${note && html`<p class="small muted" style="margin:-4px 0 12px">${note}</p>`}
+      <div class="prov-grid">${list.map(card)}</div></div>`;
+  };
   const builtin = data.providers.filter((p) => p.kind === "apikey");
   const logins = data.providers.filter((p) => p.kind === "login" || p.kind === "plugin");
   const nodes = data.providers.filter((p) => p.kind.endsWith("compatible"));
+  const others = show === "configured" ? [] : (data.others || []).filter((o) => ok(`${o.name} ${o.id}`));
+  const configured = data.providers.filter((p) => p.accounts.length > 0).length;
   return html`
-    <div class="row between"><div class="legend">
+    <div class="prov-bar">
+      <div class="picker-search grow" style="max-width:420px"><${Icon} n="search" /><input class="input" placeholder="Search ${data.providers.length + (data.others || []).length} providers…" value=${q} onInput=${(e) => setQ(e.target.value)} /></div>
+      <${Seg} value=${show} onChange=${setShow} options=${[["all", "All"], ["configured", `Configured · ${configured}`], ["available", "Not configured"]]} />
+      <span class="grow"></span>
+      <button class="btn outline" onClick=${() => setModal({ t: "node" })}><${Icon} n="link" />Add endpoint</button>
+      <button class="btn primary" onClick=${() => setModal({ t: "account" })}><${Icon} n="add" />Add account</button></div>
+    <div class="legend">
       <span><i style="background:#f59e0b"></i>API key</span><span><i style="background:#3b82f6"></i>Official sign-in</span>
       <span><i style="background:#f97316"></i>Compatible endpoint</span><span><i style="background:#9ca3af"></i>Needs plugin</span></div>
-      <div class="row" style="gap:8px"><button class="btn outline" onClick=${() => setModal({ t: "node" })}><${Icon} n="link" />Add endpoint</button>
-        <button class="btn primary" onClick=${() => setModal({ t: "account" })}><${Icon} n="add" />Add account</button></div></div>
-    ${section("API key providers", "vpn_key", builtin)}
+    ${section("API key providers", "vpn_key", builtin, null, "Paste a key to route prefix/model calls through any of these. Click one to add an account.")}
     ${section("Sign-in providers", "verified", logins)}
     ${section("Custom endpoints", "link", nodes, html`<button class="btn ghost sm" onClick=${() => setModal({ t: "node" })}><${Icon} n="add" />New endpoint</button>`)}
+    ${others.length > 0 && html`<div>
+      <div class="sec-head"><h2><${Icon} n="extension" style="color:var(--text-muted)" />More 9Router providers<span class="count">${others.length}</span></h2></div>
+      <p class="small muted" style="margin:-4px 0 12px">These sign in with browser sessions, OAuth apps or CLI tokens that FastRouter core does not ship. Keep using them through 9Router, or add their OpenAI-compatible URL as a custom endpoint.</p>
+      <div class="prov-grid">${others.map((o) => html`<div class="card xs other" key=${o.id} title="Not supported by FastRouter yet">
+        <div class="prov-card"><div class="row grow" style="gap:12px;min-width:0"><${Logo} p=${o} />
+          <div class="grow" style="min-width:0"><div class="prov-name truncate">${o.name}</div>
+            <div class="prov-meta"><span class="sdot" style="background:#9ca3af"></span><span class="muted small">${OTHER_KIND[o.category] || o.category}</span></div></div></div>
+          <${Badge}>Not supported</${Badge}></div></div>`)}</div></div>`}
     ${modal && modal.t === "account" && html`<${AccountForm} data=${data} onClose=${() => setModal(null)} onSaved=${reload} />`}
     ${modal && modal.t === "node" && html`<${NodeForm} onClose=${() => setModal(null)} onSaved=${reload} />`}`;
 }
 
 function AccountForm({ data, provider, account, onClose, onSaved }) {
-  const choices = data.providers.filter((p) => p.kind === "apikey" || p.kind.endsWith("compatible"));
+  const choices = data.providers.filter((p) => p.kind === "apikey" || p.kind.endsWith("compatible")).sort((a, b) => provMeta(a).name.localeCompare(provMeta(b).name));
   const [prov, setProv] = useState(account ? account.provider : provider ? provider.id : choices[0] && choices[0].id);
   const p = data.providers.find((x) => x.id === prov);
   const [name, setName] = useState(account ? account.name : "");
@@ -499,30 +616,57 @@ function SignIn({ provider, conn, onClose, onSaved }) {
 }
 
 /* -------------------------------------------------------------- combos */
-function ModelChain({ models, empty }) {
+function ModelChain({ data, models, empty, sep = "chevron_right" }) {
   if (!models.length) return html`<span class="small muted">${empty}</span>`;
-  return html`<div class="combo-models">${models.map((m, i) => html`${i > 0 && html`<span class="arrow-sep"><${Icon} n="chevron_right" style="font-size:16px" /></span>`}<span class="chip" title=${m}>${m}</span>`)}</div>`;
+  return html`<div class="combo-models">${models.map((m, i) => html`${i > 0 && html`<span class="arrow-sep"><${Icon} n=${sep} style="font-size:16px" /></span>`}<${ModelTag} data=${data} id=${m} />`)}</div>`;
 }
+// The four combo strategies 9Router offers (combos/page.js STRATEGY_OPTIONS).
+const STRATEGY = {
+  fallback: { label: "Fallback", short: "Fallback", icon: "low_priority", badge: "primary", desc: "Always start with model 1; move to the next when it fails." },
+  "round-robin": { label: "Round-robin", short: "Round-robin", icon: "autorenew", badge: "info", desc: "Rotate the starting model on every request to spread load." },
+  smart: { label: "Smart Router", short: "Smart", icon: "auto_awesome", badge: "warning", desc: "System One style: a router model reads the request and picks the best model; sticky per conversation." },
+  fusion: { label: "Fusion", short: "Fusion", icon: "merge", badge: "success", desc: "Ask every model in parallel (the panel), then a judge model writes one answer from their replies." },
+};
+const POLICY = [["smart", "Smart"], ["strict", "Strict"], ["per-turn", "Per-turn"]];
+const POLICY_HINT = { smart: "Keep the conversation's model; switch only when the router is confident.", strict: "Pick once per conversation and never switch.", "per-turn": "Ask the router on every turn and follow its pick." };
 function ComboForm({ data, combo, onClose, onSaved }) {
   const [name, setName] = useState(combo ? combo.name : "");
   const [strategy, setStrategy] = useState(combo ? combo.strategy || "fallback" : "fallback");
   const [models, setModels] = useState(combo ? combo.models.slice() : []);
+  const [policy, setPolicy] = useState((combo && combo.smartPolicy) || "smart");
+  const [threshold, setThreshold] = useState(String((combo && combo.confidenceThreshold) || 0.8));
+  const [routerModel, setRouterModel] = useState((combo && combo.routerModel) || "");
+  const [judgeModel, setJudgeModel] = useState((combo && combo.judgeModel) || "");
   const [busy, setBusy] = useState(false);
   const save = async () => {
     setBusy(true);
     try {
       const body = { name, strategy, models };
+      if (strategy === "smart") Object.assign(body, { smartPolicy: policy, confidenceThreshold: Math.min(1, Math.max(0.1, parseFloat(threshold) || 0.8)), routerModel });
+      if (strategy === "fusion") body.judgeModel = judgeModel;
       if (combo) await run(() => api("PATCH", `/api/admin/combos/${combo.id}`, body), "Combo saved");
       else await run(() => api("POST", "/api/admin/combos", body), "Combo created");
       await onSaved(); onClose();
     } catch (e) { setBusy(false); }
   };
+  const self = combo ? combo.name : name;
   return html`<${Modal} wide title=${combo ? "Edit combo" : "New combo"} icon="layers" onClose=${onClose}
-    foot=${html`<button class="btn ghost" onClick=${onClose}>Cancel</button><button class="btn primary" disabled=${busy || !name || !models.length} onClick=${save}><${Icon} n="save" />Save combo</button>`}>
-    <div class="grid g2"><${Field} label="Combo name" hint="Clients call it as the model name."><input class="input mono" value=${name} placeholder="my-combo" onInput=${(e) => setName(e.target.value)} /></${Field}>
-      <${Field} label="Strategy" hint=${strategy === "fallback" ? "Always start with model 1; move on when it fails." : "Rotate the starting model on every request."}>
-        <${Seg} value=${strategy} onChange=${setStrategy} options=${[["fallback", "Fallback"], ["round-robin", "Round-robin"]]} /></${Field}></div>
-    <${Field} label="Models" hint="Drag to set the order. Each entry is prefix/model or another combo's name."><${ModelListEditor} models=${models} setModels=${setModels} known=${data.models} /></${Field}>
+    foot=${html`<button class="btn ghost" onClick=${onClose}>Cancel</button><button class="btn primary" disabled=${busy || !name || !models.length || (strategy === "fusion" && models.length < 2)} onClick=${save}><${Icon} n="save" />Save combo</button>`}>
+    <${Field} label="Combo name" hint="Clients call it as the model name."><input class="input mono" value=${name} placeholder="my-combo" onInput=${(e) => setName(e.target.value)} /></${Field}>
+    <${Field} label="Strategy"><div class="strat-grid">${Object.entries(STRATEGY).map(([k, v]) => html`
+      <button type="button" class="strat ${strategy === k ? "on" : ""}" onClick=${() => setStrategy(k)}>
+        <span class="strat-ic"><${Icon} n=${v.icon} /></span><span class="col" style="gap:2px;align-items:flex-start"><span class="strong">${v.label}</span><span class="small muted">${v.desc}</span></span>
+      </button>`)}</div></${Field}>
+    ${strategy === "smart" && html`<div class="section col" style="gap:14px;padding:14px">
+      <div class="grid g2"><${Field} label="Policy" hint=${POLICY_HINT[policy]}><${Seg} value=${policy} onChange=${setPolicy} options=${POLICY} /></${Field}>
+        <${Field} label="Confidence to switch" hint="0.1–1. Used by the Smart policy."><input class="input" type="number" min="0.1" max="1" step="0.05" value=${threshold} disabled=${policy !== "smart"} onInput=${(e) => setThreshold(e.target.value)} /></${Field}></div>
+      <${Field} label="Router model" hint="A fast, cheap model that answers with JSON. Fails open to the listed order after 8s."><${ModelSelect} data=${data} value=${routerModel} onChange=${setRouterModel} exclude=${self} placeholder="Default: model 1 of this combo" /></${Field}>
+    </div>`}
+    ${strategy === "fusion" && html`<div class="section col" style="gap:14px;padding:14px">
+      <${Field} label="Judge model" hint="Reads the panel's answers and writes the final reply, streamed to the client. Quorum of 2, 8s grace for stragglers, 90s cap."><${ModelSelect} data=${data} value=${judgeModel} onChange=${setJudgeModel} exclude=${self} placeholder="Default: model 1 of the panel" /></${Field}>
+    </div>`}
+    <${Field} label=${strategy === "fusion" ? "Panel models" : strategy === "smart" ? "Candidate models" : "Models"} hint=${strategy === "fusion" ? "At least two. All are asked in parallel; tools are stripped for the panel." : strategy === "smart" ? "The router picks one of these; the rest stay as fallbacks in this order." : "Drag to set the order. Each entry is prefix/model or another combo's name."}>
+      <${ModelListEditor} models=${models} setModels=${setModels} data=${data} exclude=${self} /></${Field}>
   </${Modal}>`;
 }
 
@@ -540,21 +684,24 @@ function CombosPage({ data, reload }) {
       : html`<div class="grid g2">${data.combos.map((c) => html`<div class="card" key=${c.id}>
           <div class="row between" style="margin-bottom:14px"><div class="row" style="gap:10px"><div class="saver-icon"><${Icon} n="layers" /></div>
             <div><div class="strong mono">${c.name}</div><div class="row" style="gap:6px;margin-top:3px">
-              <${Badge} kind=${c.strategy === "round-robin" ? "info" : "primary"}>${c.strategy === "round-robin" ? "Round-robin" : "Fallback"}</${Badge}>
+              <${Badge} kind=${(STRATEGY[c.strategy] || STRATEGY.fallback).badge} icon=${(STRATEGY[c.strategy] || STRATEGY.fallback).icon}>${(STRATEGY[c.strategy] || STRATEGY.fallback).label}</${Badge}>
+              ${c.strategy === "smart" && html`<span class="small muted">${c.smartPolicy || "smart"} policy</span>`}
               ${c.kind && html`<${Badge}>${c.kind}</${Badge}>`}<span class="small muted">${c.models.length} model${c.models.length === 1 ? "" : "s"}</span></div></div></div>
             <div class="row" style="gap:2px"><button class="icon-btn" title="Edit" onClick=${() => setModal({ t: "edit", c })}><${Icon} n="edit" /></button>
               <button class="icon-btn danger" title="Delete" onClick=${() => setModal({ t: "del", c })}><${Icon} n="delete" /></button></div></div>
-          <${ModelChain} models=${c.models} empty="Empty — add models to use it." />
+          <${ModelChain} data=${data} models=${c.models} sep=${c.strategy === "fusion" ? "add" : "chevron_right"} empty="Empty — add models to use it." />
+          ${c.strategy === "fusion" && html`<div class="small muted" style="margin-top:10px"><${Icon} n="gavel" style="font-size:14px;vertical-align:-2px" /> Judge: ${c.judgeModel ? html`<${ModelTag} data=${data} id=${c.judgeModel} />` : "model 1"}</div>`}
+          ${c.strategy === "smart" && html`<div class="small muted" style="margin-top:10px"><${Icon} n="alt_route" style="font-size:14px;vertical-align:-2px" /> Router: ${c.routerModel ? html`<${ModelTag} data=${data} id=${c.routerModel} />` : "model 1"}</div>`}
         </div>`)}</div>`}
     <div class="card">
       <div class="card-title"><div><h2><${Icon} n="image" />Vision adapter</h2><p>When a request carries images and the chosen model can't read them, FastRouter tries these vision models first.</p></div>
         <${Toggle} on=${v.enabled} onChange=${(on) => saveVision({ ...v, enabled: on })} /></div>
       <div class="row between section" style="padding:12px 14px;margin-bottom:14px"><div><div class="medium">Rotation</div><div class="small muted">Fallback keeps the order; round-robin spreads image requests.</div></div>
         <${Seg} value=${v.roundRobin ? "rr" : "fb"} onChange=${(x) => saveVision({ ...v, roundRobin: x === "rr" })} options=${[["fb", "Fallback"], ["rr", "Round-robin"]]} /></div>
-      ${vm ? html`<${ModelListEditor} models=${vm} setModels=${setVm} known=${data.models} />
+      ${vm ? html`<${ModelListEditor} models=${vm} setModels=${setVm} data=${data} />
           <div class="row" style="justify-content:flex-end;margin-top:12px;gap:8px"><button class="btn ghost" onClick=${() => setVm(null)}>Cancel</button>
             <button class="btn primary" onClick=${async () => { await saveVision({ ...v, models: vm }); setVm(null); }}><${Icon} n="save" />Save models</button></div>`
-        : html`<div class="row between" style="align-items:flex-start"><div class="grow"><${ModelChain} models=${v.models} empty="No vision models set." /></div>
+        : html`<div class="row between" style="align-items:flex-start"><div class="grow"><${ModelChain} data=${data} models=${v.models} empty="No vision models set." /></div>
             <button class="btn outline sm" onClick=${() => setVm(v.models.slice())}><${Icon} n="edit" />Edit models</button></div>`}
     </div>
     ${modal && modal.t === "new" && html`<${ComboForm} data=${data} onClose=${() => setModal(null)} onSaved=${reload} />`}
@@ -564,28 +711,190 @@ function CombosPage({ data, reload }) {
 }
 
 /* --------------------------------------------------------------- usage */
-function UsageTable({ title, icon, list, label }) {
+function UsageTable({ data, title, icon, list, label }) {
   const max = Math.max(1, ...list.map((r) => r.requests));
   return html`<div class="card flush"><div class="row between" style="padding:16px 18px"><h2 style="font-size:16px;font-weight:600" class="row"><${Icon} n=${icon} style="color:var(--primary)" />${title}</h2></div>
     ${list.length === 0 ? html`<p class="small muted" style="padding:0 18px 18px">No requests in this window.</p>` : html`<table class="table"><thead><tr><th>${label}</th><th>Requests</th><th class="num">Tokens in / out</th><th class="num">Cached</th><th class="num">Avg latency</th><th class="num">Cost</th></tr></thead>
-      <tbody>${list.map((r) => html`<tr><td class="mono small">${r.name || r.key}${r.provider ? html`<span class="muted"> · ${r.provider}</span>` : ""}</td>
+      <tbody>${list.map((r) => { const [pid, model] = label === "Model" ? splitModel(r.key) : [r.provider || r.key, ""];
+        const p = data && data.providers.find((x) => x.id === (label === "Provider" ? r.key : pid));
+        const name = label === "Provider" || label === "Model" ? "" : r.name || r.key;
+        return html`<tr><td class="small">${p ? html`<div class="row" style="gap:8px;min-width:0"><${Logo} p=${p} xs />${name && html`<span class="mono">${name}</span><span class="muted">·</span>`}<span class=${name ? "muted" : ""}>${provMeta(p).name}</span>${model && html`<span class="muted">/</span><span class="mono truncate">${model}</span>`}</div>`
+          : html`<span class="mono">${r.name || r.key}</span>`}</td>
         <td><div class="row" style="gap:8px"><div class="bar grow"><i style=${`width:${(100 * r.requests) / max}%`}></i></div><span class="small" style="min-width:42px">${fmt(r.requests)}</span>${r.failures ? html`<${Badge} kind="error">${r.failures} failed</${Badge}>` : ""}</div></td>
-        <td class="num small">${fmt(r.input_tokens)} / ${fmt(r.output_tokens)}</td><td class="num small muted">${fmt(r.cache_read_tokens)}</td><td class="num small">${r.avg_latency_ms} ms</td><td class="num small">${money(r.cost_usd)}</td></tr>`)}</tbody></table>`}</div>`;
+        <td class="num small">${fmt(r.input_tokens)} / ${fmt(r.output_tokens)}</td><td class="num small muted">${fmt(r.cache_read_tokens)}</td><td class="num small">${r.avg_latency_ms} ms</td><td class="num small">${money(r.cost_usd)}</td></tr>`; })}</tbody></table>`}</div>`;
 }
-function UsagePage() {
-  const [win, setWin] = useState("24h");
+// Usage page, after 9Router's usage/page.js: Overview / Details tabs, period
+// pills, five stat cards, provider topology, recent requests and a chart.
+const PERIODS = [["today", "Today"], ["24h", "24h"], ["7d", "7D"], ["30d", "30D"], ["60d", "60D"], ["all", "All"]];
+function UsagePage({ data }) {
+  const [tab, setTab] = useState("overview");
+  const [period, setPeriod] = useState("7d");
   const [u, setU] = useState(null);
-  useEffect(() => { setU(null); api("GET", "/api/usage?window=" + win).then(setU).catch((e) => setU({ error: e.message })); }, [win]);
-  const rows = (u && u.models) || [];
-  const t = rows.reduce((a, r) => ({ req: a.req + r.requests, fail: a.fail + r.failures, inp: a.inp + r.input_tokens, out: a.out + r.output_tokens, cache: a.cache + r.cache_read_tokens, cost: a.cost + r.cost_usd }), { req: 0, fail: 0, inp: 0, out: 0, cache: 0, cost: 0 });
-  const stats = [["speed", "Requests", fmt(t.req), t.fail ? `${t.fail} failed` : "all succeeded"], ["arrow_downward", "Input tokens", fmt(t.inp), `${fmt(t.cache)} from cache`],
-    ["arrow_upward", "Output tokens", fmt(t.out), "including reasoning"], ["payments", "Estimated cost", money(t.cost), "from 9Router's price table"]];
+  useEffect(() => {
+    let stop = false, t;
+    const load = () => api("GET", "/api/usage?period=" + period).then((x) => { if (!stop) setU(x); }, (e) => !stop && setU({ error: e.message }))
+      .finally(() => { if (!stop) t = setTimeout(load, 5000); });
+    setU(null); load();
+    return () => { stop = true; clearTimeout(t); };
+  }, [period]);
   return html`
-    <div class="row between"><${Seg} value=${win} onChange=${setWin} options=${[["24h", "24 hours"], ["7d", "7 days"], ["30d", "30 days"], ["all", "All time"]]} /></div>
+    <div class="row between" style="flex-wrap:wrap;gap:12px">
+      <div class="tabs">${[["overview", "Overview", "dashboard"], ["details", "Details", "receipt_long"]].map(([k, l, ic]) => html`
+        <button class=${tab === k ? "on" : ""} onClick=${() => setTab(k)}><${Icon} n=${ic} />${l}</button>`)}</div>
+      <div class="pills">${PERIODS.map(([k, l]) => html`<button class=${period === k ? "on" : ""} onClick=${() => setPeriod(k)}>${l}</button>`)}</div>
+    </div>
     ${u && u.error && html`<div class="notice err"><${Icon} n="error" />${u.error}</div>`}
-    <div class="grid g4">${stats.map(([ic, l, v, s]) => html`<div class="card sm stat"><span class="label"><${Icon} n=${ic} />${l}</span><span class="value">${u ? v : "…"}</span><span class="sub">${s}</span></div>`)}</div>
-    ${u ? html`<${UsageTable} title="By model" icon="memory" list=${rows} label="Model" /><${UsageTable} title="By account" icon="group" list=${u.accounts || []} label="Account" />
-      <${UsageTable} title="By API key" icon="vpn_key" list=${u.keys || []} label="Key" />` : html`<div class="skeleton"></div>`}`;
+    ${tab === "overview" ? html`<${UsageOverview} data=${data} u=${u} onDetails=${() => setTab("details")} />` : html`<${UsageDetails} data=${data} period=${period} />`}`;
+}
+function UsageCards({ u }) {
+  const rows = (u && u.providers) || [];
+  const t = rows.reduce((a, r) => ({ req: a.req + r.requests, fail: a.fail + r.failures, inp: a.inp + r.input_tokens, out: a.out + r.output_tokens, cache: a.cache + r.cache_read_tokens, cost: a.cost + r.cost_usd }), { req: 0, fail: 0, inp: 0, out: 0, cache: 0, cost: 0 });
+  const cards = [["speed", "Total requests", fmt(t.req), t.fail ? `${fmt(t.fail)} failed` : "all succeeded", ""],
+    ["input", "Total input tokens", fmt(t.inp), "prompt side", "orange"],
+    ["cached", "Cached tokens", fmt(t.cache), t.inp ? `${Math.round((100 * t.cache) / t.inp)}% of input` : "prompt cache hits", "blue"],
+    ["output", "Output tokens", fmt(t.out), "including reasoning", "green"],
+    ["payments", "Est. cost", money(t.cost), "Estimated, not actual billing", "yellow"]];
+  return html`<div class="grid g5">${cards.map(([ic, l, v, sub, c]) => html`<div class="card sm stat ${c}">
+    <span class="label"><${Icon} n=${ic} />${l}</span><span class="value">${u ? v : "…"}</span><span class="sub">${sub}</span></div>`)}</div>`;
+}
+function UsageOverview({ data, u, onDetails }) {
+  const [chart, setChart] = useState("tokens");
+  return html`
+    <${UsageCards} u=${u} />
+    <div class="usage-row">
+      <div class="card flush grow" style="min-width:0"><div class="row between" style="padding:14px 18px 0">
+        <h2 class="row h-sm"><${Icon} n="hub" style="color:var(--primary)" />Provider topology</h2>
+        <span class="small muted">${u && Object.keys(u.active || {}).length ? html`<span class="live-dot"></span>live` : "last request highlighted"}</span></div>
+        <${Topology} data=${data} u=${u} /></div>
+      <div class="card flush recent"><div class="row between" style="padding:14px 16px 10px;border-bottom:1px solid var(--border-subtle)">
+        <h2 class="row h-sm"><${Icon} n="history" style="color:var(--primary)" />Recent requests</h2><button class="btn ghost sm" onClick=${onDetails}>View all<${Icon} n="chevron_right" /></button></div>
+        <div class="recent-list">${!u ? html`<div class="skeleton" style="margin:12px"></div>` : (u.recent || []).length === 0 ? html`<p class="small muted" style="padding:16px">No requests yet.</p>`
+          : u.recent.map((r, i) => { const p = data.providers.find((x) => x.id === r.provider); return html`<div class="recent-item" key=${i}>
+            ${p ? html`<${Logo} p=${p} xs />` : html`<span class="mtag-ic"><${Icon} n="help" /></span>`}
+            <div class="grow" style="min-width:0"><div class="row" style="gap:6px"><span class="mono small truncate strong">${r.model}</span>${r.status >= 400 || r.status === 0 ? html`<span class="sdot" style="background:var(--danger)" title=${"HTTP " + r.status}></span>` : ""}</div>
+              <div class="tiny muted row" style="gap:8px"><span class="tok-in">${fmt(r.input_tokens)}↑</span><span class="tok-out">${fmt(r.output_tokens)}↓</span><span>${p ? provMeta(p).name : r.provider}</span></div></div>
+            <span class="tiny muted nowrap">${ago(r.at)}</span></div>`; })}</div></div>
+    </div>
+    <div class="card"><div class="row between" style="margin-bottom:10px">
+      <h2 class="row h-sm"><${Icon} n="show_chart" style="color:var(--primary)" />${u && (u.period === "today" || u.period === "24h") ? "By hour" : "By day"}</h2>
+      <div class="pills sm">${[["tokens", "Tokens"], ["requests", "Requests"], ["cost", "Cost"]].map(([k, l]) => html`<button class=${chart === k ? "on" : ""} onClick=${() => setChart(k)}>${l}</button>`)}</div></div>
+      ${u ? html`<${AreaChart} points=${u.series || []} metric=${chart} />` : html`<div class="skeleton"></div>`}</div>
+    ${u ? html`<${UsageTable} data=${data} title="By provider" icon="dns" list=${u.providers || []} label="Provider" />
+      <${UsageTable} data=${data} title="By model" icon="memory" list=${u.models || []} label="Model" />
+      <${UsageTable} data=${data} title="By account" icon="group" list=${u.accounts || []} label="Account" />
+      <${UsageTable} title="By API key" icon="vpn_key" list=${u.keys || []} label="Key" />` : ""}`;
+}
+
+// SVG topology: FastRouter in the middle, providers on an ellipse ring.
+// The edge of the last request is orange (red if it failed); live ones animate.
+function Topology({ data, u }) {
+  const W = 900, H = 500, cx = W / 2, cy = H / 2;
+  const [view, setView] = useState({ k: 1, x: 0, y: 0 });
+  const [drag, setDrag] = useState(null);
+  const used = new Set(((u && u.providers) || []).map((r) => r.key));
+  const nodes = data.providers.filter((p) => p.accounts.length > 0 || used.has(p.id));
+  const stats = Object.fromEntries(((u && u.providers) || []).map((r) => [r.key, r]));
+  const last = u && u.recent && u.recent[0];
+  const active = (u && u.active) || {};
+  // Crowded rings alternate between an outer and an inner ellipse.
+  const n = Math.max(nodes.length, 1), two = n > 12;
+  const pos = (i) => { const a = -Math.PI / 2 + (i * 2 * Math.PI) / n, f = two && i % 2 ? 0.66 : 1; return [cx + 370 * f * Math.cos(a), cy + 205 * f * Math.sin(a)]; };
+  const zoom = (f) => setView((v) => ({ ...v, k: Math.min(3, Math.max(0.4, v.k * f)) }));
+  const fit = () => setView({ k: 1, x: 0, y: 0 });
+  const t = `translate(${cx + view.x} ${cy + view.y}) scale(${view.k}) translate(${-cx} ${-cy})`;
+  const down = (e) => { setDrag({ sx: e.clientX, sy: e.clientY, x: view.x, y: view.y, w: e.currentTarget.getBoundingClientRect().width }); };
+  const moveP = (e) => { if (!drag) return; const f = W / drag.w; setView((v) => ({ ...v, x: drag.x + (e.clientX - drag.sx) * f, y: drag.y + (e.clientY - drag.sy) * f })); };
+  return html`<div class="topo-wrap">
+    <svg viewBox="0 0 ${W} ${H}" class="topo-svg ${drag ? "grabbing" : ""}" onPointerDown=${down} onPointerMove=${moveP} onPointerUp=${() => setDrag(null)} onPointerLeave=${() => setDrag(null)}
+      onWheel=${(e) => { e.preventDefault(); zoom(e.deltaY < 0 ? 1.1 : 0.9); }}>
+      <defs><radialGradient id="hubg" cx="50%" cy="35%" r="70%"><stop offset="0" stop-color="#fb923c" /><stop offset="1" stop-color="#ea580c" /></radialGradient></defs>
+      <g transform=${t}>
+        <ellipse cx=${cx} cy=${cy} rx="370" ry="205" class="topo-ring" />${two && html`<ellipse cx=${cx} cy=${cy} rx=${370 * 0.66} ry=${205 * 0.66} class="topo-ring" />`}
+        ${nodes.map((p, i) => {
+          const [x, y] = pos(i);
+          const isLast = last && last.provider === p.id, bad = isLast && (last.status >= 400 || last.status === 0), live = active[p.id] > 0;
+          return html`<line key=${"e" + p.id} x1=${cx} y1=${cy} x2=${x} y2=${y} class="topo-edge ${live ? "live" : ""} ${isLast ? (bad ? "err" : "last") : ""} ${stats[p.id] ? "used" : ""}" />`;
+        })}
+        ${nodes.map((p, i) => {
+          const [x, y] = pos(i);
+          const m = provMeta(p), st = stats[p.id], isLast = last && last.provider === p.id;
+          const label = m.name.length > 16 ? m.name.slice(0, 15) + "…" : m.name;
+          return html`<g key=${"n" + p.id} class="topo-pnode ${isLast ? "last" : ""} ${st ? "" : "idle"}" transform="translate(${x} ${y})">
+            <title>${m.name} · ${p.prefix}/${st ? ` · ${st.requests} requests · ${fmt(st.input_tokens + st.output_tokens)} tokens` : ""}</title>
+            <rect x="-62" y="-20" width="124" height="40" rx="12" />
+            <circle cx="-42" cy="0" r="13" fill=${m.color + "22"} /><image href=${m.logo} x="-53" y="-11" width="22" height="22" />
+            <text x="-24" y="-2" class="nm">${label}</text><text x="-24" y="12" class="sub">${st ? `${fmt(st.requests)} req · ${fmt(st.input_tokens + st.output_tokens)} tok` : p.prefix + "/"}</text>
+            ${active[p.id] > 0 && html`<circle cx="56" cy="-14" r="5" class="topo-live" />`}</g>`;
+        })}
+        <g transform="translate(${cx} ${cy})" class="topo-hub">
+          <circle r="54" class="halo" /><circle r="44" fill="url(#hubg)" />
+          <path d="M13 2L3 14h7l-1 8 10-12h-7z" transform="translate(-14 -30) scale(1.15)" fill="#fff" />
+          <text y="16" text-anchor="middle" class="hub-t">FastRouter</text>
+          <text y="74" text-anchor="middle" class="hub-s">${nodes.length} provider${nodes.length === 1 ? "" : "s"}</text></g>
+      </g>
+      ${nodes.length === 0 && html`<text x=${cx} y=${cy + 90} text-anchor="middle" class="hub-s">Add a provider account to see it here</text>`}
+    </svg>
+    <div class="zoom">
+      <button class="icon-btn" title="Zoom in" onClick=${() => zoom(1.2)}><${Icon} n="zoom_in" /></button>
+      <button class="icon-btn" title="Zoom out" onClick=${() => zoom(1 / 1.2)}><${Icon} n="zoom_out" /></button>
+      <button class="icon-btn" title="Fit" onClick=${fit}><${Icon} n="fit_screen" /></button></div>
+    ${last && html`<div class="topo-legend"><span><i class="l-last"></i>last request</span><span><i class="l-live"></i>in flight</span><span><i class="l-err"></i>failed</span></div>`}
+  </div>`;
+}
+
+const METRIC = { tokens: { color: "#f97316", f: fmt, label: "tokens" }, requests: { color: "#3b82f6", f: fmt, label: "requests" }, cost: { color: "#eab308", f: money, label: "est. cost" } };
+function AreaChart({ points, metric }) {
+  const [hover, setHover] = useState(-1);
+  const M = METRIC[metric], W = 900, H = 210, L = 52, R = 28, T = 12, B = 28;
+  if (!points.length) return html`<p class="small muted">No data.</p>`;
+  const vals = points.map((p) => p[metric] || 0);
+  const max = Math.max(...vals) || 1;
+  const step = (W - L - R) / Math.max(points.length - 1, 1);
+  const X = (i) => L + i * step, Y = (v) => T + (H - T - B) * (1 - v / max);
+  const line = vals.map((v, i) => `${i ? "L" : "M"}${X(i).toFixed(1)},${Y(v).toFixed(1)}`).join(" ");
+  const area = `${line} L${X(vals.length - 1)},${H - B} L${L},${H - B} Z`;
+  const every = Math.ceil(points.length / 10);
+  const onMove = (e) => { const r = e.currentTarget.getBoundingClientRect(); const x = ((e.clientX - r.left) / r.width) * W; setHover(Math.max(0, Math.min(points.length - 1, Math.round((x - L) / step)))); };
+  const id = "ag-" + metric;
+  return html`<div class="chart-wrap"><svg viewBox="0 0 ${W} ${H}" class="chart" onMouseMove=${onMove} onMouseLeave=${() => setHover(-1)}>
+    <defs><linearGradient id=${id} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color=${M.color} stop-opacity=".35" /><stop offset="1" stop-color=${M.color} stop-opacity="0" /></linearGradient></defs>
+    ${[0, 0.25, 0.5, 0.75, 1].map((f) => html`<line x1=${L} x2=${W - R} y1=${Y(max * f)} y2=${Y(max * f)} class="grid-l" /><text x=${L - 8} y=${Y(max * f) + 4} text-anchor="end" class="axis">${M.f(metric === "cost" ? max * f : Math.round(max * f))}</text>`)}
+    ${points.map((p, i) => i % every === 0 && html`<text x=${X(i)} y=${H - 8} text-anchor="middle" class="axis">${p.label}</text>`)}
+    <path d=${area} fill=${`url(#${id})`} /><path d=${line} fill="none" stroke=${M.color} stroke-width="2.2" stroke-linejoin="round" />
+    ${hover >= 0 && html`<line x1=${X(hover)} x2=${X(hover)} y1=${T} y2=${H - B} class="hover-l" /><circle cx=${X(hover)} cy=${Y(vals[hover])} r="4.5" fill=${M.color} stroke="#fff" stroke-width="2" />`}
+  </svg>${hover >= 0 && html`<div class="chart-tip" style=${`left:${(100 * X(hover)) / W}%`}><div class="strong">${points[hover].label}</div>
+    <div>${fmt(points[hover].tokens)} tokens</div><div>${fmt(points[hover].requests)} requests</div><div>${money(points[hover].cost)}</div></div>`}</div>`;
+}
+
+function UsageDetails({ data, period }) {
+  const [prov, setProv] = useState("");
+  const [page, setPage] = useState(0);
+  const [r, setR] = useState(null);
+  const size = 50;
+  useEffect(() => { setPage(0); }, [period, prov]);
+  useEffect(() => {
+    setR(null);
+    api("GET", `/api/usage/requests?period=${period}&limit=${size}&offset=${page * size}${prov ? "&provider=" + encodeURIComponent(prov) : ""}`).then(setR, (e) => setR({ error: e.message }));
+  }, [period, prov, page]);
+  const provs = data.providers.filter((p) => p.accounts.length > 0);
+  const total = (r && r.total) || 0;
+  return html`<div class="card flush">
+    <div class="row between" style="padding:14px 18px;gap:12px;flex-wrap:wrap"><h2 class="row h-sm"><${Icon} n="receipt_long" style="color:var(--primary)" />Requests<span class="count">${fmt(total)}</span></h2>
+      <select class="input" style="width:240px" value=${prov} onChange=${(e) => setProv(e.target.value)}><option value="">All providers</option>
+        ${provs.map((p) => html`<option value=${p.id}>${provMeta(p).name}</option>`)}</select></div>
+    ${!r ? html`<div class="skeleton" style="margin:0 18px 18px"></div>` : r.error ? html`<div class="notice err" style="margin:0 18px 18px">${r.error}</div>` : r.requests.length === 0 ? html`<p class="small muted" style="padding:0 18px 18px">No requests in this period.</p>`
+      : html`<table class="table"><thead><tr><th>Time</th><th>Provider</th><th>Model</th><th>Account</th><th>Status</th><th class="num">In ↑</th><th class="num">Out ↓</th><th class="num">Cached</th><th class="num">Latency</th><th class="num">Cost</th></tr></thead>
+        <tbody>${r.requests.map((x, i) => { const p = data.providers.find((y) => y.id === x.provider); return html`<tr key=${i}>
+          <td class="small nowrap" title=${x.at}>${new Date(x.at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td>
+          <td><div class="row" style="gap:8px">${p && html`<${Logo} p=${p} xs />`}<span class="small">${p ? provMeta(p).name : x.provider}</span></div></td>
+          <td class="mono small">${x.model}</td><td class="small muted">${x.account}</td>
+          <td>${x.status >= 200 && x.status < 300 ? html`<${Badge} kind="success">${x.status}</${Badge}>` : html`<${Badge} kind="error">${x.status || "net"}</${Badge}>`}</td>
+          <td class="num small tok-in">${fmt(x.input_tokens)}</td><td class="num small tok-out">${fmt(x.output_tokens)}</td><td class="num small muted">${fmt(x.cache_read_tokens)}</td>
+          <td class="num small">${x.latency_ms} ms</td><td class="num small">${money(x.cost_usd)}</td></tr>`; })}</tbody></table>`}
+    ${total > size && html`<div class="row between" style="padding:12px 18px;border-top:1px solid var(--border-subtle)"><span class="small muted">${page * size + 1}–${Math.min(total, (page + 1) * size)} of ${fmt(total)}</span>
+      <div class="row" style="gap:6px"><button class="btn outline sm" disabled=${page === 0} onClick=${() => setPage(page - 1)}><${Icon} n="chevron_left" />Prev</button>
+        <button class="btn outline sm" disabled=${(page + 1) * size >= total} onClick=${() => setPage(page + 1)}>Next<${Icon} n="chevron_right" /></button></div></div>`}
+  </div>`;
 }
 
 /* --------------------------------------------------------------- quota */
@@ -656,7 +965,7 @@ function KeyForm({ data, k, onClose, onSaved }) {
     foot=${html`<button class="btn ghost" onClick=${onClose}>Cancel</button><button class="btn primary" disabled=${busy || !name} onClick=${save}><${Icon} n=${k ? "save" : "add"} />${k ? "Save" : "Create key"}</button>`}>
     <${Field} label="Name"><input class="input" value=${name} placeholder="e.g. laptop, claude-code" onInput=${(e) => setName(e.target.value)} /></${Field}>
     <div class="row between section" style="padding:12px 14px"><div><div class="medium">Restrict models</div><div class="small muted">Only allow the models and combos listed below. Globs like <code>ds/*</code> work.</div></div><${Toggle} on=${restricted} onChange=${setRestricted} /></div>
-    ${restricted && html`<${ModelListEditor} models=${allow} setModels=${setAllow} known=${data.models} />`}
+    ${restricted && html`<${ModelListEditor} models=${allow} setModels=${setAllow} data=${data} globs />`}
   </${Modal}>`;
 }
 
@@ -711,21 +1020,24 @@ function CliPage({ data }) {
 }
 
 /* ------------------------------------------------------------ settings */
-const THINK = [["auto", "Auto"], ["off", "Off"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["max", "Max"]];
-function SettingsPage({ data, reload, relogin }) {
+function TokenSaverPage({ data, reload }) {
   const s = data.settings;
   const locked = (k) => s.lockedByConfig.includes(k);
   const save = (body, ok = "Settings saved") => run(async () => { await api("PATCH", "/api/admin/settings", body); await reload(); }, ok);
   const [hrUrl, setHrUrl] = useState(s.headroomUrl);
-  const [sticky, setSticky] = useState(String(s.stickyRoundRobinLimit));
   const Lock = ({ k }) => locked(k) && html`<span class="lock" title="Set in the config file"><${Icon} n="lock" />config file</span>`;
-  const routed = data.providers.filter((p) => p.accounts.length > 0 && p.kind !== "plugin");
   const saver = (icon, title, desc, enabledKey, levelKey, lockKey, extra) => html`<div class="set-row" style="align-items:flex-start">
     <div class="saver-head" style="align-items:flex-start"><div class="saver-icon"><${Icon} n=${icon} /></div>
       <div><div class="t">${title}<${Lock} k=${lockKey} /></div><div class="d">${desc}</div>${extra}</div></div>
     <div class="row" style="gap:12px">${levelKey && s[enabledKey] && html`<${Seg} value=${s[levelKey]} disabled=${locked(lockKey)} onChange=${(v) => save({ [levelKey]: v })} options=${[["lite", "Lite"], ["full", "Full"], ["ultra", "Ultra"]]} />`}
       <${Toggle} on=${s[enabledKey]} disabled=${locked(lockKey)} onChange=${(v) => save({ [enabledKey]: v }, v ? title + " on" : title + " off")} /></div></div>`;
+  const on = [s.rtkEnabled, s.cavemanEnabled, s.ponytailEnabled, s.headroomEnabled].filter(Boolean).length;
   return html`
+    <div class="grid g3">
+      <div class="card sm stat"><span class="label"><${Icon} n="savings" />Savers on</span><span class="value">${on} / 4</span><span class="sub">applied to every request</span></div>
+      <div class="card sm stat"><span class="label"><${Icon} n="bolt" />Hot path</span><span class="value">in-process</span><span class="sub">RTK, Caveman and Ponytail run inside FastRouter</span></div>
+      <div class="card sm stat"><span class="label"><${Icon} n="cloud_sync" />Headroom</span><span class="value">${s.headroomEnabled ? "on" : "off"}</span><span class="sub">${s.headroomEnabled ? "falls back to direct if down" : "optional compression server"}</span></div>
+    </div>
     <div class="card">
       <div class="card-title"><div><h2><${Icon} n="compress" />Token savers</h2><p>Shrink what goes upstream. Applied to every request; changes take effect immediately.</p></div></div>
       ${saver("terminal", "RTK", "Compresses long tool output (test logs, git diffs, builds) before it reaches the model.", "rtkEnabled", null, "rtkEnabled")}
@@ -735,7 +1047,66 @@ function SettingsPage({ data, reload, relogin }) {
         s.headroomEnabled && html`<div class="row" style="gap:8px;margin-top:10px;flex-wrap:wrap"><input class="input mono" style="width:280px" value=${hrUrl} disabled=${locked("headroomUrl")} onInput=${(e) => setHrUrl(e.target.value)} />
           <button class="btn outline sm" disabled=${hrUrl === s.headroomUrl || locked("headroomUrl")} onClick=${() => save({ headroomUrl: hrUrl })}>Save URL</button>
           <label class="row small" style="gap:8px"><${Toggle} sm on=${s.headroomCodeAware} disabled=${locked("headroomCodeAware")} onChange=${(v) => save({ headroomCodeAware: v })} />Code-aware</label></div>`)}
+    </div>`;
+}
+
+/* ---------------------------------------------------------- console log */
+// Live log over SSE (/api/admin/logs/stream), after 9Router's ConsoleLogClient.
+const LEVELS = [["all", "All"], ["info", "Info"], ["warn", "Warn"], ["error", "Error"], ["debug", "Combo"]];
+function ConsoleLogPage() {
+  const [lines, setLines] = useState([]);
+  const [conn, setConn] = useState("connecting");
+  const [level, setLevel] = useState("all");
+  const [q, setQ] = useState("");
+  const [follow, setFollow] = useState(true);
+  const [paused, setPaused] = useState(false);
+  const box = useRef(null);
+  const pausedRef = useRef(false);
+  pausedRef.current = paused;
+  useEffect(() => {
+    const es = new EventSource("/api/admin/logs/stream");
+    es.addEventListener("init", (e) => { setLines(JSON.parse(e.data) || []); setConn("live"); });
+    es.addEventListener("line", (e) => { if (pausedRef.current) return; const l = JSON.parse(e.data); setLines((xs) => (xs.length >= 1000 ? [...xs.slice(-999), l] : [...xs, l])); });
+    es.addEventListener("clear", () => setLines([]));
+    es.onerror = () => setConn("reconnecting");
+    es.onopen = () => setConn("live");
+    return () => es.close();
+  }, []);
+  const ok = matcher(q);
+  const shown = lines.filter((l) => (level === "all" || l.level === level) && ok(l.text));
+  useEffect(() => { if (follow && box.current) box.current.scrollTop = box.current.scrollHeight; }, [shown.length, follow]);
+  const counts = lines.reduce((m, l) => ((m[l.level] = (m[l.level] || 0) + 1), m), {});
+  const clear = () => run(() => api("DELETE", "/api/admin/logs"), "Log cleared");
+  const time = (ts) => new Date(ts).toLocaleTimeString([], { hour12: false });
+  return html`
+    <div class="row between" style="flex-wrap:wrap;gap:10px">
+      <div class="row" style="gap:10px;flex-wrap:wrap">
+        <${Badge} kind=${conn === "live" ? "success" : "warning"} dot>${conn === "live" ? (paused ? "Paused" : "Live") : "Reconnecting…"}</${Badge}>
+        <div class="pills">${LEVELS.map(([k, l]) => html`<button class=${level === k ? "on" : ""} onClick=${() => setLevel(k)}>${l}${k !== "all" && counts[k] ? html`<span class="pill-n lv-${k}">${counts[k]}</span>` : ""}</button>`)}</div>
+        <div class="picker-search" style="width:260px"><${Icon} n="search" /><input class="input" placeholder="Filter lines…" value=${q} onInput=${(e) => setQ(e.target.value)} /></div>
+      </div>
+      <div class="row" style="gap:8px">
+        <label class="row small" style="gap:8px"><${Toggle} sm on=${follow} onChange=${setFollow} />Auto-scroll</label>
+        <button class="btn outline sm" onClick=${() => setPaused(!paused)}><${Icon} n=${paused ? "play_arrow" : "pause"} />${paused ? "Resume" : "Pause"}</button>
+        <button class="btn outline sm danger-text" onClick=${clear}><${Icon} n="delete_sweep" />Clear</button></div>
     </div>
+    <div class="console" ref=${box}>
+      ${shown.length === 0 ? html`<div class="console-empty">${lines.length ? "No lines match the filter." : "Waiting for log lines… Requests, retries, combo picks and reloads show up here."}</div>`
+        : shown.map((l) => html`<div class="cl lv-${l.level}" key=${l.id}><span class="cl-t">${time(l.at)}</span><span class="cl-l">${l.level === "debug" ? "combo" : l.level}</span><span class="cl-x">${l.text}</span></div>`)}
+    </div>
+    <p class="tiny muted">Keeps the last 1,000 lines in memory. API keys, tokens and email addresses are masked before a line is stored.</p>`;
+}
+
+const THINK = [["auto", "Auto"], ["off", "Off"], ["low", "Low"], ["medium", "Medium"], ["high", "High"], ["max", "Max"]];
+function SettingsPage({ data, reload, relogin }) {
+  const s = data.settings;
+  const locked = (k) => s.lockedByConfig.includes(k);
+  const save = (body, ok = "Settings saved") => run(async () => { await api("PATCH", "/api/admin/settings", body); await reload(); }, ok);
+  const [sticky, setSticky] = useState(String(s.stickyRoundRobinLimit));
+  const routed = data.providers.filter((p) => p.accounts.length > 0 && p.kind !== "plugin");
+  return html`
+    <a class="card xs hover row between" href="#/token-saver" style="text-decoration:none;color:inherit"><div class="saver-head"><div class="saver-icon"><${Icon} n="savings" /></div>
+      <div><div class="t">Token savers moved</div><div class="d">RTK, Caveman, Ponytail and Headroom now have their own page.</div></div></div><${Icon} n="chevron_right" /></a>
     <div class="grid g2" style="align-items:start">
       <div class="card">
         <div class="card-title"><div><h2><${Icon} n="psychology" />Thinking</h2><p>Reasoning effort per provider. Auto passes through whatever the client asked for.</p></div></div>
@@ -784,7 +1155,7 @@ function PasswordCard({ passwordSet, relogin }) {
 }
 
 /* ----------------------------------------------------------------- app */
-const PAGES = { endpoint: EndpointPage, providers: ProvidersPage, combos: CombosPage, usage: UsagePage, quota: QuotaPage, keys: KeysPage, cli: CliPage, settings: SettingsPage };
+const PAGES = { endpoint: EndpointPage, providers: ProvidersPage, combos: CombosPage, usage: UsagePage, quota: QuotaPage, keys: KeysPage, cli: CliPage, settings: SettingsPage, "token-saver": TokenSaverPage, "console-log": ConsoleLogPage };
 function App() {
   const hash = useHash();
   const [dark, toggleTheme] = useTheme();
