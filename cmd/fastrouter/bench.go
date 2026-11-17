@@ -105,11 +105,11 @@ func runBench(cfgPath, host string, port int, o bench.Options, working, asJSON, 
 	fmt.Fprintln(tw, "\nCLIENT\tMODEL\tENDPOINT\tOK\tTTFT min/avg/p50/p95 ms\tSPEED\tTOTAL avg/p95 ms\tTOK/S\tOVERHEAD avg/p95 ms\tACCOUNTS\tERRORS")
 	for _, s := range sum {
 		ttft, speed := fmt.Sprintf("%.0f / %.0f / %.0f / %.0f", s.TTFT.Min, s.TTFT.Avg, s.TTFT.P50, s.TTFT.P95), bench.SpeedLabel(s.TTFT.Avg)
-		if s.TTFTRuns == 0 {
+		switch {
+		case s.OK == 0:
+			ttft, speed = "—", "—"
+		case s.TTFTRuns == 0:
 			ttft, speed = "— (no visible output)", bench.SpeedLabel(s.Total.Avg)
-		}
-		if s.OK == 0 {
-			speed = "—"
 		}
 		fmt.Fprintf(tw, "%s\t%s\t%s\t%d/%d\t%s\t%s\t%.0f / %.0f\t%.1f\t%.2f / %.2f (%s)\t%s\t%s\n", s.Client, s.Model, s.Endpoint, s.OK, s.Runs,
 			ttft, speed, s.Total.Avg, s.Total.P95, s.TokPS, s.Overhead.Avg, s.Overhead.P95, bench.OverheadLabel(s.Overhead.Avg), s.Accounts, s.Errors)

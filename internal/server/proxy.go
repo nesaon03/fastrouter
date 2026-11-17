@@ -305,6 +305,9 @@ func (s *Server) upstreamBody(p *proxyReq, t router.Target, uf tr.Format) ([]byt
 		if t.Provider.ID == "openai" && p.cf == tr.OpenAI && p.head.MaxTokens > 0 {
 			b = renameTopLevelKey(b, "max_tokens", "max_completion_tokens") // current OpenAI models reject max_tokens
 		}
+		if t.Provider.ID == "openai" && openAIReasoningModel(t.Model) {
+			b = dropSampling(b)
+		}
 		return b, nil
 	}
 	ir, err := p.parse()
@@ -317,6 +320,9 @@ func (s *Server) upstreamBody(p *proxyReq, t router.Target, uf tr.Format) ([]byt
 		req.Thinking = modeThinking(mode)
 	}
 	prov := t.Provider
+	if prov.ID == "openai" && openAIReasoningModel(t.Model) {
+		req.Temperature, req.TopP = keepDefault(req.Temperature), keepDefault(req.TopP)
+	}
 	return tr.EmitRequest(uf, &req, tr.EmitOptions{
 		Model:            t.Model,
 		KeepCacheControl: prov.CacheControl,

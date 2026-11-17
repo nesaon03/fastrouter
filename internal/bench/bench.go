@@ -563,6 +563,8 @@ func classify(status int, msg string) string {
 		return "quota"
 	case status == 429:
 		return "rate_limit"
+	case status == 400 && (strings.Contains(l, "unsupported") || strings.Contains(l, "invalid")):
+		return "bad_request"
 	case status == 404 || strings.Contains(l, "model"):
 		return "model"
 	case status == 400 || status == 413 || status == 422:

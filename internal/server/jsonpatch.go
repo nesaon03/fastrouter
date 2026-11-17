@@ -2,7 +2,9 @@ package server
 
 import (
 	"bytes"
+	"encoding/json"
 	"strconv"
+	"strings"
 )
 
 // replaceTopLevelString returns body with the top-level string field `key`
@@ -103,4 +105,48 @@ func renameTopLevelKey(body []byte, oldKey, newKey string) []byte {
 		}
 	}
 	return body
+}
+
+// openAIReasoningModel reports OpenAI reasoning models (gpt-5 family, o1/o3/o4),
+// which reject any temperature or top_p other than the default 1. Clients
+// such as Cline, Roo and Gemini CLI send temperature 0.
+func openAIReasoningModel(model string) bool {
+	m := strings.ToLower(model)
+	if strings.HasPrefix(m, "gpt-5") {
+		return !strings.Contains(m, "-chat")
+	}
+	return len(m) > 1 && m[0] == 'o' && m[1] >= '1' && m[1] <= '9'
+}
+
+// dropSampling removes top-level temperature and top_p unless they are 1.
+func dropSampling(body []byte) []byte {
+	if !bytes.Contains(body, []byte(`"temperature"`)) && !bytes.Contains(body, []byte(`"top_p"`)) {
+		return body
+	}
+	var m map[string]json.RawMessage
+	if json.Unmarshal(body, &m) != nil {
+		return body
+	}
+	changed := false
+	for _, k := range []string{"temperature", "top_p"} {
+		if v, ok := m[k]; ok && string(v) != "1" {
+			delete(m, k)
+			changed = true
+		}
+	}
+	if !changed {
+		return body
+	}
+	out, err := json.Marshal(m)
+	if err != nil {
+		return body
+	}
+	return out
+}
+
+func keepDefault(v *float64) *float64 {
+	if v != nil && *v == 1 {
+		return v
+	}
+	return nil
 }
