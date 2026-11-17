@@ -74,6 +74,9 @@ func runBench(cfgPath, host string, port int, o bench.Options, working, asJSON, 
 		rs = append(rs, r)
 		if !asJSON {
 			res := "PASS"
+			if r.NoText {
+				res = "PASS†" // only hidden reasoning tokens: TTFT = total
+			}
 			if !r.OK {
 				res = "FAIL " + r.Class
 			}
@@ -96,5 +99,14 @@ func runBench(cfgPath, host string, port int, o bench.Options, working, asJSON, 
 		fmt.Fprintf(tw, "%s\t%s\t%d/%d\t%.0f / %.0f / %.0f / %.0f\t%.0f / %.0f\t%.1f\t%.2f / %.2f\t%s\t%s\n", s.Model, s.Endpoint, s.OK, s.Runs,
 			s.TTFT.Min, s.TTFT.Avg, s.TTFT.P50, s.TTFT.P95, s.Total.Avg, s.Total.P95, s.TokPS, s.Overhead.Avg, s.Overhead.P95, s.Accounts, s.Errors)
 	}
-	return tw.Flush()
+	if err := tw.Flush(); err != nil {
+		return err
+	}
+	for _, r := range rs {
+		if r.NoText {
+			fmt.Println("\n† only hidden reasoning tokens came back; those runs are left out of TTFT")
+			break
+		}
+	}
+	return nil
 }

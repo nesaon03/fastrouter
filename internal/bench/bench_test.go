@@ -68,7 +68,7 @@ func TestBuildShapes(t *testing.T) {
 	plain := Options{Models: []string{"m"}}
 	_ = plain.Normalize()
 	body, _, _ := Build(plain, "m", Chat)
-	if strings.Contains(string(body), "tools") || plain.Runs != 3 || plain.Prompt != "tiny" || plain.MaxTokens != 64 {
+	if strings.Contains(string(body), "tools") || plain.Runs != 3 || plain.Prompt != "tiny" || plain.MaxTokens != 512 {
 		t.Fatalf("plain: %+v %s", plain, body)
 	}
 	if err := (&Options{Models: []string{"m"}, Endpoints: []string{"gemini"}}).Normalize(); err == nil {

@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/zenpo/fastrouter/internal/hrtime"
 )
 
 // Endpoints a run can call.
@@ -78,10 +80,10 @@ func (o *Options) Normalize() error {
 	default:
 		return fmt.Errorf("prompt must be tiny or medium")
 	}
-	if o.MaxTokens <= 0 {
-		o.MaxTokens = 64
+	if o.MaxTokens <= 0 { // room for reasoning models to think and still answer
+		o.MaxTokens = 512
 		if o.Prompt == "medium" {
-			o.MaxTokens = 256
+			o.MaxTokens = 1024
 		}
 	}
 	return nil
@@ -107,6 +109,7 @@ type Result struct {
 	InTokens  int       `json:"inTokens,omitempty"`
 	OutTokens int       `json:"outTokens"`
 	Estimated bool      `json:"estimated,omitempty"` // OutTokens counted from characters (no usage sent)
+	NoText    bool      `json:"noText,omitempty"`    // only hidden (reasoning) tokens came back: TTFT = total
 	TokPerSec float64   `json:"tokPerSec"`
 
 	// From FastRouter's timing trailer.
@@ -179,10 +182,10 @@ func One(ctx context.Context, c *http.Client, o Options, model, ep string) Resul
 			req.Header.Set("Authorization", "Bearer "+o.APIKey)
 		}
 	}
-	start := time.Now()
+	start := hrtime.Now()
 	resp, err := c.Do(req)
 	if err != nil {
-		r.TotalMs = ms(time.Since(start))
+		r.TotalMs = ms(hrtime.Since(start))
 		r.Class, r.Message = "network", scrub(err.Error(), o.APIKey)
 		if errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), "Timeout") {
 			r.Class = "timeout"
@@ -190,7 +193,7 @@ func One(ctx context.Context, c *http.Client, o Options, model, ep string) Resul
 		return r
 	}
 	defer resp.Body.Close()
-	r.TTFBMs = ms(time.Since(start))
+	r.TTFBMs = ms(hrtime.Since(start))
 	r.Status = resp.StatusCode
 	r.AccountID = resp.Header.Get("X-FastRouter-Account")
 	r.Upstream = resp.Header.Get("X-FastRouter-Model")
@@ -199,7 +202,7 @@ func One(ctx context.Context, c *http.Client, o Options, model, ep string) Resul
 	var firstTok time.Duration
 	if resp.StatusCode >= 400 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 64<<10))
-		r.TotalMs = ms(time.Since(start))
+		r.TotalMs = ms(hrtime.Since(start))
 		r.Class, r.Message = classify(resp.StatusCode, errMessage(b)), scrub(clip(errMessage(b), 300), o.APIKey)
 		readTiming(&r, resp.Trailer)
 		return r
@@ -221,7 +224,7 @@ func One(ctx context.Context, c *http.Client, o Options, model, ep string) Resul
 			t, in, out, e := parseEvent(d)
 			if t != "" {
 				if firstTok == 0 {
-					firstTok = time.Since(start)
+					firstTok = hrtime.Since(start)
 				}
 				text.WriteString(t)
 			}
@@ -247,7 +250,7 @@ func One(ctx context.Context, c *http.Client, o Options, model, ep string) Resul
 		text.WriteString(t)
 		r.InTokens, r.OutTokens = in, out
 	}
-	total := time.Since(start)
+	total := hrtime.Since(start)
 	r.TotalMs = ms(total)
 	if firstTok == 0 {
 		firstTok = total
@@ -270,7 +273,7 @@ func One(ctx context.Context, c *http.Client, o Options, model, ep string) Resul
 	case text.Len() == 0 && r.OutTokens == 0:
 		r.Class, r.Message = "empty", "the answer had no text"
 	default:
-		r.OK = true
+		r.OK, r.NoText = true, text.Len() == 0
 	}
 	return r
 }
@@ -564,7 +567,10 @@ func Summarize(rs []Result) []Stat {
 				continue
 			}
 			st.OK++
-			ttft, total = append(ttft, r.TTFTMs), append(total, r.TotalMs)
+			total = append(total, r.TotalMs)
+			if !r.NoText {
+				ttft = append(ttft, r.TTFTMs)
+			}
 			if r.Timed {
 				over = append(over, r.OverheadMs)
 			}

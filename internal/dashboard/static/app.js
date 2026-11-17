@@ -408,7 +408,7 @@ function SpeedTestPage() {
 function SpeedResults({ job }) {
   const rs = job.results || [], ok = rs.filter((r) => r.ok);
   const pct = job.total ? Math.round((100 * job.done) / job.total) : 0;
-  const ttft = ok.map((r) => r.ttftMs), over = ok.filter((r) => r.timed).map((r) => r.overheadMs), tps = ok.filter((r) => r.tokPerSec > 0).map((r) => r.tokPerSec);
+  const ttft = ok.filter((r) => !r.noText).map((r) => r.ttftMs), over = ok.filter((r) => r.timed).map((r) => r.overheadMs), tps = ok.filter((r) => r.tokPerSec > 0).map((r) => r.tokPerSec);
   const stats = [["timer", "TTFT avg · p95", msf(avg(ttft)), "p95 " + msf(p95(ttft)), "blue"],
     ["bolt", "FastRouter overhead", ovf(avg(over)), "p95 " + ovf(p95(over)) + " · pre + post", "orange"],
     ["speed", "Tokens / sec", isNaN(avg(tps)) ? "—" : avg(tps).toFixed(1), "average while generating", "green"],
@@ -443,10 +443,11 @@ function SpeedResults({ job }) {
         <tbody>${rs.slice().reverse().map((r) => html`<tr key=${r.seq}>
           <td class="muted">${r.seq}</td><td class="mono small">${r.model}</td><td class="small">${EP_META[r.endpoint] ? EP_META[r.endpoint][0] : r.endpoint}${r.stream ? "" : " · JSON"}</td>
           <td>${r.ok ? html`<${Badge} kind="success" icon="check">Pass</${Badge}>` : html`<span title=${r.message || ""}><${Badge} kind="error" icon="close">${CLASS_LABEL[r.class] || r.class || "fail"}${r.status ? " · " + r.status : ""}</${Badge}></span>`}</td>
-          <td class="num">${r.ok ? msf(r.ttftMs) : "—"}</td><td class="num">${msf(r.totalMs)}</td><td class="num">${r.ok && r.tokPerSec ? r.tokPerSec.toFixed(1) + (r.estimated ? "*" : "") : "—"}</td>
+          <td class="num" title=${r.noText ? "Only hidden reasoning tokens came back, so there is no first visible token" : ""}>${r.ok ? (r.noText ? "†" : msf(r.ttftMs)) : "—"}</td><td class="num">${msf(r.totalMs)}</td><td class="num">${r.ok && r.tokPerSec ? r.tokPerSec.toFixed(1) + (r.estimated ? "*" : "") : "—"}</td>
           <td class="num st-over" title=${r.timed ? `pre ${ovf(r.preMs)} (request in → sent upstream) + post ${ovf(r.postMs)} (upstream ready → first byte to client). Empty-answer hold ${ovf(r.holdMs)} not counted.${r.attempts > 1 ? ` ${r.attempts} attempts, failover ${msf(r.failoverMs)}.` : ""}` : "no timing trailer"}>${r.timed ? ovf(r.overheadMs) : "—"}</td>
           <td class="num">${r.timed ? msf(r.upTtfbMs) : "—"}</td><td class="small muted st-acct" title=${r.account || ""}>${r.account || "—"}</td></tr>`)}</tbody></table></div>
       ${rs.some((r) => r.estimated) && html`<p class="small muted" style="margin-top:8px">* tokens estimated from characters (the provider sent no usage).</p>`}
+      ${rs.some((r) => r.noText) && html`<p class="small muted" style="margin-top:4px">† only hidden reasoning tokens came back (no visible text), so TTFT is not counted.</p>`}
     </div>`}`;
 }
 

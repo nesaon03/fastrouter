@@ -4,7 +4,8 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
-	"time"
+
+	"github.com/zenpo/fastrouter/internal/hrtime"
 )
 
 // Request timing for the Speed Test tab and `fastrouter bench`. A client that
@@ -20,12 +21,14 @@ import (
 // All in milliseconds. Nothing in it identifies an account or carries a secret.
 const timingHeader = "X-FastRouter-Timing"
 
+// Marks are hrtime nanoseconds (0 = not reached): Go's own clock is too
+// coarse on Windows for sub-millisecond overhead.
 type timing struct {
-	recv, firstSend, lastSend, upHdr, upFirst, upReady, clientFirst time.Time
+	recv, firstSend, lastSend, upHdr, upFirst, upReady, clientFirst int64
 	attempts                                                        int
 }
 
-func newTiming(w http.ResponseWriter, r *http.Request, recv time.Time) *timing {
+func newTiming(w http.ResponseWriter, r *http.Request, recv int64) *timing {
 	if r.Header.Get(timingHeader) != "1" {
 		return nil
 	}
@@ -38,36 +41,36 @@ func (t *timing) send() {
 		return
 	}
 	t.attempts++
-	t.lastSend = time.Now()
-	if t.firstSend.IsZero() {
+	t.lastSend = hrtime.Now()
+	if t.firstSend == 0 {
 		t.firstSend = t.lastSend
 	}
-	t.upHdr, t.upFirst, t.upReady, t.clientFirst = time.Time{}, time.Time{}, time.Time{}, time.Time{}
+	t.upHdr, t.upFirst, t.upReady, t.clientFirst = 0, 0, 0, 0
 }
 
-func (t *timing) mark(f func(*timing) *time.Time) {
+func (t *timing) mark(f func(*timing) *int64) {
 	if t == nil {
 		return
 	}
-	if p := f(t); p.IsZero() {
-		*p = time.Now()
+	if p := f(t); *p == 0 {
+		*p = hrtime.Now()
 	}
 }
 
-func (t *timing) headers()     { t.mark(func(t *timing) *time.Time { return &t.upHdr }) }
-func (t *timing) firstByte()   { t.mark(func(t *timing) *time.Time { return &t.upFirst }) }
-func (t *timing) ready()       { t.mark(func(t *timing) *time.Time { return &t.upReady }) }
-func (t *timing) clientWrite() { t.mark(func(t *timing) *time.Time { return &t.clientFirst }) }
+func (t *timing) headers()     { t.mark(func(t *timing) *int64 { return &t.upHdr }) }
+func (t *timing) firstByte()   { t.mark(func(t *timing) *int64 { return &t.upFirst }) }
+func (t *timing) ready()       { t.mark(func(t *timing) *int64 { return &t.upReady }) }
+func (t *timing) clientWrite() { t.mark(func(t *timing) *int64 { return &t.clientFirst }) }
 
-func msBetween(a, b time.Time) float64 {
-	if a.IsZero() || b.IsZero() || b.Before(a) {
+func msBetween(a, b int64) float64 {
+	if a == 0 || b == 0 || b < a {
 		return 0
 	}
-	return float64(b.Sub(a).Microseconds()) / 1000
+	return float64((b-a)/1000) / 1000
 }
 
 func (t *timing) String() string {
-	if t == nil || t.firstSend.IsZero() {
+	if t == nil || t.firstSend == 0 {
 		return ""
 	}
 	f := func(v float64) string { return strconv.FormatFloat(v, 'f', 2, 64) }

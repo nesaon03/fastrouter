@@ -17,6 +17,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/zenpo/fastrouter/internal/hrtime"
 	"github.com/zenpo/fastrouter/internal/login"
 	"github.com/zenpo/fastrouter/internal/oauth"
 	"github.com/zenpo/fastrouter/internal/router"
@@ -87,7 +88,7 @@ func (p *proxyReq) clientSetThinking() bool {
 
 func (s *Server) handleProxy(cf tr.Format) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		tm := newTiming(w, r, time.Now())
+		tm := newTiming(w, r, hrtime.Now())
 		defer tm.finish(w)
 		body, err := readBody(r, maxBody)
 		if errors.Is(err, errTooLarge) {
