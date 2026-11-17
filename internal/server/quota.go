@@ -33,19 +33,22 @@ type quotaRow struct {
 }
 
 type quotaResult struct {
-	Plan      string     `json:"plan,omitempty"`
-	Quotas    []quotaRow `json:"quotas"`
-	Error     string     `json:"error,omitempty"`
-	FetchedAt string     `json:"fetchedAt"`
+	Plan   string     `json:"plan,omitempty"`
+	Quotas []quotaRow `json:"quotas"`
+	// ResetCredits is Codex's available rate-limit reset credits (nil for other providers).
+	ResetCredits *int   `json:"resetCredits,omitempty"`
+	Error        string `json:"error,omitempty"`
+	FetchedAt    string `json:"fetchedAt"`
 }
 
 type quotaAccount struct {
-	ID        string `json:"id"`
-	Provider  string `json:"provider"`
-	Name      string `json:"name"`
-	Active    bool   `json:"active"`
-	Supported bool   `json:"supported"`
-	Note      string `json:"note,omitempty"`
+	ID        string        `json:"id"`
+	Provider  string        `json:"provider"`
+	Name      string        `json:"name"`
+	Active    bool          `json:"active"`
+	Supported bool          `json:"supported"`
+	Note      string        `json:"note,omitempty"`
+	AutoPing  *autoPingView `json:"autoPing,omitempty"` // Codex sign-in accounts only
 	quotaResult
 }
 
@@ -98,7 +101,15 @@ func (s *Server) handleQuota(w http.ResponseWriter, r *http.Request) {
 	refresh := r.URL.Query().Get("refresh") == "1"
 	only := r.URL.Query().Get("account")
 	if os.Getenv("FASTROUTER_DEMO_QUOTA") == "1" {
-		adminJSON(w, http.StatusOK, map[string]any{"demo": true, "accounts": demoQuota(sn)})
+		acc := demoQuota(sn)
+		for i := range acc {
+			for _, c := range sn.Connections {
+				if c.ID == acc[i].ID {
+					acc[i].AutoPing = s.autoPingFor(c)
+				}
+			}
+		}
+		adminJSON(w, http.StatusOK, map[string]any{"demo": true, "accounts": acc})
 		return
 	}
 	out := make([]quotaAccount, 0, len(sn.Connections))
@@ -110,6 +121,7 @@ func (s *Server) handleQuota(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 		qa := quotaAccount{ID: c.ID, Provider: c.Provider, Name: maskEmail(c.Name), Active: c.Active, Supported: quotaSupported[c.Provider]}
+		qa.AutoPing = s.autoPingFor(c)
 		qa.Quotas = []quotaRow{}
 		if !qa.Supported {
 			if p, ok := catalog.Lookup(c.Provider); ok && p.Plugin {
@@ -201,24 +213,12 @@ func (s *Server) fetchQuota(ctx context.Context, c quotaCred) (res quotaResult) 
 		if c.accountID != "" {
 			h["ChatGPT-Account-ID"] = c.accountID
 		}
-		code, err := s.quotaGET(ctx, "https://chatgpt.com/backend-api/wham/usage", c.key, h, &d)
+		code, err := s.quotaGET(ctx, codexUsageURL, c.key, h, &d)
 		if fail("Codex", code, err) {
 			return
 		}
-		res.Plan, _ = d["plan_type"].(string)
-		rl, _ := d["rate_limit"].(map[string]any)
-		for _, w := range []struct{ k, name string }{{"primary_window", "Session (5h)"}, {"secondary_window", "Weekly"}} {
-			if win, ok := rl[w.k].(map[string]any); ok {
-				used := clamp(num(win["used_percent"]), 0, 100)
-				reset := resetTime(win["reset_at"])
-				if reset == "" {
-					if sec := num(win["reset_after_seconds"]); sec > 0 {
-						reset = time.Now().Add(time.Duration(sec) * time.Second).UTC().Format(time.RFC3339)
-					}
-				}
-				res.Quotas = append(res.Quotas, quotaRow{Name: w.name, Used: used, Limit: 100, Unit: "%", RemainingPct: 100 - used, ResetAt: reset})
-			}
-		}
+		u := parseCodexUsage(d)
+		res.Plan, res.Quotas, res.ResetCredits = u.Plan, u.Quotas, &u.ResetCredits
 	case "glm", "glm-cn":
 		u := "https://api.z.ai/api/monitor/usage/quota/limit"
 		if c.provider == "glm-cn" {
@@ -373,7 +373,8 @@ func demoQuota(sn *store.Snapshot) []quotaAccount {
 	now := time.Now().UTC()
 	at := func(d time.Duration) string { return now.Add(d).Format(time.RFC3339) }
 	rows := map[string][]quotaRow{
-		"codex":       {{Name: "Session (5h)", Used: 62, Limit: 100, Unit: "%", RemainingPct: 38, ResetAt: at(4*time.Hour + 59*time.Minute)}, {Name: "Weekly", Used: 31, Limit: 100, Unit: "%", RemainingPct: 69, ResetAt: at(97 * time.Hour)}},
+		"codex": {{Name: "Session (5h)", Used: 62, Limit: 100, Unit: "%", RemainingPct: 38, ResetAt: at(4*time.Hour + 59*time.Minute)}, {Name: "Weekly", Used: 31, Limit: 100, Unit: "%", RemainingPct: 69, ResetAt: at(97 * time.Hour)},
+			{Name: "Code review weekly", Used: 4, Limit: 100, Unit: "%", RemainingPct: 96, ResetAt: at(97 * time.Hour)}},
 		"glm":         {{Name: "Session (5h)", Used: 88, Limit: 100, Unit: "%", RemainingPct: 12, ResetAt: at(2*time.Hour + 14*time.Minute)}, {Name: "Weekly (7d)", Used: 40, Limit: 100, Unit: "%", RemainingPct: 60, ResetAt: at(130 * time.Hour)}},
 		"deepseek":    {{Name: "Balance (USD)", Used: 18.42, Unit: "USD", RemainingPct: -1}},
 		"opencode-go": {{Name: "Rolling", Used: 100, Limit: 100, Unit: "%", RemainingPct: 0, ResetAt: at(37 * time.Minute)}, {Name: "Weekly", Used: 55, Limit: 100, Unit: "%", RemainingPct: 45, ResetAt: at(52 * time.Hour)}, {Name: "Monthly", Used: 21, Limit: 100, Unit: "%", RemainingPct: 79, ResetAt: at(410 * time.Hour)}},
@@ -384,6 +385,10 @@ func demoQuota(sn *store.Snapshot) []quotaAccount {
 	for _, c := range sn.Connections {
 		qa := quotaAccount{ID: c.ID, Provider: c.Provider, Name: maskEmail(c.Name), Active: c.Active, Supported: quotaSupported[c.Provider]}
 		qa.Quotas, qa.Plan, qa.FetchedAt = rows[c.Provider], plans[c.Provider], now.Format(time.RFC3339)
+		if c.Provider == "codex" {
+			n := 1
+			qa.ResetCredits = &n
+		}
 		if qa.Quotas == nil {
 			qa.Quotas = []quotaRow{}
 			qa.Note = "This provider has no usage API that FastRouter reads."

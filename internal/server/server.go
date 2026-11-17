@@ -68,6 +68,8 @@ type Server struct {
 
 	cf *tunnel.Cloudflared // Endpoint page: Cloudflare quick tunnel
 	ts *tunnel.Tailscale   // Endpoint page: Tailscale Serve / Funnel
+
+	pinger autoPinger // Quota Tracker: Codex auto-ping
 }
 
 // New builds a server from config and a loaded snapshot. st may be nil (tests).
@@ -201,6 +203,9 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("DELETE /api/admin/logs", s.adminWrite(s.handleLogClear))
 	mux.Handle("POST /api/admin/providers/test", s.adminWrite(s.handleProviderTest))
 	mux.Handle("GET /api/admin/quota", s.adminRead(s.handleQuota))
+	mux.Handle("GET /api/admin/quota/{id}/codex-reset-credits", s.adminRead(s.handleResetCredits))
+	mux.Handle("POST /api/admin/quota/{id}/codex-reset-credits", s.adminWrite(s.handleResetConsume))
+	mux.Handle("PUT /api/admin/quota/{id}/autoping", s.adminWrite(s.handleAutoPingSave))
 	mux.Handle("GET /api/admin/providers/{id}/models", s.adminRead(s.handleProviderModels))
 	mux.Handle("GET /api/admin/headroom", s.adminRead(s.handleHeadroomStatus))
 	mux.Handle("POST /api/admin/headroom/install", s.adminWrite(s.handleHeadroomInstall))

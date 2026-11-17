@@ -38,6 +38,7 @@ Usage:
   fastrouter test-providers [--config path] [--provider id] [--model id=model]... [--json] [--no-refresh]
       sends one "Say OK" (max 5 tokens) per active account and prints
       provider, account, PASS/FAIL, latency and error class (never keys or bodies)
+  fastrouter codex-credits [--config path]        (read-only: Codex reset credits and expiry)
   fastrouter bench [--config path] [--port n] [--model id]... [--working] [--endpoint chat,messages,responses]
                    [--runs 3] [--prompt tiny|medium] [--stream=true] [--ide] [--json] [--no-save]
       measures a running FastRouter the way an IDE/CLI calls it: TTFT, total time,
@@ -120,6 +121,9 @@ func main() {
 		_ = fs.Parse(args)
 		o := bench.Options{Models: models, Clients: splitList(*clients), Endpoints: splitList(*eps), Runs: *runs, Prompt: *prompt, Stream: *stream, IDE: *ide, Effort: *effort}
 		err = runBench(*cfgPath, *host, *port, o, *working, *asJSON, !*noSave)
+	case "codex-credits":
+		_ = fs.Parse(args)
+		err = runCodexCredits(*cfgPath)
 	case "version":
 		fmt.Println(versionString())
 	case "service":
@@ -231,6 +235,7 @@ func serve(cfgPath, host string, port int) error {
 	bg, stopBG := context.WithCancel(context.Background())
 	defer stopBG()
 	go srv.RunTokenRefresh(bg, time.Minute) // Codex accounts signed in through FastRouter
+	go srv.RunAutoPing(bg)                  // Codex auto-ping, only for accounts the user opted in
 	srv.ResumeTunnel()                      // only if the user left the Cloudflare tunnel on
 	if hr, err := srv.Saver().StartHeadroom(bg, filepath.Join(cfg.DataDir, "headroom")); err != nil {
 		log.Printf("headroom autostart skipped: %v", err)
@@ -306,4 +311,36 @@ func versionString() string {
 	}
 	return fmt.Sprintf("fastrouter %s (commit %s, built %s, %s %s/%s)",
 		server.Version, c, d, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+}
+
+// runCodexCredits prints each Codex account's reset credits (read-only; it
+// never spends a credit and never prints a token).
+func runCodexCredits(cfgPath string) error {
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return err
+	}
+	st, err := store.Open(cfg.DataDir)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	snap, err := st.Load()
+	if err != nil {
+		return err
+	}
+	log.SetOutput(io.Discard)
+	srv := server.New(cfg, snap, st)
+	defer srv.Close()
+	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "ACCOUNT\tAVAILABLE\tSTATUS\tGRANTED\tEXPIRES\tERROR")
+	for _, r := range srv.CodexCreditsReport(context.Background()) {
+		if r.Error != "" || len(r.Credits.Credits) == 0 {
+			fmt.Fprintf(tw, "%s\t%d\t\t\t\t%s\n", r.Account, r.Credits.AvailableCount, r.Error)
+		}
+		for _, c := range r.Credits.Credits {
+			fmt.Fprintf(tw, "%s\t%d\t%s\t%s\t%s\t\n", r.Account, r.Credits.AvailableCount, c.Status, c.GrantedAt, c.ExpiresAt)
+		}
+	}
+	return tw.Flush()
 }

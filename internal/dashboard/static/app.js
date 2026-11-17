@@ -1075,6 +1075,10 @@ function ProviderDetail({ data, id, reload, go, query }) {
   const [tests, setTests] = useState({});
   const [sum, setSum] = useState(null);
   const stopRef = useRef(false);
+  const [cq, setCq] = useState({}); // Codex: reset credits + auto-ping per account
+  const loadCq = (refresh) => id === "codex" && api("GET", "/api/admin/quota" + (refresh ? "?refresh=1" : ""))
+    .then((r) => setCq(Object.fromEntries(r.accounts.filter((x) => x.provider === "codex").map((x) => [x.id, x])))).catch(() => {});
+  useEffect(() => { loadCq(false); }, [id]);
   if (!p) return html`<div class="card empty"><p>Provider not found.</p><button class="btn outline" onClick=${() => go("providers")}>Back</button></div>`;
   const accts = order || p.accounts;
   const meta = provMeta(p);
@@ -1181,6 +1185,7 @@ function ProviderDetail({ data, id, reload, go, query }) {
               : a.lastError && html`<${ErrText} text=${(a.status === "banned" ? "Banned until you sign in again or a manual test passes. " : "") + a.lastError} />`}
           </div>
           <div class="row" style="gap:2px">
+            ${cq[a.id] && html`<div class="row cx-acts"><${CodexActions} a=${cq[a.id]} onChanged=${() => loadCq(true)} /></div>`}
             ${isLogin && html`<button class="act" onClick=${() => setModal({ t: "signin", conn: a.id })}><${Icon} n="login" /><span>Re-auth</span></button>`}
             <button class="act" onClick=${() => testOne(a)} disabled=${tests[a.id] && tests[a.id].running}><${Icon} n="science" /><span>Test</span></button>
             <button class="act" onClick=${() => setModal({ t: "edit", a })}><${Icon} n="edit" /><span>Edit</span></button>
@@ -1729,36 +1734,122 @@ function countdown(iso, now) {
 const qMoney = (v, unit) => (unit === "USD" ? "$" : unit === "CNY" ? "¥" : "") + (+v).toFixed(2) + (unit === "USD" || unit === "CNY" ? "" : " " + unit);
 const qRemaining = (a) => { const r = a.quotas.filter((x) => x.remainingPct >= 0); return r.length ? Math.min(...r.map((x) => x.remainingPct)) : -1; };
 const qSoonest = (a) => Math.min(Infinity, ...a.quotas.filter((x) => x.resetAt).map((x) => Date.parse(x.resetAt)));
-function QuotaRow({ q, now, hidden, onHide }) {
+/* Codex extras (after 9Router's Quota Tracker card): reset credits + auto-ping. */
+const fmtWhen = (iso) => { if (!iso) return "N/A"; const d = new Date(iso); return isNaN(d) ? "N/A" : d.toLocaleString(undefined, { month: "short", day: "numeric", year: "numeric", hour: "numeric", minute: "2-digit" }); };
+const fmtLeft = (iso) => { if (!iso) return "N/A"; const ms = Date.parse(iso) - Date.now(); if (isNaN(ms)) return "N/A"; if (ms <= 0) return "Expired";
+  const h = Math.ceil(ms / 3600000), d = Math.floor(h / 24); return d > 0 ? `${d}d ${h % 24}h` : `${h}h`; };
+const browserTZ = () => { try { return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"; } catch (e) { return "UTC"; } };
+const slotLabels = (anchor, wh, n) => { const m = /^(\d{1,2}):(\d{2})$/.exec(anchor || ""); if (!m) return [];
+  const start = +m[1] * 60 + +m[2]; return Array.from({ length: n }, (_, i) => { const t = Math.round(start + i * wh * 60) % 1440; return String(Math.floor(t / 60)).padStart(2, "0") + ":" + String(t % 60).padStart(2, "0"); }); };
+function ResetCreditsModal({ a, onClose }) {
+  const [st, setSt] = useState({ loading: true });
+  useEffect(() => { api("GET", `/api/admin/quota/${a.id}/codex-reset-credits`).then((d) => setSt({ data: d }), (e) => setSt({ error: e.message })); }, []);
+  const d = st.data;
+  return html`<${Modal} wide title="Codex Reset Credit Expiry" icon="schedule" onClose=${onClose}>
+    <p class="small muted" style="margin:-6px 0 12px">${a.name}</p>
+    ${st.loading ? html`<div class="row" style="justify-content:center;gap:8px;padding:30px"><${Icon} n="progress_activity" cls="spin" /><span class="muted">Loading reset credits…</span></div>`
+      : st.error ? html`<div class="qmsg err"><${Icon} n="error" />${st.error}</div>`
+      : d.credits.length ? html`<div class="rc-sum"><span>${d.credits.length} reset credit${d.credits.length === 1 ? "" : "s"}</span><span>${d.availableCount} available</span></div>
+        <div class="rc-table"><table class="table"><thead><tr><th>Status</th><th>Granted at</th><th>Expires at</th><th>Remaining</th></tr></thead>
+          <tbody>${d.credits.map((c, i) => html`<tr key=${i}><td><${Badge} kind=${c.status === "available" ? "primary" : ""}>${c.status}</${Badge}></td>
+            <td class="muted">${fmtWhen(c.grantedAt)}</td><td>${fmtWhen(c.expiresAt)}</td><td class="medium">${fmtLeft(c.expiresAt)}</td></tr>`)}</tbody></table></div>`
+      : html`<div class="empty" style="padding:28px"><p class="muted small">No reset credit details returned for this account.</p></div>`}
+  </${Modal}>`;
+}
+function AutoPingModal({ a, onClose, onSaved }) {
+  const ap = a.autoPing || { mode: "off" };
+  const sc = ap.schedule || {};
+  const [mode, setMode] = useState(ap.mode);
+  const [anchor, setAnchor] = useState(sc.anchor || "09:30");
+  const [wh, setWh] = useState(String(sc.windowHours || 5));
+  const [n, setN] = useState(String(sc.slotsPerDay || 3));
+  const [busy, setBusy] = useState(false);
+  const whN = +wh, nN = +n, max = whN >= 0.5 ? Math.max(1, Math.floor(24 / whN)) : 24;
+  const okA = /^([01]?\d|2[0-3]):[0-5]\d$/.test(anchor), okW = whN >= 0.5 && whN <= 24, okN = Number.isInteger(nN) && nN >= 1 && nN <= max;
+  const canSave = mode !== "schedule" || (okA && okW && okN);
+  const slots = mode === "schedule" && canSave ? slotLabels(anchor, whN, nN) : [];
+  const end = slots.length ? slotLabels(anchor, whN, nN + 1)[nN] : "";
+  const save = async () => { setBusy(true);
+    try { await api("PUT", `/api/admin/quota/${a.id}/autoping`, mode === "schedule" ? { mode, schedule: { enabled: true, anchor, timezone: sc.timezone || browserTZ(), windowHours: whN, slotsPerDay: nN } } : { mode });
+      toast(mode === "off" ? "Auto-ping off" : "Auto-ping saved"); onSaved && onSaved(); onClose(); }
+    catch (e) { toast(e.message, "error"); setBusy(false); } };
+  return html`<${Modal} title="Auto-ping settings" icon="bolt" onClose=${onClose}
+    foot=${html`<button class="btn ghost" onClick=${onClose}>Cancel</button><button class="btn primary" disabled=${!canSave || busy} onClick=${save}>Save</button>`}>
+    <p class="muted small" style="margin-top:0">Configure automated quota pings for ${a.name} — pick one mode.</p>
+    <div class="ap-modes">${[["off", "Off", "block"], ["reset", "On reset", "bolt"], ["schedule", "Schedule", "schedule"]].map(([v, l, ic]) => html`
+      <button type="button" class=${mode === v ? "on" : ""} onClick=${() => setMode(v)}><${Icon} n=${ic} />${l}</button>`)}</div>
+    ${mode === "reset" && html`<p class="muted small">Pings right after the 5h quota window resets, so a new window starts immediately. Each ping is one tiny ${"\u201c"}Say OK${"\u201d"} request on this account.</p>`}
+    ${mode === "schedule" && html`<p class="muted small">Pings at fixed local times so the 5h windows line up with your workday.</p>
+      <div class="grid g3" style="gap:12px">
+        <${Field} label="Anchor time" hint=${okA ? "" : "Use HH:MM"}><input class="input" type="time" value=${anchor} onInput=${(e) => setAnchor(e.target.value)} /></${Field}>
+        <${Field} label="Window (hours)" hint=${okW ? "" : "0.5 – 24"}><input class="input" type="number" min="0.5" max="24" step="0.5" value=${wh} onInput=${(e) => setWh(e.target.value)} /></${Field}>
+        <${Field} label="Pings per day" hint=${okN ? `Max ${max}` : `1 – ${max}`}><input class="input" type="number" min="1" max=${max} step="1" value=${n} onInput=${(e) => setN(e.target.value)} /></${Field}></div>
+      ${slots.length > 0 && html`<div class="ap-preview"><div class="label small">Ping times · ${sc.timezone || browserTZ()}</div><div class="medium">${slots.join("  →  ")}</div>
+        <div class="small muted">Windows covered until ${end}; the next day starts again at ${anchor}.</div></div>`}`}
+    ${ap.lastPingAt && html`<p class="small muted" style="margin-bottom:0">Last ping ${fmtWhen(ap.lastPingAt)}.</p>`}
+    ${ap.lastError && html`<div class="qmsg err" style="margin-top:8px"><${Icon} n="error" />Last ping failed: ${ap.lastError}</div>`}
+  </${Modal}>`;
+}
+// CodexActions: the reset-credit button (with its count), the expiry clock and
+// the auto-ping bolt, as on 9Router's Codex card.
+function CodexActions({ a, onChanged, disabled }) {
+  const [modal, setModal] = useState("");
+  const [resetting, setResetting] = useState(false);
+  const n = a.resetCredits || 0;
+  const ap = a.autoPing;
+  const apOn = ap && ap.mode !== "off";
+  const apTip = !ap ? "" : ap.mode === "reset" ? "Auto-ping active: On reset. Click to configure."
+    : ap.mode === "schedule" ? `Auto-ping active: Scheduled (${slotLabels(ap.schedule.anchor, ap.schedule.windowHours, ap.schedule.slotsPerDay).join(" / ")}). Click to configure.`
+    : "Auto-starts the next 5h Codex window after reset or on schedule. Click to configure.";
+  const consume = async () => {
+    setResetting(true);
+    try { const r = await api("POST", `/api/admin/quota/${a.id}/codex-reset-credits`, {}); toast(r.demo ? "Demo: no credit was spent" : "Codex limit reset"); }
+    catch (e) { toast(e.message, "error"); }
+    setResetting(false); onChanged && onChanged();
+  };
+  return html`${a.resetCredits != null && html`
+      <button class="rc-btn ${n > 0 ? "has" : ""}" disabled=${n <= 0 || resetting || disabled} onClick=${() => setModal("reset")}
+        title=${n > 0 ? `Use one Codex reset credit. Available: ${n}` : "No Codex reset credits available"} aria-label=${n > 0 ? `Use one Codex reset credit. ${n} available.` : "No Codex reset credits available"}>
+        <${Icon} n=${resetting ? "progress_activity" : "restart_alt"} cls=${resetting ? "spin" : ""} /><span>${n}</span></button>
+      <button class="rc-clock" disabled=${disabled} title="View Codex reset credit expiry" aria-label="View Codex reset credit expiry" onClick=${() => setModal("credits")}><${Icon} n="schedule" /></button>`}
+    ${ap && html`<button class="icon-btn ${apOn ? "ap-on" : ""}" title=${apTip} aria-label="Configure auto-ping" onClick=${() => setModal("ping")}><${Icon} n="bolt" /></button>`}
+    ${modal === "reset" && html`<${Confirm} title="Reset Codex limit?" label="Reset limit"
+      text=${`Use 1 Codex reset credit for ${a.name}. This spends the credit and cannot be undone. Remaining credits: ${n}.`}
+      onYes=${consume} onClose=${() => setModal("")} />`}
+    ${modal === "credits" && html`<${ResetCreditsModal} a=${a} onClose=${() => setModal("")} />`}
+    ${modal === "ping" && html`<${AutoPingModal} a=${a} onClose=${() => setModal("")} onSaved=${onChanged} />`}`;
+}
+function QuotaRow({ q, now, onHide }) {
   const balance = q.remainingPct < 0;
   const pct = balance ? 100 : Math.round(q.remainingPct);
   const c = balance ? "neutral" : qColor(pct);
-  return html`<div class="qrow ${hidden ? "hid" : ""}">
+  return html`<div class="qrow">
     <div class="qrow-top"><span class="qdot ${c}"></span><span class="medium grow truncate">${q.name}</span>
       <span class="small muted">${balance ? (q.limit > 0 ? `${qMoney(q.used, q.unit)} / ${qMoney(q.limit, q.unit)}` : q.unit === "%" ? "" : `${qMoney(q.used, q.unit)} ${q.name.startsWith("Balance") ? "left" : "used"}`)
         : q.unit === "%" ? `${Math.round(q.used)}% / 100% used` : `${qMoney(q.used, q.unit)} / ${qMoney(q.limit, q.unit)}`}</span>
-      <button class="icon-btn xs" title=${hidden ? "Show this quota" : "Hide this quota"} onClick=${onHide}><${Icon} n=${hidden ? "visibility_off" : "visibility"} /></button></div>
+      <button class="icon-btn xs" title="Hide this quota row" onClick=${onHide}><${Icon} n="visibility" /></button></div>
     ${!balance && html`<div class="qbar ${c}"><i style=${`width:${Math.min(100, pct)}%`}></i></div>
       <div class="qrow-foot"><span class="qpct ${c}">${pct}% remaining</span>${q.resetAt && html`<span class="small muted"><${Icon} n="schedule" />in ${countdown(q.resetAt, now)}</span>`}</div>`}
   </div>`;
 }
-function QuotaCard({ a, p, now, hidden, toggleHide, busy, onRefresh, onEdit, onDelete, onToggle }) {
-  const shown = a.quotas.filter((q) => !hidden[a.id + "|" + q.name]);
-  const hiddenCount = a.quotas.length - shown.length;
-  const [showHidden, setShowHidden] = useState(false);
+function QuotaCard({ a, p, now, hidden, toggleHide, busy, onRefresh, onEdit, onDelete, onToggle, onChanged }) {
+  const hk = (q) => a.provider + "|" + q.name;
+  const shown = a.quotas.filter((q) => !hidden[hk(q)]);
+  const hiddenRows = a.quotas.filter((q) => hidden[hk(q)]);
   return html`<div class="card sm qcard" style=${a.active ? "" : "opacity:.6"}>
     <div class="qcard-head"><${Logo} p=${p} />
       <div class="grow" style="min-width:0"><div class="row" style="gap:6px"><span class="strong truncate">${provMeta(p).name}</span>${a.plan && html`<${Badge} kind="info">${a.plan}</${Badge}>`}</div>
         <div class="small muted truncate">${a.name}</div></div>
-      <button class="icon-btn" title="Refresh this account" disabled=${busy || !a.supported} onClick=${onRefresh}><${Icon} n="refresh" cls=${busy ? "spin" : ""} /></button>
-      <button class="icon-btn" title="Edit account" onClick=${onEdit}><${Icon} n="edit" /></button>
-      <button class="icon-btn danger" title="Delete account" onClick=${onDelete}><${Icon} n="delete" /></button>
-      <${Toggle} sm on=${a.active} title=${a.active ? "Turn this account off" : "Turn this account on"} onChange=${onToggle} /></div>
-    ${a.supported && a.quotas.length > 0 && html`<div class="qcount"><span>${a.quotas.length} quota${a.quotas.length === 1 ? "" : "s"}</span>
-      ${hiddenCount > 0 && html`<button class="link small" onClick=${() => setShowHidden(!showHidden)}>${showHidden ? "Hide" : "Show"} ${hiddenCount} hidden</button>`}</div>`}
+      ${a.provider === "codex" && html`<${CodexActions} a=${a} disabled=${busy} onChanged=${onChanged} />`}
+      <button class="icon-btn" title="Refresh quota" disabled=${busy || !a.supported} onClick=${onRefresh}><${Icon} n="refresh" cls=${busy ? "spin" : ""} /></button>
+      <button class="icon-btn" title="Edit connection" onClick=${onEdit}><${Icon} n="edit" /></button>
+      <button class="icon-btn danger" title="Delete connection" onClick=${onDelete}><${Icon} n="delete" /></button>
+      <${Toggle} sm on=${a.active} title=${a.active ? "Disable connection" : "Enable connection"} onChange=${onToggle} /></div>
     ${a.error && html`<div class="qmsg err"><${Icon} n="error" />${a.error}</div>`}
     ${!a.supported && html`<div class="qmsg"><${Icon} n="info" />${a.note}</div>`}
-    <div class="col" style="gap:12px">${(showHidden ? a.quotas : shown).map((q) => html`<${QuotaRow} key=${q.name} q=${q} now=${now} hidden=${!!hidden[a.id + "|" + q.name]} onHide=${() => toggleHide(a.id + "|" + q.name)} />`)}</div>
+    ${shown.length > 0 && html`<div class="col" style="gap:12px">${shown.map((q) => html`<${QuotaRow} key=${q.name} q=${q} now=${now} onHide=${() => toggleHide(hk(q))} />`)}</div>`}
+    ${hiddenRows.length > 0 && html`<div class="qhidden"><${Icon} n="visibility_off" /><span>Hidden:</span>
+      ${hiddenRows.map((q) => html`<button key=${q.name} title="Show this quota row" onClick=${() => toggleHide(hk(q))}>${q.name}</button>`)}</div>`}
   </div>`;
 }
 function QuotaPage({ data, reload, go }) {
@@ -1770,7 +1861,8 @@ function QuotaPage({ data, reload, go }) {
   const [auto, setAuto] = useState(() => localStorage.getItem("fr-quota-auto") === "1");
   const [left, setLeft] = useState(60);
   const [now, setNow] = useState(Date.now());
-  const [hidden, setHidden] = useState(() => { try { return JSON.parse(localStorage.getItem("fr-quota-hidden") || "{}"); } catch (e) { return {}; } });
+  // Hidden quota rows apply per provider, as in 9Router ("codex|Weekly").
+  const [hidden, setHidden] = useState(() => { try { return JSON.parse(localStorage.getItem("fr-quota-hidden-prov") || "{}"); } catch (e) { return {}; } });
   const [confirm, setConfirm] = useState(null);
   const load = async (refresh, id) => {
     setBusy((b) => ({ ...b, [id || "*"]: true }));
@@ -1783,7 +1875,7 @@ function QuotaPage({ data, reload, go }) {
   useEffect(() => { load(false); }, []);
   useEffect(() => { const t = setInterval(() => { setNow(Date.now()); if (auto) setLeft((l) => l - 1); }, 1000); return () => clearInterval(t); }, [auto]);
   useEffect(() => { if (auto && left <= 0) load(true); }, [left, auto]);
-  const toggleHide = (k) => { const h = { ...hidden }; if (h[k]) delete h[k]; else h[k] = true; setHidden(h); localStorage.setItem("fr-quota-hidden", JSON.stringify(h)); };
+  const toggleHide = (k) => { const h = { ...hidden }; if (h[k]) delete h[k]; else h[k] = true; setHidden(h); localStorage.setItem("fr-quota-hidden-prov", JSON.stringify(h)); };
   const setAutoP = (v) => { setAuto(v); setLeft(60); localStorage.setItem("fr-quota-auto", v ? "1" : "0"); };
   const provOf = (a) => data.providers.find((p) => p.id === a.provider) || { id: a.provider, name: a.provider };
   if (!res) return html`<div class="skeleton"></div>`;
@@ -1810,7 +1902,7 @@ function QuotaPage({ data, reload, go }) {
     ${list.length === 0 ? html`<div class="card"><div class="empty"><div class="bubble"><${Icon} n="cloud_off" /></div><h3 class="strong">No accounts</h3><p class="small muted">Add a provider account to track its quota.</p></div></div>`
     : html`<div class="qgrid">${list.map((a) => html`<${QuotaCard} key=${a.id} a=${a} p=${provOf(a)} now=${now} hidden=${hidden} toggleHide=${toggleHide} busy=${busy[a.id] || busy["*"]}
         onRefresh=${() => load(true, a.id)} onEdit=${() => go("providers/" + encodeURIComponent(a.provider))}
-        onDelete=${() => setConfirm({ del: a })} onToggle=${(v) => setActive([a.id], v)} />`)}</div>`}
+        onDelete=${() => setConfirm({ del: a })} onToggle=${(v) => setActive([a.id], v)} onChanged=${() => load(true, a.id)} />`)}</div>`}
     ${confirm && confirm.del && html`<${Confirm} title="Delete account?" text=${`Delete ${confirm.del.name} (${provMeta(provOf(confirm.del)).name})? This removes its saved credential.`}
       onClose=${() => setConfirm(null)} onYes=${() => run(async () => { await api("DELETE", `/api/admin/accounts/${confirm.del.id}`); await reload(); await load(false); }, "Account deleted")} />`}
     ${confirm && confirm.ids && html`<${Confirm} danger=${!confirm.on} label=${confirm.on ? "Turn on" : "Turn off"} title=${confirm.on ? "Turn on available accounts?" : "Turn off empty accounts?"}
