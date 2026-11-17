@@ -260,8 +260,12 @@ func One(ctx context.Context, c *http.Client, o Options, model, ep string) Resul
 	if r.OutTokens == 0 && text.Len() > 0 {
 		r.OutTokens, r.Estimated = max(1, (len([]rune(text.String()))+3)/4), true
 	}
+	// Tokens/sec over the streaming part. When most output tokens were hidden
+	// reasoning (produced before the first visible token), or the answer came
+	// in one piece, divide by the whole request instead.
 	gen := total - firstTok
-	if !isSSE || gen < 50*time.Millisecond {
+	visible := (len([]rune(text.String())) + 3) / 4
+	if !isSSE || gen < 50*time.Millisecond || visible*2 < r.OutTokens {
 		gen = total
 	}
 	if r.OutTokens > 0 && gen > 0 {
