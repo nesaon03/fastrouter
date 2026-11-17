@@ -131,6 +131,54 @@ func (s *Server) benchCandidates() []benchCandidate {
 	return out
 }
 
+type benchProvider struct {
+	ID       string `json:"id"`
+	Status   string `json:"status"` // ok | fail | "" (no recent request)
+	Accounts int    `json:"accounts"`
+}
+
+// benchProviders lists the providers the Speed Test can call (usable
+// accounts) with the status of their accounts' last request.
+func (s *Server) benchProviders() []benchProvider {
+	st := s.state.Load()
+	var stats map[string]store.ConnStats
+	if s.st != nil {
+		stats, _ = s.st.ConnectionStats()
+	}
+	status := map[string]string{}
+	for _, c := range st.Snap.Connections {
+		switch code := stats[c.ID].LastStatus; {
+		case !c.Active || code == 0:
+		case code == 200:
+			status[c.Provider] = "ok"
+		case status[c.Provider] == "":
+			status[c.Provider] = "fail"
+		}
+	}
+	out := []benchProvider{}
+	for _, p := range st.List {
+		if !p.Plugin && p.Pool.Size() > 0 {
+			out = append(out, benchProvider{ID: p.ID, Status: status[p.ID], Accounts: p.Pool.Size()})
+		}
+	}
+	return out
+}
+
+// benchModelStatus maps "prefix/model" to the status of its latest request.
+func (s *Server) benchModelStatus() map[string]int {
+	out := map[string]int{}
+	if s.st == nil {
+		return out
+	}
+	last, _ := s.st.LastModelStatus()
+	for _, p := range s.state.Load().List {
+		for m, code := range last[p.ID] {
+			out[p.Prefix+"/"+m] = code
+		}
+	}
+	return out
+}
+
 func (s *Server) handleBenchOptions(w http.ResponseWriter, r *http.Request) {
 	_, label, _ := s.benchKey(nil)
 	s.bench.mu.Lock()
@@ -139,7 +187,8 @@ func (s *Server) handleBenchOptions(w http.ResponseWriter, r *http.Request) {
 		cur = s.bench.cur.run.ID
 	}
 	s.bench.mu.Unlock()
-	adminJSON(w, http.StatusOK, map[string]any{"candidates": s.benchCandidates(), "key": label, "base": s.benchBase(), "running": cur})
+	adminJSON(w, http.StatusOK, map[string]any{"candidates": s.benchCandidates(), "key": label, "base": s.benchBase(), "running": cur,
+		"clients": bench.Profiles, "providers": s.benchProviders(), "modelStatus": s.benchModelStatus()})
 }
 
 func (s *Server) handleBenchStart(w http.ResponseWriter, r *http.Request) {
@@ -384,18 +433,18 @@ func (s *Server) handleBenchExport(w http.ResponseWriter, r *http.Request) {
 	if format == "csv" {
 		var buf bytes.Buffer
 		cw := csv.NewWriter(&buf)
-		_ = cw.Write([]string{"run_id", "run_started", "seq", "at", "model", "endpoint", "stream", "ok", "status", "error_class", "error",
+		_ = cw.Write([]string{"run_id", "run_started", "seq", "at", "client", "model", "endpoint", "stream", "ok", "status", "error_class", "error",
 			"ttfb_ms", "ttft_ms", "total_ms", "in_tokens", "out_tokens", "tokens_estimated", "tok_per_sec",
-			"overhead_ms", "pre_ms", "post_ms", "hold_ms", "upstream_ttfb_ms", "attempts", "account", "upstream"})
+			"overhead_ms", "pre_ms", "post_ms", "hold_ms", "upstream_ttfb_ms", "attempts", "account", "upstream", "token_saver"})
 		f := func(v float64) string { return strconv.FormatFloat(v, 'f', 2, 64) }
 		for _, run := range runs {
 			rs, _ := run["results"].([]bench.Result)
 			started, _ := run["startedAt"].(time.Time)
 			for _, x := range rs {
 				_ = cw.Write([]string{fmt.Sprint(run["id"]), started.Format(time.RFC3339), strconv.Itoa(x.Seq), x.At.Format(time.RFC3339Nano),
-					x.Model, x.Endpoint, strconv.FormatBool(x.Stream), strconv.FormatBool(x.OK), strconv.Itoa(x.Status), x.Class, x.Message,
+					x.Client, x.Model, x.Endpoint, strconv.FormatBool(x.Stream), strconv.FormatBool(x.OK), strconv.Itoa(x.Status), x.Class, x.Message,
 					f(x.TTFBMs), f(x.TTFTMs), f(x.TotalMs), strconv.Itoa(x.InTokens), strconv.Itoa(x.OutTokens), strconv.FormatBool(x.Estimated), f(x.TokPerSec),
-					f(x.OverheadMs), f(x.PreMs), f(x.PostMs), f(x.HoldMs), f(x.UpTTFBMs), strconv.Itoa(x.Attempts), x.Account, x.Upstream})
+					f(x.OverheadMs), f(x.PreMs), f(x.PostMs), f(x.HoldMs), f(x.UpTTFBMs), strconv.Itoa(x.Attempts), x.Account, x.Upstream, x.Savers})
 			}
 		}
 		cw.Flush()

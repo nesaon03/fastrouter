@@ -230,3 +230,27 @@ func (s *Store) WorkingModels() (map[string]string, error) {
 	}
 	return out, rows.Err()
 }
+
+// LastModelStatus returns the HTTP status of the latest request per provider
+// and model within the last 7 days.
+func (s *Store) LastModelStatus() (map[string]map[string]int, error) {
+	rows, err := s.db.Query(`SELECT provider, model, status FROM (
+		SELECT provider, model, status, ROW_NUMBER() OVER (PARTITION BY provider, model ORDER BY ts DESC) AS rn
+		FROM usage WHERE ts >= ?) WHERE rn = 1`, time.Now().Add(-7*24*time.Hour).UTC().Format(time.RFC3339Nano))
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]map[string]int{}
+	for rows.Next() {
+		var p, m string
+		var st int
+		if rows.Scan(&p, &m, &st) == nil {
+			if out[p] == nil {
+				out[p] = map[string]int{}
+			}
+			out[p][m] = st
+		}
+	}
+	return out, rows.Err()
+}

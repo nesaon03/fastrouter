@@ -27,6 +27,7 @@ const (
 	Chat      = "chat"      // POST /v1/chat/completions (Cursor, Cline, Continue, most CLIs)
 	Messages  = "messages"  // POST /v1/messages (Claude Code)
 	Responses = "responses" // POST /v1/responses (Codex)
+	Gemini    = "gemini"    // POST /v1beta/models/{model}:streamGenerateContent (Gemini CLI)
 )
 
 // Options configures one benchmark.
@@ -34,12 +35,14 @@ type Options struct {
 	BaseURL   string   `json:"-"` // e.g. http://127.0.0.1:20128
 	APIKey    string   `json:"-"` // FastRouter key; never stored or returned
 	Models    []string `json:"models"`
-	Endpoints []string `json:"endpoints"`
+	Clients   []string `json:"clients"`             // IDE/CLI profiles (see Profiles) and api-<endpoint>
+	Endpoints []string `json:"endpoints,omitempty"` // plain API requests; added to Clients as api-<endpoint>
 	Stream    bool     `json:"stream"`
-	Runs      int      `json:"runs"`   // per model and endpoint
-	Prompt    string   `json:"prompt"` // tiny | medium
-	IDE       bool     `json:"ide"`    // Simulate IDE: system prompt + tools, per-client shape
-	MaxTokens int      `json:"maxTokens"`
+	Runs      int      `json:"runs"`             // per model and client
+	Prompt    string   `json:"prompt"`           // tiny | medium
+	IDE       bool     `json:"ide,omitempty"`    // legacy: Cursor, Claude Code and Codex shapes
+	Effort    string   `json:"effort,omitempty"` // auto | none | minimal | low | medium | high
+	MaxTokens int      `json:"maxTokens"`        // plain API requests; simulated clients send their own
 }
 
 // Normalize fills defaults and checks limits.
@@ -50,23 +53,39 @@ func (o *Options) Normalize() error {
 	if len(o.Models) > 40 {
 		return errors.New("at most 40 models per run")
 	}
-	if len(o.Endpoints) == 0 {
-		o.Endpoints = []string{Chat}
+	ids := append([]string(nil), o.Clients...)
+	if o.IDE && len(ids) == 0 {
+		ids = []string{"cursor", "claude", "codex"}
 	}
-	seen := map[string]bool{}
-	var eps []string
 	for _, e := range o.Endpoints {
-		switch e {
-		case Chat, Messages, Responses:
-			if !seen[e] {
-				seen[e] = true
-				eps = append(eps, e)
-			}
-		default:
-			return fmt.Errorf("unknown endpoint %q (chat, messages, responses)", e)
+		if e = strings.TrimSpace(e); e != "" {
+			ids = append(ids, "api-"+e)
 		}
 	}
-	o.Endpoints = eps
+	if len(ids) == 0 {
+		ids = []string{"api-chat"}
+	}
+	seen := map[string]bool{}
+	o.Clients, o.Endpoints = nil, nil
+	for _, id := range ids {
+		if ProfileByID(id) == nil {
+			return fmt.Errorf("unknown client %q", strings.TrimPrefix(id, "api-"))
+		}
+		if !seen[id] {
+			seen[id] = true
+			o.Clients = append(o.Clients, id)
+		}
+	}
+	if len(o.Clients) > 20 {
+		return errors.New("at most 20 clients per run")
+	}
+	switch o.Effort {
+	case "":
+		o.Effort = "auto"
+	case "auto", "none", "minimal", "low", "medium", "high":
+	default:
+		return fmt.Errorf("effort must be auto, none, minimal, low, medium or high")
+	}
 	if o.Runs <= 0 {
 		o.Runs = 3
 	}
@@ -81,22 +100,23 @@ func (o *Options) Normalize() error {
 		return fmt.Errorf("prompt must be tiny or medium")
 	}
 	if o.MaxTokens <= 0 { // room for reasoning models to think and still answer
-		o.MaxTokens = 512
+		o.MaxTokens = 1024
 		if o.Prompt == "medium" {
-			o.MaxTokens = 1024
+			o.MaxTokens = 2048
 		}
 	}
 	return nil
 }
 
 // Total is the number of requests the options produce.
-func (o *Options) Total() int { return len(o.Models) * len(o.Endpoints) * o.Runs }
+func (o *Options) Total() int { return len(o.Models) * len(o.Clients) * o.Runs }
 
 // Result is one request.
 type Result struct {
 	Seq       int       `json:"seq"`
 	At        time.Time `json:"at"`
 	Model     string    `json:"model"`
+	Client    string    `json:"client,omitempty"`
 	Endpoint  string    `json:"endpoint"`
 	Stream    bool      `json:"stream"`
 	OK        bool      `json:"ok"`
@@ -125,6 +145,7 @@ type Result struct {
 	AccountID string `json:"-"`
 	Account   string `json:"account,omitempty"` // masked display name
 	Upstream  string `json:"upstream,omitempty"`
+	Savers    string `json:"savers,omitempty"` // Token Saver features FastRouter applied (they add prompt tokens)
 }
 
 // Run executes the benchmark one request at a time (so runs do not slow each
@@ -137,12 +158,12 @@ func Run(ctx context.Context, c *http.Client, o Options, each func(Result)) []Re
 	seq := 0
 	for run := 0; run < o.Runs; run++ {
 		for _, m := range o.Models {
-			for _, ep := range o.Endpoints {
+			for _, cl := range o.Clients {
 				if ctx.Err() != nil {
 					return out
 				}
 				seq++
-				r := One(ctx, c, o, m, ep)
+				r := One(ctx, c, o, m, cl)
 				r.Seq = seq
 				out = append(out, r)
 				if each != nil {
@@ -162,9 +183,14 @@ func Client() *http.Client {
 }
 
 // One sends a single request.
-func One(ctx context.Context, c *http.Client, o Options, model, ep string) Result {
-	r := Result{At: time.Now(), Model: model, Endpoint: ep, Stream: o.Stream}
-	body, path, hdr := Build(o, model, ep)
+func One(ctx context.Context, c *http.Client, o Options, model, client string) Result {
+	p := ProfileByID(client)
+	if p == nil {
+		p = apiProfile(Chat)
+	}
+	ep := p.Endpoint
+	r := Result{At: time.Now(), Model: model, Client: p.ID, Endpoint: ep, Stream: o.Stream}
+	body, path, hdr := Build(o, model, p.ID)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, strings.TrimRight(o.BaseURL, "/")+path, bytes.NewReader(body))
 	if err != nil {
 		r.Class, r.Message = "bad_request", err.Error()
@@ -176,9 +202,12 @@ func One(ctx context.Context, c *http.Client, o Options, model, ep string) Resul
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("X-FastRouter-Timing", "1")
 	if o.APIKey != "" {
-		if ep == Messages {
+		switch ep {
+		case Messages:
 			req.Header.Set("x-api-key", o.APIKey)
-		} else {
+		case Gemini:
+			req.Header.Set("x-goog-api-key", o.APIKey)
+		default:
 			req.Header.Set("Authorization", "Bearer "+o.APIKey)
 		}
 	}
@@ -197,6 +226,7 @@ func One(ctx context.Context, c *http.Client, o Options, model, ep string) Resul
 	r.Status = resp.StatusCode
 	r.AccountID = resp.Header.Get("X-FastRouter-Account")
 	r.Upstream = resp.Header.Get("X-FastRouter-Model")
+	r.Savers = resp.Header.Get("X-FastRouter-Token-Saver")
 
 	var text strings.Builder
 	var firstTok time.Duration
@@ -349,7 +379,8 @@ func parseEvent(d []byte) (text string, in, out int, errMsg string) {
 				} `json:"tool_calls"`
 			} `json:"delta"`
 		} `json:"choices"`
-		Delta    json.RawMessage         `json:"delta"` // object (Anthropic) or string (Responses)
+		Delta json.RawMessage `json:"delta"` // object (Anthropic) or string (Responses)
+		gemini
 		Usage    *usage                  `json:"usage"`
 		Message  *struct{ Usage *usage } `json:"message"`
 		Response *struct{ Usage *usage } `json:"response"`
@@ -358,6 +389,7 @@ func parseEvent(d []byte) (text string, in, out int, errMsg string) {
 	if json.Unmarshal(d, &e) != nil {
 		return
 	}
+	text, in, out = e.gemini.read()
 	for _, c := range e.Choices {
 		text += c.Delta.Content + c.Delta.ReasoningContent + c.Delta.Reasoning
 		for _, tc := range c.Delta.ToolCalls {
@@ -408,6 +440,38 @@ type usage struct {
 func (u *usage) in() int  { return max(u.PromptTokens, u.InputTokens) }
 func (u *usage) out() int { return max(u.CompletionTokens, u.OutputTokens) }
 
+// gemini is the Gemini API's answer shape (streamed chunks look the same).
+type gemini struct {
+	Candidates []struct {
+		Content struct {
+			Parts []struct {
+				Text         string          `json:"text"`
+				FunctionCall json.RawMessage `json:"functionCall"`
+			} `json:"parts"`
+		} `json:"content"`
+	} `json:"candidates"`
+	UsageMetadata *struct {
+		Prompt     int `json:"promptTokenCount"`
+		Candidates int `json:"candidatesTokenCount"`
+		Thoughts   int `json:"thoughtsTokenCount"`
+	} `json:"usageMetadata"`
+}
+
+func (g gemini) read() (text string, in, out int) {
+	for _, c := range g.Candidates {
+		for _, p := range c.Content.Parts {
+			text += p.Text
+			if len(p.FunctionCall) > 2 {
+				text += string(p.FunctionCall)
+			}
+		}
+	}
+	if u := g.UsageMetadata; u != nil {
+		in, out = u.Prompt, u.Candidates+u.Thoughts
+	}
+	return
+}
+
 // parseJSON reads a whole (non-streamed) answer in any client format.
 func parseJSON(b []byte) (text string, in, out int) {
 	var v struct {
@@ -434,10 +498,12 @@ func parseJSON(b []byte) (text string, in, out int) {
 			} `json:"content"`
 		} `json:"output"`
 		Usage *usage `json:"usage"`
+		gemini
 	}
 	if json.Unmarshal(b, &v) != nil {
 		return
 	}
+	text, in, out = v.gemini.read()
 	for _, c := range v.Choices {
 		text += c.Message.Content + c.Message.ReasoningContent
 		for _, tc := range c.Message.ToolCalls {
@@ -457,7 +523,7 @@ func parseJSON(b []byte) (text string, in, out int) {
 		}
 	}
 	if v.Usage != nil {
-		in, out = v.Usage.in(), v.Usage.out()
+		in, out = max(in, v.Usage.in()), max(out, v.Usage.out())
 	}
 	return
 }
@@ -512,10 +578,13 @@ func classify(status int, msg string) string {
 // Stat summarises the passing runs of one model and endpoint.
 type Stat struct {
 	Model    string  `json:"model"`
+	Client   string  `json:"client,omitempty"`
 	Endpoint string  `json:"endpoint"`
 	Runs     int     `json:"runs"`
 	OK       int     `json:"ok"`
 	TTFT     Dist    `json:"ttft"`
+	TTFTRuns int     `json:"ttftRuns"` // passing runs with visible text (TTFT is empty when 0)
+	NoText   int     `json:"noText,omitempty"`
 	Total    Dist    `json:"total"`
 	Overhead Dist    `json:"overhead"`
 	TokPS    float64 `json:"tokPerSec"`
@@ -553,7 +622,7 @@ func Summarize(rs []Result) []Stat {
 	var keys []string
 	by := map[string][]Result{}
 	for _, r := range rs {
-		k := r.Model + "\x00" + r.Endpoint
+		k := r.Client + "\x00" + r.Model + "\x00" + r.Endpoint
 		if _, ok := by[k]; !ok {
 			keys = append(keys, k)
 		}
@@ -562,7 +631,7 @@ func Summarize(rs []Result) []Stat {
 	out := make([]Stat, 0, len(keys))
 	for _, k := range keys {
 		g := by[k]
-		st := Stat{Model: g[0].Model, Endpoint: g[0].Endpoint, Runs: len(g)}
+		st := Stat{Model: g[0].Model, Client: g[0].Client, Endpoint: g[0].Endpoint, Runs: len(g)}
 		var ttft, total, over, tps []float64
 		accts, errs := map[string]int{}, map[string]int{}
 		for _, r := range g {
@@ -572,7 +641,9 @@ func Summarize(rs []Result) []Stat {
 			}
 			st.OK++
 			total = append(total, r.TotalMs)
-			if !r.NoText {
+			if r.NoText {
+				st.NoText++
+			} else {
 				ttft = append(ttft, r.TTFTMs)
 			}
 			if r.Timed {
@@ -586,6 +657,7 @@ func Summarize(rs []Result) []Stat {
 			}
 		}
 		st.TTFT, st.Total, st.Overhead = NewDist(ttft), NewDist(total), NewDist(over)
+		st.TTFTRuns = len(ttft)
 		if len(tps) > 0 {
 			st.TokPS = NewDist(tps).Avg
 		}
@@ -607,4 +679,34 @@ func joinCounts(m map[string]int) string {
 		}
 	}
 	return strings.Join(ks, ", ")
+}
+
+// Speed bands for time to first token (ms): under 500 Really fast, under
+// 1500 Fast, under 3000 OK, under 6000 Slow, else Very slow.
+var SpeedBands = []struct {
+	Below float64
+	Label string
+}{{500, "Really fast"}, {1500, "Fast"}, {3000, "OK"}, {6000, "Slow"}, {math.Inf(1), "Very slow"}}
+
+// SpeedLabel names how fast ms feels to someone waiting in an IDE.
+func SpeedLabel(ms float64) string {
+	for _, b := range SpeedBands {
+		if ms < b.Below {
+			return b.Label
+		}
+	}
+	return ""
+}
+
+// OverheadLabel names FastRouter's own added time (ms).
+func OverheadLabel(ms float64) string {
+	switch {
+	case ms < 1:
+		return "negligible"
+	case ms < 5:
+		return "tiny"
+	case ms < 20:
+		return "small"
+	}
+	return "noticeable"
 }

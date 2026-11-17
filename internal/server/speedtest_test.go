@@ -120,13 +120,13 @@ func TestSpeedTestTab(t *testing.T) {
 		return b
 	}
 	opts := call("GET", "/api/admin/bench/options", "", 200)
-	if !strings.Contains(opts, `"id":"gw/`) && !strings.Contains(opts, `bench key`) {
+	if !strings.Contains(opts, `bench key`) || !strings.Contains(opts, `"id":"gemini-cli"`) || !strings.Contains(opts, `"providers":[{`) {
 		t.Fatalf("options: %s", opts)
 	}
 	call("POST", "/api/admin/bench", `{"models":[]}`, 400)
 	call("POST", "/api/admin/bench", `{"models":["gw/m"],"apiKey":"x"}`, 400) // the key is never client-supplied
 	var start struct{ ID string }
-	json.Unmarshal([]byte(call("POST", "/api/admin/bench", `{"models":["gw/m"],"endpoints":["chat","messages","responses"],"stream":true,"runs":2,"ide":true}`, 200)), &start)
+	json.Unmarshal([]byte(call("POST", "/api/admin/bench", `{"models":["gw/m"],"clients":["cursor","claude","codex","gemini-cli"],"endpoints":["chat"],"stream":true,"runs":2}`, 200)), &start)
 	var view struct {
 		Status  string
 		Total   int
@@ -142,7 +142,7 @@ func TestSpeedTestTab(t *testing.T) {
 		time.Sleep(50 * time.Millisecond)
 		json.Unmarshal([]byte(call("GET", "/api/admin/bench/"+start.ID, "", 200)), &view)
 	}
-	if view.Total != 6 || len(view.Results) != 6 || len(view.Summary) != 3 {
+	if view.Total != 10 || len(view.Results) != 10 || len(view.Summary) != 5 || view.Summary[3].Client != "gemini-cli" {
 		t.Fatalf("view: %+v", view)
 	}
 	for _, r := range view.Results {
@@ -167,7 +167,7 @@ func TestSpeedTestTab(t *testing.T) {
 		t.Fatalf("history: %s", hist)
 	}
 	csv := call("GET", "/api/admin/bench/all/export?format=csv", "", 200)
-	if lines := strings.Count(csv, "\n"); lines != 8 || !strings.HasPrefix(csv, "run_id,") {
+	if lines := strings.Count(csv, "\n"); lines != 12 || !strings.HasPrefix(csv, "run_id,") {
 		t.Fatalf("csv (%d lines): %s", lines, csv)
 	}
 	js := call("GET", "/api/admin/bench/"+start.ID+"/export?format=json", "", 200)

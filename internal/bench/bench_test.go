@@ -42,37 +42,87 @@ func TestParseEventFormats(t *testing.T) {
 }
 
 func TestBuildShapes(t *testing.T) {
-	o := Options{Models: []string{"m"}, Stream: true, IDE: true, Prompt: "medium"}
+	o := Options{Models: []string{"m/x"}, Stream: true, Prompt: "medium"}
+	ids := []string{}
+	for _, p := range Profiles {
+		ids = append(ids, p.ID)
+	}
+	o.Clients = ids
 	if err := o.Normalize(); err != nil {
 		t.Fatal(err)
 	}
-	for ep, want := range map[string][]string{
-		Chat:      {"/v1/chat/completions", `"role":"system"`, `"type":"function"`, `"include_usage":true`, `"tool_choice":"auto"`},
-		Messages:  {"/v1/messages", `"system":[`, `"input_schema"`, `"cache_control"`},
-		Responses: {"/v1/responses", `"instructions"`, `"input_text"`, `"parallel_tool_calls":false`},
-	} {
-		body, path, hdr := Build(o, "m", ep)
+	want := map[string][]string{
+		"cursor":     {"/v1/chat/completions", `"role":"system"`, `"type":"function"`, `"include_usage":true`, `"tool_choice":"auto"`, `additional_data`},
+		"claude":     {"/v1/messages", `"system":[`, `"input_schema"`, `"cache_control"`, `"max_tokens":32000`, `"name":"Bash"`},
+		"codex":      {"/v1/responses", `"instructions"`, `"input_text"`, `"parallel_tool_calls":false`, `"effort":"medium"`, `"name":"apply_patch"`},
+		"cline":      {"/v1/chat/completions", `TOOL USE`, `\u003cexecute_command\u003e`},
+		"gemini-cli": {"/v1beta/models/m/x:streamGenerateContent?alt=sse", `"systemInstruction"`, `"functionDeclarations"`, `"run_shell_command"`},
+		"api-chat":   {"/v1/chat/completions", `"reasoning_effort":"low"`, `"max_tokens":2048`},
+		"api-gemini": {"/v1beta/models/m/x:streamGenerateContent?alt=sse", `"thinkingBudget":4096`},
+	}
+	for _, id := range ids {
+		body, path, hdr := Build(o, "m/x", id)
 		var v map[string]any
-		if json.Unmarshal(body, &v) != nil || path != want[0] || v["model"] != "m" || v["stream"] != true {
-			t.Fatalf("%s: %s %s", ep, path, body)
+		if json.Unmarshal(body, &v) != nil {
+			t.Fatalf("%s: %s", id, body)
 		}
-		for _, w := range want[1:] {
-			if !strings.Contains(string(body), w) {
-				t.Errorf("%s body lacks %s", ep, w)
+		p := ProfileByID(id)
+		if p.Endpoint != Gemini && (v["model"] != "m/x" || v["stream"] != true) {
+			t.Fatalf("%s: %s", id, body)
+		}
+		if p.Kind != "api" && (!strings.Contains(string(body), "Do not call any tools") || p.Tools == 0) {
+			t.Errorf("%s: not an agent request", id)
+		}
+		if p.Kind == "api" && strings.Contains(string(body), "tools") {
+			t.Errorf("%s: plain request has tools", id)
+		}
+		for i, w := range want[id] {
+			if i == 0 && path != w {
+				t.Errorf("%s: path %s", id, path)
+			} else if i > 0 && !strings.Contains(string(body), w) {
+				t.Errorf("%s body lacks %s", id, w)
 			}
 		}
-		if strings.Contains(hdr["User-Agent"], "claude-cli") { // would trigger the Claude Code bypass
-			t.Errorf("%s: user agent %q", ep, hdr["User-Agent"])
+		if strings.Contains(hdr["User-Agent"], "claude-cli") || !strings.Contains(hdr["User-Agent"], "fastrouter-bench") { // claude-cli would trigger the Claude Code bypass
+			t.Errorf("%s: user agent %q", id, hdr["User-Agent"])
 		}
 	}
 	plain := Options{Models: []string{"m"}}
 	_ = plain.Normalize()
-	body, _, _ := Build(plain, "m", Chat)
-	if strings.Contains(string(body), "tools") || plain.Runs != 3 || plain.Prompt != "tiny" || plain.MaxTokens != 512 {
-		t.Fatalf("plain: %+v %s", plain, body)
+	if plain.Runs != 3 || plain.Prompt != "tiny" || plain.MaxTokens != 1024 || plain.Effort != "auto" || len(plain.Clients) != 1 || plain.Clients[0] != "api-chat" {
+		t.Fatalf("plain: %+v", plain)
 	}
-	if err := (&Options{Models: []string{"m"}, Endpoints: []string{"gemini"}}).Normalize(); err == nil {
-		t.Fatal("bad endpoint accepted")
+	none := Options{Models: []string{"m"}, Endpoints: []string{"responses"}, Effort: "none"}
+	_ = none.Normalize()
+	if body, _, _ := Build(none, "m", none.Clients[0]); strings.Contains(string(body), "reasoning") {
+		t.Fatalf("effort none: %s", body)
+	}
+	legacy := Options{Models: []string{"m"}, IDE: true}
+	_ = legacy.Normalize()
+	if strings.Join(legacy.Clients, ",") != "cursor,claude,codex" || legacy.Total() != 9 {
+		t.Fatalf("legacy: %+v", legacy)
+	}
+	if err := (&Options{Models: []string{"m"}, Clients: []string{"vim"}}).Normalize(); err == nil {
+		t.Fatal("bad client accepted")
+	}
+}
+
+func TestGeminiParseAndLabels(t *testing.T) {
+	text, in, out, _ := parseEvent([]byte(`{"candidates":[{"content":{"parts":[{"text":"one"}]}}],"usageMetadata":{"promptTokenCount":7,"candidatesTokenCount":3,"thoughtsTokenCount":2}}`))
+	if text != "one" || in != 7 || out != 5 {
+		t.Fatalf("%q %d %d", text, in, out)
+	}
+	for ms, want := range map[float64]string{120: "Really fast", 900: "Fast", 2000: "OK", 4000: "Slow", 9000: "Very slow"} {
+		if SpeedLabel(ms) != want {
+			t.Errorf("%v: %s", ms, SpeedLabel(ms))
+		}
+	}
+	if OverheadLabel(0.4) != "negligible" || OverheadLabel(30) != "noticeable" {
+		t.Fatal("overhead labels")
+	}
+	st := Summarize([]Result{{Model: "m", Client: "api-chat", OK: true, NoText: true, TTFTMs: 900, TotalMs: 900}})
+	if st[0].TTFTRuns != 0 || st[0].NoText != 1 || st[0].Client != "api-chat" {
+		t.Fatalf("%+v", st[0])
 	}
 }
 

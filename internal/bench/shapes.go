@@ -64,118 +64,194 @@ func userText(o Options) string {
 	return tinyPrompt
 }
 
-// System prompt used by Simulate IDE (the size and tone of a real agent prompt).
-var ideSystem = strings.TrimSpace(`
-You are a coding agent running inside the user's IDE. You help the user with software engineering tasks: reading code, explaining it, editing files and running commands.
-
-<tool_calling>
-You have tools to read files, search the codebase, edit files and run terminal commands. Only call a tool when it is needed to answer. Never refer to tool names when talking to the user. If you can answer from the context already provided, answer directly without calling tools.
-</tool_calling>
-
-<making_code_changes>
-When making changes, keep them minimal and focused on the request. Preserve existing style and formatting. Never output large unchanged blocks of code. Make sure generated code can run immediately: include imports and dependencies.
-</making_code_changes>
-
-<communication>
-Be concise. Use markdown for code. Use backticks for file, function and class names. Do not apologise. Do not invent facts about code you have not seen.
-</communication>
-
-<environment>
-OS: windows 10.0.19045. Shell: powershell. Workspace: C:\Users\dev\project (git repository, branch main). Today's date: 2026-11-17.
-</environment>`)
-
-const ideTask = "\n\n<user_query>\nUsing only the context above, answer directly without calling any tools.\n</user_query>"
-
-type tool struct {
-	name, desc string
-	props      map[string]any
-	required   []string
-}
-
-var ideTools = []tool{
-	{"read_file", "Read a file from the workspace. Returns the file contents with line numbers.",
-		map[string]any{"path": str("Path relative to the workspace root"), "offset": num("First line (1-based)"), "limit": num("Number of lines")}, []string{"path"}},
-	{"edit_file", "Replace an exact string in a file with new text.",
-		map[string]any{"path": str("File to edit"), "old_string": str("Exact text to replace"), "new_string": str("Replacement text")}, []string{"path", "old_string", "new_string"}},
-	{"run_terminal_cmd", "Run a shell command in the workspace and return its output.",
-		map[string]any{"command": str("The command to run"), "timeout_ms": num("Timeout in milliseconds")}, []string{"command"}},
-	{"grep_search", "Search file contents with a regular expression.",
-		map[string]any{"pattern": str("Regular expression"), "path": str("Directory or file to search"), "glob": str("Optional file glob")}, []string{"pattern"}},
-	{"codebase_search", "Semantic search over the codebase for code relevant to a question.",
-		map[string]any{"query": str("What to look for"), "directories": map[string]any{"type": "array", "items": map[string]any{"type": "string"}}}, []string{"query"}},
-}
-
-func str(d string) map[string]any { return map[string]any{"type": "string", "description": d} }
-func num(d string) map[string]any { return map[string]any{"type": "integer", "description": d} }
-
-func schema(t tool) map[string]any {
-	return map[string]any{"type": "object", "properties": t.props, "required": t.required}
-}
-
-// Build returns the body, path and extra headers for one request.
-func Build(o Options, model, ep string) ([]byte, string, map[string]string) {
-	text := userText(o)
-	hdr := map[string]string{"User-Agent": "fastrouter-bench/1"}
-	var b map[string]any
-	switch ep {
-	case Messages: // Claude Code shape
-		hdr["anthropic-version"] = "2023-06-01"
-		b = map[string]any{"model": model, "max_tokens": o.MaxTokens, "stream": o.Stream,
-			"messages": []any{map[string]any{"role": "user", "content": []any{map[string]any{"type": "text", "text": text}}}}}
-		if o.IDE {
-			hdr["User-Agent"] = "fastrouter-bench/1 (simulate claude-code)"
-			var tools []any
-			for _, t := range ideTools {
-				tools = append(tools, map[string]any{"name": t.name, "description": t.desc, "input_schema": schema(t)})
-			}
-			b["system"] = []any{map[string]any{"type": "text", "text": ideSystem, "cache_control": map[string]any{"type": "ephemeral"}}}
-			b["tools"] = tools
-			b["metadata"] = map[string]any{"user_id": "fastrouter-bench"}
-			b["messages"] = []any{map[string]any{"role": "user", "content": []any{
-				map[string]any{"type": "text", "text": "<system-reminder>Workspace is a Go project.</system-reminder>"},
-				map[string]any{"type": "text", "text": text + ideTask}}}}
-		}
-		return mustJSON(b), "/v1/messages", hdr
-	case Responses: // Codex shape
-		b = map[string]any{"model": model, "stream": o.Stream, "max_output_tokens": max(o.MaxTokens, 16), "store": false,
-			"input": []any{map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": text}}}}}
-		if o.IDE {
-			hdr["User-Agent"] = "fastrouter-bench/1 (simulate codex)"
-			var tools []any
-			for _, t := range ideTools {
-				tools = append(tools, map[string]any{"type": "function", "name": t.name, "description": t.desc, "parameters": schema(t), "strict": false})
-			}
-			b["instructions"] = ideSystem
-			b["tools"] = tools
-			b["tool_choice"] = "auto"
-			b["parallel_tool_calls"] = false
-			b["input"] = []any{
-				map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": "<environment_context>\n  <cwd>C:\\Users\\dev\\project</cwd>\n  <shell>powershell</shell>\n</environment_context>"}}},
-				map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": text + ideTask}}}}
-		}
-		return mustJSON(b), "/v1/responses", hdr
-	default: // Chat Completions: Cursor / Cline / Continue shape
-		b = map[string]any{"model": model, "max_tokens": o.MaxTokens, "stream": o.Stream,
-			"messages": []any{map[string]any{"role": "user", "content": text}}}
-		if o.Stream {
-			b["stream_options"] = map[string]any{"include_usage": true}
-		}
-		if o.IDE {
-			hdr["User-Agent"] = "fastrouter-bench/1 (simulate cursor)"
-			var tools []any
-			for _, t := range ideTools {
-				tools = append(tools, map[string]any{"type": "function", "function": map[string]any{"name": t.name, "description": t.desc, "parameters": schema(t)}})
-			}
-			b["tools"] = tools
-			b["tool_choice"] = "auto"
-			b["messages"] = []any{map[string]any{"role": "system", "content": ideSystem},
-				map[string]any{"role": "user", "content": "<additional_data>\nOpen file: internal/config/config.go\n</additional_data>" + "\n\n" + text + ideTask}}
-		}
-		return mustJSON(b), "/v1/chat/completions", hdr
-	}
+func str(d string) map[string]any     { return map[string]any{"type": "string", "description": d} }
+func num(d string) map[string]any     { return map[string]any{"type": "integer", "description": d} }
+func boolean(d string) map[string]any { return map[string]any{"type": "boolean", "description": d} }
+func strs(d string) map[string]any {
+	return map[string]any{"type": "array", "items": map[string]any{"type": "string"}, "description": d}
 }
 
 func mustJSON(v any) []byte {
 	b, _ := json.Marshal(v)
 	return b
+}
+
+// task follows the prompt for simulated clients so the model answers instead
+// of reaching for a tool (the benchmark does not run tools).
+const task = "\n\nAnswer directly from the context above. Do not call any tools."
+
+// Effort the request asks for: the user's choice, else the client's own
+// default; plain API requests ask for low so reasoning models still write
+// visible text within the token budget.
+func effortFor(o Options, p *Profile) string {
+	switch o.Effort {
+	case "", "auto":
+		if p.Kind == "api" && p.Endpoint != Messages {
+			return "low"
+		}
+		return p.effort
+	case "none":
+		return ""
+	}
+	return o.Effort
+}
+
+var geminiBudget = map[string]int{"minimal": 1024, "low": 4096, "medium": 10000, "high": 24576}
+
+// Build returns the body, path and headers of one request from client.
+func Build(o Options, model, client string) ([]byte, string, map[string]string) {
+	p := ProfileByID(client)
+	if p == nil {
+		p = apiProfile(Chat)
+	}
+	hdr := map[string]string{"User-Agent": p.UserAgent}
+	for k, v := range p.headers {
+		hdr[k] = v
+	}
+	text := userText(o)
+	sim := p.Kind != "api"
+	if sim {
+		text += task
+	}
+	maxTok := p.maxTokens
+	if !sim {
+		maxTok = o.MaxTokens
+	}
+	system := p.system
+	if p.xmlTools {
+		system += "\n\n" + xmlToolDocs(p.tools)
+	}
+	effort := effortFor(o, p)
+	b := map[string]any{"model": model, "stream": o.Stream}
+	for k, v := range p.extra {
+		b[k] = v
+	}
+	var path string
+	switch p.Endpoint {
+	case Messages:
+		path = "/v1/messages"
+		b["max_tokens"] = max(maxTok, 1024)
+		var content []any
+		if p.preamble != "" {
+			content = append(content, map[string]any{"type": "text", "text": p.preamble})
+		}
+		content = append(content, map[string]any{"type": "text", "text": text})
+		b["messages"] = []any{map[string]any{"role": "user", "content": content}}
+		if system != "" {
+			b["system"] = []any{map[string]any{"type": "text", "text": system, "cache_control": map[string]any{"type": "ephemeral"}}}
+			b["metadata"] = map[string]any{"user_id": "fastrouter-bench"}
+		}
+		if len(p.tools) > 0 && !p.xmlTools {
+			var tools []any
+			for _, n := range p.tools {
+				d, s := toolSchema(n)
+				tools = append(tools, map[string]any{"name": n, "description": d, "input_schema": s})
+			}
+			b["tools"] = tools
+		}
+		if effort != "" {
+			b["output_config"] = map[string]any{"effort": effort}
+		}
+	case Responses:
+		path = "/v1/responses"
+		if maxTok > 0 {
+			b["max_output_tokens"] = maxTok
+		}
+		if !sim {
+			b["store"] = false
+		}
+		var input []any
+		if p.preamble != "" {
+			input = append(input, map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": p.preamble}}})
+		}
+		b["input"] = append(input, map[string]any{"type": "message", "role": "user", "content": []any{map[string]any{"type": "input_text", "text": text}}})
+		if system != "" {
+			b["instructions"] = system
+		}
+		if len(p.tools) > 0 && !p.xmlTools {
+			var tools []any
+			for _, n := range p.tools {
+				d, s := toolSchema(n)
+				tools = append(tools, map[string]any{"type": "function", "name": n, "description": d, "parameters": s, "strict": false})
+			}
+			b["tools"] = tools
+		}
+		if effort != "" {
+			r := map[string]any{"effort": effort}
+			if sim {
+				r["summary"] = "auto"
+			}
+			b["reasoning"] = r
+		}
+	case Gemini:
+		path = "/v1beta/models/" + model + ":generateContent"
+		if o.Stream {
+			path = "/v1beta/models/" + model + ":streamGenerateContent?alt=sse"
+		}
+		delete(b, "model")
+		delete(b, "stream")
+		parts := []any{}
+		if p.preamble != "" {
+			parts = append(parts, map[string]any{"text": p.preamble})
+		}
+		b["contents"] = []any{map[string]any{"role": "user", "parts": append(parts, map[string]any{"text": text})}}
+		if system != "" {
+			b["systemInstruction"] = map[string]any{"parts": []any{map[string]any{"text": system}}}
+		}
+		if len(p.tools) > 0 {
+			var fns []any
+			for _, n := range p.tools {
+				d, s := toolSchema(n)
+				fns = append(fns, map[string]any{"name": n, "description": d, "parameters": s})
+			}
+			b["tools"] = []any{map[string]any{"functionDeclarations": fns}}
+		}
+		gc := map[string]any{}
+		if g, ok := b["generationConfig"].(map[string]any); ok {
+			for k, v := range g {
+				gc[k] = v
+			}
+		}
+		if maxTok > 0 {
+			gc["maxOutputTokens"] = maxTok
+		}
+		if bud, ok := geminiBudget[effort]; ok {
+			gc["thinkingConfig"] = map[string]any{"includeThoughts": sim, "thinkingBudget": bud}
+		}
+		if len(gc) > 0 {
+			b["generationConfig"] = gc
+		}
+	default:
+		path = "/v1/chat/completions"
+		if maxTok > 0 {
+			b["max_tokens"] = maxTok
+		}
+		if o.Stream {
+			b["stream_options"] = map[string]any{"include_usage": true}
+		}
+		var msgs []any
+		if system != "" {
+			msgs = append(msgs, map[string]any{"role": "system", "content": system})
+		}
+		user := text
+		if p.preamble != "" {
+			user = p.preamble + "\n\n" + text
+		}
+		b["messages"] = append(msgs, map[string]any{"role": "user", "content": user})
+		if len(p.tools) > 0 && !p.xmlTools {
+			var tools []any
+			for _, n := range p.tools {
+				d, s := toolSchema(n)
+				tools = append(tools, map[string]any{"type": "function", "function": map[string]any{"name": n, "description": d, "parameters": s}})
+			}
+			b["tools"] = tools
+		} else {
+			delete(b, "tool_choice")
+			delete(b, "parallel_tool_calls")
+		}
+		if effort != "" {
+			b["reasoning_effort"] = effort
+		}
+	}
+	return mustJSON(b), path, hdr
 }

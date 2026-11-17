@@ -108,15 +108,17 @@ func main() {
 		var models []string
 		fs.Func("model", "model or combo to test (repeatable)", func(v string) error { models = append(models, v); return nil })
 		working := fs.Bool("working", false, "test every working provider's model")
-		eps := fs.String("endpoint", "chat", "comma list: chat, messages, responses")
-		runs := fs.Int("runs", 3, "runs per model and endpoint")
+		eps := fs.String("endpoint", "", "plain API requests, comma list: chat, messages, responses, gemini (default chat when no --client)")
+		clients := fs.String("client", "", "IDE/CLI to simulate, comma list: "+bench.ClientIDs())
+		effort := fs.String("effort", "auto", "reasoning effort: auto (client default; low for plain API), none, minimal, low, medium, high")
+		runs := fs.Int("runs", 3, "runs per model and client")
 		prompt := fs.String("prompt", "tiny", "tiny or medium")
 		stream := fs.Bool("stream", true, "stream the answers")
-		ide := fs.Bool("ide", false, "Simulate IDE: system prompt + tools in each client's shape")
+		ide := fs.Bool("ide", false, "shorthand for --client cursor,claude,codex")
 		asJSON := fs.Bool("json", false, "print JSON")
 		noSave := fs.Bool("no-save", false, "do not add the run to the Speed Test history")
 		_ = fs.Parse(args)
-		o := bench.Options{Models: models, Endpoints: strings.Split(*eps, ","), Runs: *runs, Prompt: *prompt, Stream: *stream, IDE: *ide}
+		o := bench.Options{Models: models, Clients: splitList(*clients), Endpoints: splitList(*eps), Runs: *runs, Prompt: *prompt, Stream: *stream, IDE: *ide, Effort: *effort}
 		err = runBench(*cfgPath, *host, *port, o, *working, *asJSON, !*noSave)
 	case "version":
 		fmt.Println(versionString())

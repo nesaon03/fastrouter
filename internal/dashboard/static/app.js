@@ -1,6 +1,6 @@
 // FastRouter dashboard: a small Preact + htm SPA (no build step).
 // Structure and look follow 9Router's dashboard (MIT, decolua/9router).
-import { html, render, useState, useEffect, useCallback, useRef } from "./vendor/preact-htm.js";
+import { html, render, useState, useEffect, useCallback, useRef, useMemo } from "./vendor/preact-htm.js";
 
 /* ------------------------------------------------------------------ api */
 let csrf = "";
@@ -203,7 +203,10 @@ function matcher(q) {
   return (s) => { s = s.toLowerCase(); return terms.every((t) => (t[0] === "-" ? t.length === 1 || !s.includes(t.slice(1)) : s.includes(t))); };
 }
 const PICK_CHUNK = 160;
-function ModelPicker({ data, selected = [], multi, onPick, onClose, title, combos = true, exclude }) {
+// only: provider ids to list (default all); status(id): "ok" | "fail" for a
+// last-request dot; provStatus: provider id -> "ok" | "fail"; onPickMany(ids,
+// on) adds a per-provider Select all.
+function ModelPicker({ data, selected = [], multi, onPick, onClose, title, combos = true, exclude, only, status, provStatus, onPickMany }) {
   const ix = indexFor(data);
   const [q, setQ] = useState("");
   const [prov, setProv] = useState("");
@@ -220,7 +223,9 @@ function ModelPicker({ data, selected = [], multi, onPick, onClose, title, combo
   const cs = combos && !prov ? ix.combos.filter((x) => x.c.name !== exclude && ok(x.hay)) : [];
   let budget = limit - cs.length, total = cs.length, shown = cs.length;
   const groups = [];
-  for (const x of ix.groups) {
+  const allGroups = only ? ix.groups.filter((x) => only.has(x.g.provider)) : ix.groups;
+  const shownTotal = only ? allGroups.reduce((n, x) => n + x.models.length, 0) + (combos ? ix.combos.length : 0) : ix.total;
+  for (const x of allGroups) {
     if (prov && x.g.provider !== prov) continue;
     const models = q ? x.models.filter((m) => ok(m.hay)) : x.models;
     if (!models.length) continue;
@@ -228,7 +233,7 @@ function ModelPicker({ data, selected = [], multi, onPick, onClose, title, combo
     const closed = shut[x.g.provider] && !q;
     const take = closed ? 0 : Math.max(0, Math.min(models.length, budget));
     budget -= take; shown += take;
-    groups.push({ ...x, count: models.length, models: models.slice(0, take), closed, cut: !closed && take < models.length });
+    groups.push({ ...x, all: models, count: models.length, models: models.slice(0, take), closed, cut: !closed && take < models.length });
   }
   const more = shown < total && budget <= 0;
   useEffect(() => {
@@ -238,29 +243,34 @@ function ModelPicker({ data, selected = [], multi, onPick, onClose, title, combo
     return () => io.disconnect();
   }, [more, limit, q, prov]);
   const first = cs.length ? cs[0].c.name : groups.find((x) => x.models.length)?.models[0]?.id;
-  const chip = (id, label, tag) => html`<button type="button" class="pick-chip ${sel.has(id) ? "on" : ""}" title=${id} onClick=${() => onPick(id)}>
-    ${sel.has(id) && html`<${Icon} n="check" />`}<span class="truncate">${label}</span>${tag && html`<span class="tag">${tag}</span>`}</button>`;
+  const chip = (id, label, tag) => { const stt = status && status(id); return html`<button type="button" class="pick-chip ${sel.has(id) ? "on" : ""}" title=${stt ? `${id} · last request ${stt === "ok" ? "succeeded" : "failed"}` : id} onClick=${() => onPick(id)}>
+    ${sel.has(id) && html`<${Icon} n="check" />`}${stt && html`<span class="sdot ${stt}"></span>`}<span class="truncate">${label}</span>${tag && html`<span class="tag">${tag}</span>`}</button>`; };
+  const pstat = (id) => provStatus && provStatus[id];
   const addCustom = () => { const v = custom.trim(); if (v) { onPick(v); setCustom(""); } };
   return html`<${Modal} wide title=${title || (multi ? "Add models" : "Select model")} icon="neurology" onClose=${onClose}
     foot=${html`<span class="small muted grow">${multi ? `${selected.length} selected · click to add or remove` : "Click a model to choose it · Enter picks the first match"}</span>
       <button class="btn primary" onClick=${onClose}>${multi ? "Done" : "Cancel"}</button>`}>
     <div class="picker">
-      <div class="picker-search"><${Icon} n="search" /><input class="input" autofocus placeholder="Search ${ix.total} models, providers or prefixes… (-exclude, /regex/)" onInput=${onType}
+      <div class="picker-search"><${Icon} n="search" /><input class="input" autofocus placeholder="Search ${shownTotal} models, providers or prefixes… (-exclude, /regex/)" onInput=${onType}
           onKeyDown=${(e) => { if (e.key === "Enter" && first) { e.preventDefault(); onPick(first); } }} />
         <span class="small muted">${total} match${total === 1 ? "" : "es"}</span></div>
       <div class="pick-provs">
-        <button type="button" class="pprov ${prov ? "" : "on"}" onClick=${() => setProv("")}>All<span class="count">${ix.total}</span></button>
-        ${ix.groups.map((x) => html`<button type="button" key=${x.g.provider} class="pprov ${prov === x.g.provider ? "on" : ""}" title=${`${x.g.name} (${x.g.prefix}/)`}
+        <button type="button" class="pprov ${prov ? "" : "on"}" onClick=${() => setProv("")}>All<span class="count">${shownTotal}</span></button>
+        ${allGroups.map((x) => html`<button type="button" key=${x.g.provider} class="pprov ${prov === x.g.provider ? "on" : ""}" title=${`${x.g.name} (${x.g.prefix}/)`}
             onClick=${() => { setProv(prov === x.g.provider ? "" : x.g.provider); setLimit(PICK_CHUNK); }}><${Logo} p=${x.p} xs /><span class="truncate">${x.g.name}</span><span class="count">${x.models.length}</span></button>`)}</div>
       <div class="picker-list" ref=${listRef}>
-        ${cs.length > 0 && html`<div class="pick-group"><div class="pick-head"><span class="mtag-ic"><${Icon} n="layers" /></span><span class="strong">Combos</span><span class="count">${cs.length}</span></div>
+        ${cs.length > 0 && html`<div class="pick-group"><div class="pick-head"><span class="mtag-ic"><${Icon} n="layers" /></span><span class="strong">Combos</span><span class="count">${cs.length}</span>
+          ${onPickMany && html`<span class="grow"></span><button type="button" class="btn ghost sm pick-all" onClick=${() => { const ids = cs.map((x) => x.c.name); onPickMany(ids, !ids.every((i) => sel.has(i))); }}>${cs.every((x) => sel.has(x.c.name)) ? "Clear" : "Select all"}</button>`}</div>
           <div class="pick-chips">${cs.map(({ c }) => chip(c.name, c.name, c.strategy && c.strategy !== "fallback" ? STRATEGY[c.strategy].short : ""))}</div></div>`}
-        ${groups.map(({ g, p, models, count, closed, cut }) => html`<div class="pick-group" key=${g.provider}>
-          <button type="button" class="pick-head" onClick=${() => setShut({ ...shut, [g.provider]: !shut[g.provider] })}>
+        ${groups.map(({ g, p, models, all, count, closed, cut }) => { const on = all.every((m) => sel.has(m.id)); return html`<div class="pick-group" key=${g.provider}>
+          <div class="pick-head-row"><button type="button" class="pick-head" onClick=${() => setShut({ ...shut, [g.provider]: !shut[g.provider] })}>
             <${Logo} p=${p} xs /><span class="strong">${g.name}</span><span class="mono small muted">${g.prefix}/</span>
+            ${pstat(g.provider) && html`<span class="sdot ${pstat(g.provider)}" title=${pstat(g.provider) === "ok" ? "An account's last request succeeded" : "The accounts' last requests failed"}></span>`}
             ${g.plugin && html`<${Badge} icon="extension">needs plugin</${Badge}>`}<span class="count">${count}</span>
             <span class="grow"></span><${Icon} n=${closed ? "expand_more" : "expand_less"} /></button>
-          ${models.length > 0 && html`<div class="pick-chips">${models.map((m) => chip(m.id, m.label, m.custom ? "custom" : ""))}${cut && html`<span class="small muted" style="align-self:center">+${count - models.length} more…</span>`}</div>`}</div>`)}
+            ${onPickMany && html`<button type="button" class="btn ghost sm pick-all" title=${`${on ? "Remove" : "Add"} all ${count} ${g.name} model${count === 1 ? "" : "s"}${q ? " matching the search" : ""}`}
+              onClick=${() => onPickMany(all.map((m) => m.id), !on)}><${Icon} n=${on ? "remove_done" : "done_all"} />${on ? "Clear" : "Select all"}</button>`}</div>
+          ${models.length > 0 && html`<div class="pick-chips">${models.map((m) => chip(m.id, m.label, m.custom ? "custom" : ""))}${cut && html`<span class="small muted" style="align-self:center">+${count - models.length} more…</span>`}</div>`}</div>`; })}
         ${more && html`<div ref=${sentinel} class="small muted" style="text-align:center;padding:10px">Loading more…</div>`}
         ${total === 0 && html`<div class="empty" style="padding:28px"><div class="bubble"><${Icon} n="search_off" /></div><p class="small muted">No model matches “${q}”. Type its id below.</p></div>`}
       </div>
@@ -309,21 +319,50 @@ function ModelListEditor({ models, setModels, data, exclude, globs }) {
 
 /* ---------------------------------------------------------- speed test */
 // Runs fastrouter's bench against its own /v1 endpoints (server-side, with a
-// FastRouter API key the browser never sees) and shows live timings.
-const EP_META = { chat: ["Chat Completions", "/v1/chat/completions", "Cursor · Cline · Continue"], messages: ["Messages", "/v1/messages", "Claude Code"], responses: ["Responses", "/v1/responses", "Codex"] };
+// FastRouter API key the browser never sees) and shows live timings. Each
+// request is shaped like the chosen IDE or CLI sends it.
+const EP_META = { chat: ["Chat Completions", "/v1/chat/completions"], messages: ["Messages", "/v1/messages"], responses: ["Responses", "/v1/responses"], gemini: ["Gemini", "/v1beta/models/…:streamGenerateContent"] };
+const EP_SHORT = { chat: "Chat", messages: "Messages", responses: "Responses", gemini: "Gemini" };
 const msf = (v) => v == null || isNaN(v) ? "—" : v >= 1000 ? (v / 1000).toFixed(v >= 10000 ? 1 : 2) + " s" : v >= 100 ? Math.round(v) + " ms" : v.toFixed(v >= 10 ? 1 : 2) + " ms";
 const ovf = (v) => v == null || isNaN(v) ? "—" : v.toFixed(2) + " ms";
 const avg = (xs) => xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : NaN;
 const p95 = (xs) => { if (!xs.length) return NaN; const s = xs.slice().sort((a, b) => a - b); return s[Math.ceil(0.95 * s.length) - 1]; };
+// Speed bands for time to first token, same as `fastrouter bench`.
+const SPEED = [[500, "Really fast", "s1"], [1500, "Fast", "s2"], [3000, "OK", "s3"], [6000, "Slow", "s4"], [Infinity, "Very slow", "s5"]];
+const SPEED_HELP = "Time to first token: under 0.5 s Really fast · under 1.5 s Fast · under 3 s OK · under 6 s Slow · 6 s or more Very slow";
+const speedOf = (ms) => SPEED.find(([lim]) => ms < lim);
+const ovLabel = (ms) => ms < 1 ? "negligible" : ms < 5 ? "tiny" : ms < 20 ? "small" : "noticeable";
+function SpeedBadge({ ms, byTotal }) {
+  if (ms == null || isNaN(ms)) return html`<span class="muted">—</span>`;
+  const [, label, cls] = speedOf(ms);
+  return html`<span class="st-speed ${cls}" title=${(byTotal ? "No visible first token, so rated on total time. " : "") + SPEED_HELP}>${label}${byTotal ? "*" : ""}</span>`;
+}
+function SpeedLegend() {
+  return html`<div class="st-bands" title=${SPEED_HELP}><span class="small muted">Speed (TTFT):</span>
+    ${SPEED.map(([lim, label, cls], i) => html`<span class="st-speed ${cls}">${label}</span><span class="small muted">${lim === Infinity ? "≥ 6 s" : "< " + msf(lim)}</span>`)}
+    <span class="small muted st-bands-ov">${"Overhead: < 1 ms negligible · < 5 ms tiny · < 20 ms small · more is noticeable"}</span></div>`;
+}
+function ClientLogo({ c }) {
+  const [bad, setBad] = useState(false);
+  if (!c || !c.logo || bad) return html`<span class="logo xs st-api-ic"><${Icon} n=${c && c.kind === "api" ? "api" : "terminal"} /></span>`;
+  return html`<span class="logo xs"><img src=${"logos/" + c.logo} alt="" onError=${() => setBad(true)} /></span>`;
+}
+// Older runs had no client: map their endpoint (+ Simulate IDE) to one.
+const LEGACY_IDE = { chat: "cursor", messages: "claude", responses: "codex" };
+const clientId = (r, o) => r.client || (o && o.ide ? LEGACY_IDE[r.endpoint] : "api-" + r.endpoint);
+const clientName = (cm, id) => (cm[id] && cm[id].name) || id;
+const ST_KEY = "fr-speedtest";
 
-function SpeedTestPage() {
+function SpeedTestPage({ data }) {
+  const saved = useMemo(() => { try { return JSON.parse(localStorage.getItem(ST_KEY) || "{}"); } catch (e) { return {}; } }, []);
   const [opt, setOpt] = useState(null);
-  const [sel, setSel] = useState([]);
-  const [eps, setEps] = useState(["chat"]);
-  const [stream, setStream] = useState(true);
-  const [prompt, setPrompt] = useState("tiny");
-  const [runs, setRuns] = useState(3);
-  const [ide, setIde] = useState(false);
+  const [sel, setSel] = useState(saved.models || null);
+  const [clients, setClients] = useState(saved.clients || ["cursor"]);
+  const [stream, setStream] = useState(saved.stream ?? true);
+  const [prompt, setPrompt] = useState(saved.prompt || "tiny");
+  const [runs, setRuns] = useState(saved.runs || 3);
+  const [effort, setEffort] = useState(saved.effort || "auto");
+  const [pick, setPick] = useState(false);
   const [job, setJob] = useState(null);
   const [hist, setHist] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -344,134 +383,174 @@ function SpeedTestPage() {
   useEffect(() => {
     api("GET", "/api/admin/bench/options").then((o) => {
       setOpt(o);
-      setSel(o.candidates.filter((c) => c.working && c.kind === "model").slice(0, 3).map((c) => c.id));
+      setSel((s) => s || o.candidates.filter((c) => c.working && c.kind === "model").slice(0, 3).map((c) => c.id));
       if (o.running) watch(o.running);
       else api("GET", "/api/admin/bench/history").then((r) => { setHist(r.runs); if (r.runs.length) watch(r.runs[0].id); }, () => setHist([]));
-    }, (e) => setOpt({ candidates: [], error: e.message }));
+    }, (e) => setOpt({ candidates: [], clients: [], providers: [], error: e.message }));
     return () => clearTimeout(poll.current);
   }, []);
-  const toggle = (list, set, v) => set(list.includes(v) ? list.filter((x) => x !== v) : [...list, v]);
+  useEffect(() => { try { localStorage.setItem(ST_KEY, JSON.stringify({ models: sel, clients, stream, prompt, runs, effort })); } catch (e) {} }, [sel, clients, stream, prompt, runs, effort]);
   const running = job && job.status === "running";
-  const total = sel.length * eps.length * runs;
+  const models = sel || [];
+  const total = models.length * clients.length * runs;
   const start = async () => {
     setBusy(true);
     try {
-      const r = await api("POST", "/api/admin/bench", { models: sel, endpoints: eps, stream, runs: Number(runs), prompt, ide });
+      const r = await api("POST", "/api/admin/bench", { models, clients, stream, runs: Number(runs), prompt, effort });
       watch(r.id);
     } catch (e) { toast(e.message, "error"); }
     setBusy(false);
   };
   const stop = () => job && run(() => api("POST", `/api/admin/bench/${job.id}/stop`), "Stopping…");
   if (!opt) return html`<div class="card"><p class="muted">Loading…</p></div>`;
-  const models = opt.candidates.filter((c) => c.kind === "model"), combos = opt.candidates.filter((c) => c.kind === "combo");
-  const working = models.filter((c) => c.working).map((c) => c.id);
-  const chip = (c) => html`<button type="button" key=${c.id} class="st-chip ${sel.includes(c.id) ? "on" : ""}" title=${c.kind === "combo" ? "Combo" : `${c.name} · ${c.accounts} account${c.accounts === 1 ? "" : "s"}${c.working ? " · last request OK" : ""}`}
-      onClick=${() => toggle(sel, setSel, c.id)} disabled=${running}>
-    <span class="dot ${c.working ? "ok" : ""}"></span><span class="mono">${c.id}</span>${sel.includes(c.id) && html`<${Icon} n="check" />`}</button>`;
+  const cm = Object.fromEntries((opt.clients || []).map((c) => [c.id, c]));
+  const agents = (opt.clients || []).filter((c) => c.kind !== "api"), raw = (opt.clients || []).filter((c) => c.kind === "api");
+  const working = opt.candidates.filter((c) => c.working && c.kind === "model").map((c) => c.id);
+  const only = new Set((opt.providers || []).map((p) => p.id));
+  const provStatus = Object.fromEntries((opt.providers || []).filter((p) => p.status).map((p) => [p.id, p.status]));
+  const mstat = (id) => { const c = (opt.modelStatus || {})[id]; return c ? (c === 200 ? "ok" : "fail") : ""; };
+  const toggleModel = (id) => setSel(models.includes(id) ? models.filter((x) => x !== id) : [...models, id]);
+  const pickMany = (ids, on) => setSel(on ? [...models, ...ids.filter((i) => !models.includes(i))] : models.filter((x) => !ids.includes(x)));
+  const toggleClient = (id) => setClients(clients.includes(id) ? clients.filter((x) => x !== id) : [...clients, id]);
+  const card = (c) => { const on = clients.includes(c.id); return html`<button type="button" key=${c.id} class="st-client ${on ? "on" : ""}" disabled=${running} onClick=${() => toggleClient(c.id)}
+      title=${`${c.name} → ${EP_META[c.endpoint] ? EP_META[c.endpoint][1] : c.endpoint}\nUser-Agent: ${c.userAgent}${c.tools ? `\n${c.tools} tools, its own system prompt` : "\n" + (c.note || "")}`}>
+    <${ClientLogo} c=${c} /><span class="st-client-txt"><span class="medium truncate">${c.name}</span>
+      <span class="small muted truncate">${EP_SHORT[c.endpoint] || c.endpoint}${c.tools ? ` · ${c.tools} tools` : ""}</span></span>
+    <span class="st-check"><${Icon} n=${on ? "check_circle" : "radio_button_unchecked"} /></span></button>`; };
   return html`
     <div class="card">
-      <div class="card-title"><div><h2><${Icon} n="tune" />Configure</h2><p>Each request goes through <span class="mono">${opt.base}</span>/v1 exactly like an IDE or CLI call.</p></div>
+      <div class="card-title"><div><h2><${Icon} n="tune" />Configure</h2><p>Each request goes through <span class="mono">${opt.base}</span> exactly like the chosen IDE or CLI calls it.</p></div>
         <${Badge} kind=${opt.key && !/^no /.test(opt.key) ? "success" : "warning"} icon="vpn_key">${opt.key || "no key"}</${Badge}></div>
-      <div class="col" style="gap:18px">
-        <div class="field"><div class="row between"><label>Models & combos <span class="muted small">(${sel.length} selected)</span></label>
-          <div class="row" style="gap:6px"><button class="btn ghost sm" disabled=${running || !working.length} onClick=${() => setSel(working)}><${Icon} n="done_all" />All working (${working.length})</button>
-            <button class="btn ghost sm" disabled=${running || !sel.length} onClick=${() => setSel([])}>Clear</button></div></div>
-          ${models.length ? html`<div class="st-chips">${models.map(chip)}</div>` : html`<div class="empty-line"><${Icon} n="dns" />No provider has a usable account yet</div>`}
-          ${combos.length > 0 && html`<div class="st-sub">Combos</div><div class="st-chips">${combos.map(chip)}</div>`}
-          <div class="hint">Green dot: the provider's last request succeeded. One test model per provider (the same one the provider test uses).</div></div>
-        <div class="field"><label>Client endpoints</label>
-          <div class="st-eps">${Object.entries(EP_META).map(([k, [n, path, who]]) => html`<button type="button" key=${k} class="st-ep ${eps.includes(k) ? "on" : ""}" disabled=${running}
-              onClick=${() => eps.includes(k) ? eps.length > 1 && setEps(eps.filter((x) => x !== k)) : setEps([...eps, k])}>
-            <div class="row between"><span class="medium">${n}</span><span class="st-check"><${Icon} n=${eps.includes(k) ? "check_circle" : "radio_button_unchecked"} /></span></div>
-            <div class="mono small muted">${path}</div><div class="small muted">${who}</div></button>`)}</div></div>
+      <div class="col" style="gap:20px">
+        <div class="field"><div class="row between"><label>Test as <span class="muted small">(${clients.length} selected)</span></label>
+          <div class="row" style="gap:6px">
+            <button class="btn ghost sm" disabled=${running} onClick=${() => setClients(["cursor", "claude", "codex"])}><${Icon} n="star" />Popular</button>
+            <button class="btn ghost sm" disabled=${running} onClick=${() => setClients(agents.map((c) => c.id))}><${Icon} n="done_all" />All IDEs & CLIs</button>
+            <button class="btn ghost sm" disabled=${running || !clients.length} onClick=${() => setClients([])}>Clear</button></div></div>
+          <div class="st-clients">${agents.map(card)}</div>
+          <div class="st-sub">Raw API · no system prompt or tools</div>
+          <div class="st-clients">${raw.map(card)}</div>
+          <div class="hint">Each client sends its own endpoint, headers, user agent, system prompt and tool list (condensed copies of the real ones). Hover a card for details.</div></div>
+        <div class="field"><div class="row between"><label>Models & combos <span class="muted small">(${models.length} selected)</span></label>
+          <div class="row" style="gap:6px"><button class="btn ghost sm" disabled=${running || !working.length} onClick=${() => setSel(working)}><${Icon} n="bolt" />Working (${working.length})</button>
+            <button class="btn ghost sm" disabled=${running || !models.length} onClick=${() => setSel([])}>Clear</button></div></div>
+          <div class="st-models-box ${running ? "off" : ""}">
+            ${models.map((id) => { const s = mstat(id); return html`<span class="st-mchip" key=${id}>${s && html`<span class="sdot ${s}" title=${s === "ok" ? "Last request succeeded" : "Last request failed"}></span>`}<${ModelTag} data=${data} id=${id} />
+              <button type="button" class="st-mx" title="Remove" disabled=${running} onClick=${() => toggleModel(id)}><${Icon} n="close" /></button></span>`; })}
+            <button type="button" class="btn outline sm" disabled=${running} onClick=${() => setPick(true)}><${Icon} n="add" />${models.length ? "Add models" : "Choose models"}</button></div>
+          ${!only.size && html`<div class="hint">No provider has a usable account yet.</div>`}</div>
         <div class="st-row">
           <${Field} label="Streaming"><${Seg} value=${stream ? "on" : "off"} disabled=${running} onChange=${(v) => setStream(v === "on")} options=${[["on", "On (SSE)"], ["off", "Off (JSON)"]]} /></${Field}>
           <${Field} label="Prompt size"><${Seg} value=${prompt} disabled=${running} onChange=${setPrompt} options=${[["tiny", "Tiny · ~20 tokens"], ["medium", "Medium · ~700 in"]]} /></${Field}>
+          <${Field} label="Reasoning effort"><${Seg} value=${effort} disabled=${running} onChange=${setEffort} options=${[["auto", "Auto"], ["none", "Off"], ["low", "Low"], ["medium", "Medium"], ["high", "High"]]} /></${Field}>
           <${Field} label="Runs each"><input class="input" type="number" min="1" max="20" style="width:90px" value=${runs} disabled=${running} onInput=${(e) => setRuns(Math.max(1, Math.min(20, Number(e.target.value) || 1)))} /></${Field}>
-          <div class="st-ide ${ide ? "on" : ""}"><div class="grow"><div class="medium row" style="gap:6px"><${Icon} n="code_blocks" />Simulate IDE</div>
-            <div class="small muted">System prompt + 5 tools in Cursor, Claude Code and Codex request shapes</div></div><${Toggle} on=${ide} disabled=${running} onChange=${setIde} /></div>
         </div>
+        <div class="hint" style="margin-top:-10px">Auto: each client sends its usual effort (Codex: medium); raw API requests ask for low so reasoning models still write visible text.</div>
         <div class="row between st-foot">
           <span class="small muted"><${Icon} n="lock" style="font-size:15px;vertical-align:-3px" /> The API key is used on the server only and never sent to this page. Runs one request at a time.</span>
-          <div class="row" style="gap:10px"><span class="small muted">${total} request${total === 1 ? "" : "s"}</span>
+          <div class="row" style="gap:10px"><span class="small muted ${total > 300 ? "danger-text" : ""}">${total} request${total === 1 ? "" : "s"}${total > 300 ? " (max 300)" : ""}</span>
             ${running ? html`<button class="btn danger" onClick=${stop}><${Icon} n="stop_circle" />Stop</button>`
-              : html`<button class="btn primary" disabled=${busy || !sel.length || !eps.length || total > 300} onClick=${start}><${Icon} n="play_arrow" />Start speed test</button>`}</div></div>
+              : html`<button class="btn primary" disabled=${busy || !models.length || !clients.length || total > 300} onClick=${start}><${Icon} n="play_arrow" />Start speed test</button>`}</div></div>
       </div>
     </div>
-    ${job ? html`<${SpeedResults} job=${job} />` : html`<div class="empty-line"><${Icon} n="speed" />Pick models and press Start — results appear here live</div>`}
-    <${SpeedHistory} hist=${hist} current=${job && job.id} running=${running} onView=${watch}
+    ${job ? html`<${SpeedResults} job=${job} cm=${cm} data=${data} />` : html`<div class="empty-line"><${Icon} n="speed" />Pick clients and models, then press Start — results appear here live</div>`}
+    <${SpeedHistory} hist=${hist} cm=${cm} current=${job && job.id} running=${running} onView=${watch}
       onDelete=${(r) => setConfirm(r)} onClear=${() => setConfirm({ id: "all" })} />
+    ${pick && html`<${ModelPicker} multi title="Choose models to test" data=${data} selected=${models} only=${only} status=${mstat} provStatus=${provStatus}
+      onPick=${toggleModel} onPickMany=${pickMany} onClose=${() => setPick(false)} />`}
     ${confirm && html`<${Confirm} title=${confirm.id === "all" ? "Clear speed test history?" : "Delete this run?"} text=${confirm.id === "all" ? "Every stored run is removed." : "This run and its requests are removed."}
       onClose=${() => setConfirm(null)} onYes=${() => run(async () => { await api("DELETE", `/api/admin/bench/${confirm.id}`); if (job && (confirm.id === "all" || confirm.id === job.id)) setJob(null); await loadHist(); }, "Deleted")} />`}`;
 }
 
-function SpeedResults({ job }) {
+const NOTEXT = "no visible output (reasoning used the budget)";
+const ttftN = (s) => s.ttftRuns ?? (s.ttft && s.ttft.avg > 0 ? s.ok : 0);
+function SpeedResults({ job, cm, data }) {
+  const o = job.options || {};
   const rs = job.results || [], ok = rs.filter((r) => r.ok);
   const pct = job.total ? Math.round((100 * job.done) / job.total) : 0;
   const ttft = ok.filter((r) => !r.noText).map((r) => r.ttftMs), over = ok.filter((r) => r.timed).map((r) => r.overheadMs), tps = ok.filter((r) => r.tokPerSec > 0).map((r) => r.tokPerSec);
-  const stats = [["timer", "TTFT avg · p95", msf(avg(ttft)), "p95 " + msf(p95(ttft)), "blue"],
-    ["bolt", "FastRouter overhead", ovf(avg(over)), "p95 " + ovf(p95(over)) + " · pre + post", "orange"],
+  const stats = [["timer", "TTFT avg · p95", msf(avg(ttft)), html`p95 ${msf(p95(ttft))} · <${SpeedBadge} ms=${avg(ttft)} />`, "blue"],
+    ["bolt", "FastRouter overhead", ovf(avg(over)), `p95 ${ovf(p95(over))} · ${isNaN(avg(over)) ? "pre + post" : ovLabel(avg(over))}`, "orange"],
     ["speed", "Tokens / sec", isNaN(avg(tps)) ? "—" : avg(tps).toFixed(1), "average while generating", "green"],
     ["check_circle", "Passed", `${ok.length}/${rs.length}`, rs.length - ok.length ? `${rs.length - ok.length} failed` : "no failures", rs.length - ok.length ? "yellow" : "green"]];
+  const savers = [...new Set(rs.map((r) => r.savers).filter(Boolean))].join(", ");
   const st = { running: ["info", "Running"], done: ["success", "Done"], stopped: ["warning", "Stopped"], interrupted: ["warning", "Interrupted"] }[job.status] || ["", job.status];
-  const o = job.options || {};
+  // Summary rows grouped by client, in run order.
+  const groups = [];
+  for (const s of job.summary || []) {
+    const id = clientId(s, o);
+    let g = groups.find((x) => x.id === id);
+    if (!g) groups.push((g = { id, rows: [] }));
+    g.rows.push(s);
+  }
+  const cols = 10;
+  const errText = (s) => s.errors ? s.errors.split(", ").map((e) => { const k = e.split(" ")[0]; return CLASS_LABEL[k] ? CLASS_LABEL[k] + e.slice(k.length) : e; }).join(", ") : "failed";
   return html`
     <div class="card">
       <div class="card-title"><div><h2><${Icon} n="monitoring" />Results</h2>
-          <p>${new Date(job.startedAt).toLocaleString()} · ${(o.endpoints || []).map((e) => EP_META[e] ? EP_META[e][0] : e).join(", ")} · ${o.stream ? "streaming" : "no streaming"} · ${o.prompt} prompt${o.ide ? " · Simulate IDE" : ""} · ${o.runs} run${o.runs === 1 ? "" : "s"} each${job.source === "cli" ? " · from CLI" : ""}</p></div>
+          <p>${new Date(job.startedAt).toLocaleString()} · ${groups.map((g) => clientName(cm, g.id)).join(", ") || "—"} · ${o.stream ? "streaming" : "no streaming"} · ${o.prompt} prompt${o.effort && o.effort !== "auto" ? ` · effort ${o.effort}` : ""} · ${o.runs} run${o.runs === 1 ? "" : "s"} each${job.source === "cli" ? " · from CLI" : ""}</p></div>
         <div class="row" style="gap:8px"><${Badge} kind=${st[0]} dot>${st[1]}</${Badge}>
           <a class="btn outline sm" href=${`/api/admin/bench/${job.id}/export?format=json`} download><${Icon} n="download" />JSON</a>
           <a class="btn outline sm" href=${`/api/admin/bench/${job.id}/export?format=csv`} download><${Icon} n="download" />CSV</a></div></div>
       <div class="st-progress"><div style=${`width:${pct}%`} class=${job.status === "running" ? "live" : ""}></div></div>
       <div class="small muted" style="margin:6px 0 18px">${job.done} of ${job.total} requests${job.key ? " · " + job.key : ""}</div>
+      ${savers && html`<div class="notice info" style="margin:-8px 0 16px"><${Icon} n="compress" /><span>Token Saver ran on these requests (<span class="mono">${savers}</span>): its system-prompt rules count as extra input tokens, exactly as for your IDE. Turn it off under Token Saver to compare.</span></div>`}
       <div class="grid g4" style="margin-bottom:20px">${stats.map(([ic, l, v, sub, c]) => html`<div class="card sm stat ${c} ${ic === "bolt" ? "st-over-card" : ""}"><span class="label"><${Icon} n=${ic} />${l}</span><span class="value">${v}</span><span class="sub">${sub}</span></div>`)}</div>
-      ${(job.summary || []).length > 0 && html`<div class="st-table-wrap"><table class="table st-table">
-        <thead><tr><th>Model</th><th>Endpoint</th><th class="num">OK</th><th class="num">TTFT min</th><th class="num">avg</th><th class="num">p50</th><th class="num">p95</th>
+      ${groups.length > 0 && html`<div class="st-table-wrap"><table class="table st-table">
+        <thead><tr><th>Model</th><th class="num">OK</th><th title=${SPEED_HELP}>Speed</th><th class="num">TTFT avg</th><th class="num">p95</th>
           <th class="num">Total avg</th><th class="num">p95</th><th class="num">Tok/s</th><th class="num st-over">Overhead avg</th><th class="num st-over">p95</th></tr></thead>
-        <tbody>${job.summary.map((s) => html`<tr key=${s.model + s.endpoint}>
-          <td><div class="mono">${s.model}</div>${s.accounts && html`<div class="small muted st-acct" title=${s.accounts}>${s.accounts}</div>`}</td><td>${{ chat: "Chat", messages: "Messages", responses: "Responses" }[s.endpoint] || s.endpoint}</td>
-          <td class="num"><span class=${s.ok === s.runs ? "ok-text" : s.ok ? "warn-text" : "danger-text"}>${s.ok}/${s.runs}</span></td>
-          ${s.ok ? html`<td class="num">${msf(s.ttft.min)}</td><td class="num strong">${msf(s.ttft.avg)}</td><td class="num">${msf(s.ttft.p50)}</td><td class="num">${msf(s.ttft.p95)}</td>
-            <td class="num">${msf(s.total.avg)}</td><td class="num">${msf(s.total.p95)}</td><td class="num">${s.tokPerSec ? s.tokPerSec.toFixed(1) : "—"}</td>
-            <td class="num st-over strong">${ovf(s.overhead.avg)}</td><td class="num st-over">${ovf(s.overhead.p95)}</td>`
-            : html`<td colspan="9" class="small danger-text">${s.errors ? s.errors.split(", ").map((e) => CLASS_LABEL[e.split(" ")[0]] ? CLASS_LABEL[e.split(" ")[0]] + e.slice(e.split(" ")[0].length) : e).join(", ") : "failed"}</td>`}</tr>`)}</tbody></table></div>`}
+        <tbody>${groups.map((g) => { const c = cm[g.id]; return html`
+          <tr class="st-group" key=${"g" + g.id}><td colspan=${cols}><div class="row" style="gap:8px"><${ClientLogo} c=${c} /><span class="strong">${clientName(cm, g.id)}</span>
+            ${c && html`<span class="mono small muted">${EP_META[c.endpoint] ? EP_META[c.endpoint][1] : c.endpoint}</span><span class="small muted">${c.tools ? `· system prompt + ${c.tools} tools` : "· plain request"}</span>`}</div></td></tr>
+          ${g.rows.map((s) => { const n = ttftN(s); return html`<tr key=${g.id + s.model + s.endpoint}>
+            <td title=${s.accounts ? "Accounts: " + s.accounts : ""}><${ModelTag} data=${data} id=${s.model} /></td>
+            <td class="num" title=${n && n < s.ok ? `${s.ok - n} passing run(s) had ${NOTEXT}` : ""}><span class=${s.ok === s.runs ? "ok-text" : s.ok ? "warn-text" : "danger-text"}>${s.ok}/${s.runs}${n && n < s.ok ? "†" : ""}</span></td>
+            ${s.ok ? html`<td>${n ? html`<${SpeedBadge} ms=${s.ttft.avg} />` : html`<${SpeedBadge} ms=${s.total.avg} byTotal />`}</td>
+              ${n ? html`<td class="num strong" title=${`min ${msf(s.ttft.min)} · p50 ${msf(s.ttft.p50)} · max ${msf(s.ttft.max)}`}>${msf(s.ttft.avg)}</td><td class="num">${msf(s.ttft.p95)}</td>`
+                : html`<td colspan="2" class="small muted st-notext" title="Only hidden reasoning tokens came back, so there is no first visible token. Try effort Low or Off.">— ${NOTEXT}</td>`}
+              <td class="num">${msf(s.total.avg)}</td><td class="num">${msf(s.total.p95)}</td><td class="num">${s.tokPerSec ? s.tokPerSec.toFixed(1) : "—"}</td>
+              <td class="num st-over"><span class="strong">${ovf(s.overhead.avg)}</span> <span class="st-ovl">${s.overhead.avg || s.overhead.max ? ovLabel(s.overhead.avg) : ""}</span></td><td class="num st-over">${ovf(s.overhead.p95)}</td>`
+              : html`<td colspan=${cols - 2} class="small danger-text">${errText(s)}</td>`}</tr>`; })}`; })}</tbody></table></div>
+      <${SpeedLegend} />`}
     </div>
     ${rs.length > 0 && html`<div class="card"><div class="card-title"><div><h2><${Icon} n="bar_chart" />Per request</h2><p>Bar = total time. Darker part = time to first token. The orange tick is FastRouter's own overhead (scaled up 10× so it is visible).</p></div></div>
-      <${SpeedChart} rs=${rs} />
+      <${SpeedChart} rs=${rs} cm=${cm} o=${o} />
       <div class="st-table-wrap" style="margin-top:16px"><table class="table st-table">
-        <thead><tr><th>#</th><th>Model</th><th>Endpoint</th><th>Result</th><th class="num">TTFT</th><th class="num">Total</th><th class="num">Tok/s</th><th class="num st-over">Overhead</th><th class="num">Upstream TTFB</th><th>Account</th></tr></thead>
-        <tbody>${rs.slice().reverse().map((r) => html`<tr key=${r.seq}>
-          <td class="muted">${r.seq}</td><td class="mono small">${r.model}</td><td class="small">${EP_META[r.endpoint] ? EP_META[r.endpoint][0] : r.endpoint}${r.stream ? "" : " · JSON"}</td>
-          <td>${r.ok ? html`<${Badge} kind="success" icon="check">Pass</${Badge}>` : html`<span title=${r.message || ""}><${Badge} kind="error" icon="close">${CLASS_LABEL[r.class] || r.class || "fail"}${r.status ? " · " + r.status : ""}</${Badge}></span>`}</td>
-          <td class="num" title=${r.noText ? "Only hidden reasoning tokens came back, so there is no first visible token" : ""}>${r.ok ? (r.noText ? "†" : msf(r.ttftMs)) : "—"}</td><td class="num">${msf(r.totalMs)}</td><td class="num">${r.ok && r.tokPerSec ? r.tokPerSec.toFixed(1) + (r.estimated ? "*" : "") : "—"}</td>
-          <td class="num st-over" title=${r.timed ? `pre ${ovf(r.preMs)} (request in → sent upstream) + post ${ovf(r.postMs)} (upstream ready → first byte to client). Empty-answer hold ${ovf(r.holdMs)} not counted.${r.attempts > 1 ? ` ${r.attempts} attempts, failover ${msf(r.failoverMs)}.` : ""}` : "no timing trailer"}>${r.timed ? ovf(r.overheadMs) : "—"}</td>
-          <td class="num">${r.timed ? msf(r.upTtfbMs) : "—"}</td><td class="small muted st-acct" title=${r.account || ""}>${r.account || "—"}</td></tr>`)}</tbody></table></div>
+        <thead><tr><th>#</th><th>Client</th><th>Model</th><th title=${SPEED_HELP}>Result</th><th class="num">TTFT</th><th class="num">Total</th><th class="num">In / out tok</th><th class="num">Tok/s</th><th class="num st-over">Overhead</th><th>Account</th></tr></thead>
+        <tbody>${rs.slice().reverse().map((r) => { const id = clientId(r, o); return html`<tr key=${r.seq}>
+          <td class="muted">${r.seq}</td><td><div class="row nowrap" style="gap:6px"><${ClientLogo} c=${cm[id]} /><span class="small">${clientName(cm, id)}${r.stream ? "" : " · JSON"}</span></div></td>
+          <td><${ModelTag} data=${data} id=${r.model} /></td>
+          <td>${r.ok ? html`<${SpeedBadge} ms=${r.noText ? r.totalMs : r.ttftMs} byTotal=${r.noText} />` : html`<span title=${r.message || ""}><${Badge} kind="error" icon="close">${CLASS_LABEL[r.class] || r.class || "fail"}${r.status ? " · " + r.status : ""}</${Badge}></span>`}</td>
+          <td class="num" title=${r.noText ? NOTEXT : ""}>${r.ok ? (r.noText ? html`<span class="muted">— <span class="small">no visible output</span></span>` : msf(r.ttftMs)) : "—"}</td><td class="num">${msf(r.totalMs)}</td><td class="num small" title=${r.savers ? "Token Saver: " + r.savers : ""}>${r.ok ? `${r.inTokens || "—"} / ${r.outTokens || "—"}` : "—"}</td><td class="num">${r.ok && r.tokPerSec ? r.tokPerSec.toFixed(1) + (r.estimated ? "*" : "") : "—"}</td>
+          <td class="num st-over" title=${r.timed ? `pre ${ovf(r.preMs)} (request in → sent upstream) + post ${ovf(r.postMs)} (upstream ready → first byte to client). Empty-answer hold ${ovf(r.holdMs)} not counted. Upstream answered headers in ${msf(r.upTtfbMs)}.${r.attempts > 1 ? ` ${r.attempts} attempts, failover ${msf(r.failoverMs)}.` : ""}` : "no timing trailer"}>${r.timed ? html`${ovf(r.overheadMs)} <span class="st-ovl">${ovLabel(r.overheadMs)}</span>` : "—"}</td>
+          <td class="small muted st-acct" title=${r.account || ""}>${r.account || "—"}</td></tr>`; })}</tbody></table></div>
       ${rs.some((r) => r.estimated) && html`<p class="small muted" style="margin-top:8px">* tokens estimated from characters (the provider sent no usage).</p>`}
-      ${rs.some((r) => r.noText) && html`<p class="small muted" style="margin-top:4px">† only hidden reasoning tokens came back (no visible text), so TTFT is not counted.</p>`}
+      ${rs.some((r) => r.noText) && html`<p class="small muted" style="margin-top:4px">— ${NOTEXT}: only hidden reasoning tokens came back, so TTFT is not counted and the speed is rated on total time (*). Set Reasoning effort to Low or Off to get visible text.</p>`}
     </div>`}`;
 }
 
-function SpeedChart({ rs }) {
+function SpeedChart({ rs, cm, o }) {
   const [hover, setHover] = useState(-1);
   const W = 900, H = 200, L = 52, R = 12, T = 10, B = 24;
   const max = Math.max(...rs.map((r) => r.totalMs), 1);
   const n = Math.max(rs.length, 12), bw = (W - L - R) / n, Y = (v) => T + (H - T - B) * (1 - Math.min(v, max) / max);
+  const h = hover >= 0 && rs[hover];
   return html`<div class="chart-wrap"><svg viewBox="0 0 ${W} ${H}" class="chart" onMouseLeave=${() => setHover(-1)}>
     ${[0, 0.5, 1].map((f) => html`<line x1=${L} x2=${W - R} y1=${Y(max * f)} y2=${Y(max * f)} class="grid-l" /><text x=${L - 8} y=${Y(max * f) + 4} text-anchor="end" class="axis">${msf(max * f)}</text>`)}
     ${rs.map((r, i) => { const x = L + i * bw + bw * 0.15, w = bw * 0.7; return html`<g key=${r.seq} onMouseEnter=${() => setHover(i)}>
       <rect x=${x} y=${T} width=${w} height=${H - T - B} fill="transparent" />
       ${r.ok ? html`<rect x=${x} y=${Y(r.totalMs)} width=${w} height=${H - B - Y(r.totalMs)} rx="3" class="st-bar-total" />
-        <rect x=${x} y=${Y(r.ttftMs)} width=${w} height=${H - B - Y(r.ttftMs)} rx="3" class="st-bar-ttft" />
+        ${!r.noText && html`<rect x=${x} y=${Y(r.ttftMs)} width=${w} height=${H - B - Y(r.ttftMs)} rx="3" class="st-bar-ttft" />`}
         ${r.timed && html`<rect x=${x} y=${H - B - Math.max(2, (H - T - B) * Math.min(1, (r.overheadMs * 10) / max))} width=${w} height=${Math.max(2, (H - T - B) * Math.min(1, (r.overheadMs * 10) / max))} class="st-bar-over" />`}`
         : html`<rect x=${x} y=${Y(r.totalMs)} width=${w} height=${H - B - Y(r.totalMs)} rx="3" class="st-bar-fail" />`}
       ${(rs.length <= 30 || i % Math.ceil(rs.length / 30) === 0) && html`<text x=${x + w / 2} y=${H - 8} text-anchor="middle" class="axis">${r.seq}</text>`}</g>`; })}
-  </svg>${hover >= 0 && rs[hover] && html`<div class="chart-tip" style=${`left:${(100 * (L + hover * bw + bw / 2)) / W}%`}>
-    <div class="strong">#${rs[hover].seq} · ${rs[hover].model}</div><div>${EP_META[rs[hover].endpoint][0]} · ${rs[hover].ok ? "pass" : CLASS_LABEL[rs[hover].class] || rs[hover].class}</div>
-    <div>TTFT ${msf(rs[hover].ttftMs)} · total ${msf(rs[hover].totalMs)}</div><div>overhead ${ovf(rs[hover].overheadMs)}</div></div>`}
+  </svg>${h && html`<div class="chart-tip" style=${`left:${(100 * (L + hover * bw + bw / 2)) / W}%`}>
+    <div class="strong">#${h.seq} · ${h.model}</div><div>${clientName(cm, clientId(h, o))} · ${h.ok ? (h.noText ? "pass, no visible output" : "pass · " + speedOf(h.ttftMs)[1]) : CLASS_LABEL[h.class] || h.class}</div>
+    <div>TTFT ${h.noText ? "—" : msf(h.ttftMs)} · total ${msf(h.totalMs)}</div><div>overhead ${ovf(h.overheadMs)}</div></div>`}
     <div class="st-legend"><span><i class="st-bar-ttft"></i>Time to first token</span><span><i class="st-bar-total"></i>Generation</span><span><i class="st-bar-over"></i>FastRouter overhead ×10</span><span><i class="st-bar-fail"></i>Failed</span></div></div>`;
 }
 
-function SpeedHistory({ hist, current, running, onView, onDelete, onClear }) {
+function SpeedHistory({ hist, cm, current, running, onView, onDelete, onClear }) {
   return html`<div class="card">
     <div class="card-title"><div><h2><${Icon} n="history" />History</h2><p>Stored in FastRouter's database (last 200 runs), including <span class="mono">fastrouter bench</span> runs.</p></div>
       <div class="row" style="gap:8px"><a class="btn outline sm" href="/api/admin/bench/all/export?format=json" download><${Icon} n="download" />All JSON</a>
@@ -481,13 +560,15 @@ function SpeedHistory({ hist, current, running, onView, onDelete, onClear }) {
       : html`<div class="st-table-wrap"><table class="table st-table">
         <thead><tr><th>When</th><th>Source</th><th>Models</th><th>Setup</th><th class="num">Passed</th><th class="num">TTFT avg</th><th class="num st-over">Overhead avg</th><th></th></tr></thead>
         <tbody>${hist.map((h) => { const sm = h.summary || {}, o = h.options || {}, stats = sm.stats || [];
-          const okRuns = stats.filter((s) => s.ok), w = okRuns.reduce((a, s) => a + s.ok, 0);
-          const t = w ? okRuns.reduce((a, s) => a + s.ttft.avg * s.ok, 0) / w : NaN, ov = w ? okRuns.reduce((a, s) => a + s.overhead.avg * s.ok, 0) / w : NaN;
+          const okRuns = stats.filter((s) => s.ok), w = okRuns.reduce((a, s) => a + s.ok, 0), tw = okRuns.reduce((a, s) => a + ttftN(s), 0);
+          const cl = [...new Set(stats.map((s) => clientId(s, o)))];
+          const t = tw ? okRuns.reduce((a, s) => a + s.ttft.avg * ttftN(s), 0) / tw : NaN, ov = w ? okRuns.reduce((a, s) => a + s.overhead.avg * s.ok, 0) / w : NaN;
           return html`<tr key=${h.id} class=${h.id === current ? "st-cur" : ""}>
           <td class="small">${new Date(h.startedAt).toLocaleString()}</td><td><${Badge} kind=${h.source === "cli" ? "info" : ""}>${h.source === "cli" ? "CLI" : "Dashboard"}</${Badge}>${h.status !== "done" && html` <${Badge} kind="warning">${h.status}</${Badge}>`}</td>
           <td class="small mono st-models" title=${(o.models || []).join("\n")}>${(o.models || []).slice(0, 2).join(", ")}${(o.models || []).length > 2 ? ` +${o.models.length - 2}` : ""}</td>
-          <td class="small muted">${(o.endpoints || []).join("/")} · ${o.stream ? "stream" : "json"} · ${o.prompt}${o.ide ? " · IDE" : ""} · ×${o.runs}</td>
-          <td class="num">${sm.ok ?? "—"}/${sm.done ?? "—"}</td><td class="num">${msf(t)}</td><td class="num st-over">${ovf(ov)}</td>
+          <td class="small"><div class="row nowrap" style="gap:4px">${cl.slice(0, 4).map((id) => html`<span title=${clientName(cm, id)}><${ClientLogo} c=${cm[id]} /></span>`)}${cl.length > 4 ? html`<span class="muted">+${cl.length - 4}</span>` : ""}
+            <span class="muted">${o.stream ? "stream" : "json"} · ${o.prompt} · ×${o.runs}</span></div></td>
+          <td class="num">${sm.ok ?? "—"}/${sm.done ?? "—"}</td><td class="num">${msf(t)} ${!isNaN(t) && html`<${SpeedBadge} ms=${t} />`}</td><td class="num st-over">${ovf(ov)}</td>
           <td class="num nowrap"><button class="icon-btn" title="View" onClick=${() => onView(h.id)}><${Icon} n="visibility" /></button>
             <a class="icon-btn" title="Download CSV" href=${`/api/admin/bench/${h.id}/export?format=csv`} download><${Icon} n="download" /></a>
             <button class="icon-btn danger" title="Delete" disabled=${running && h.id === current} onClick=${() => onDelete(h)}><${Icon} n="delete" /></button></td></tr>`; })}</tbody></table></div>`}
