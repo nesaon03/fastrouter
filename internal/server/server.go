@@ -173,6 +173,8 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PATCH /api/admin/accounts/{id}", s.adminWrite(s.handleAccountUpdate))
 	mux.Handle("DELETE /api/admin/accounts/{id}", s.adminWrite(s.handleAccountDelete))
 	mux.Handle("POST /api/admin/nodes", s.adminWrite(s.handleNodeCreate))
+	mux.Handle("POST /api/admin/nodes/check", s.adminWrite(s.handleNodeCheck))
+	mux.Handle("GET /api/admin/nodes/prefix", s.adminRead(s.handlePrefixCheck))
 	mux.Handle("PATCH /api/admin/nodes/{id}", s.adminWrite(s.handleNodeUpdate))
 	mux.Handle("DELETE /api/admin/nodes/{id}", s.adminWrite(s.handleNodeDelete))
 	mux.Handle("POST /api/admin/combos", s.adminWrite(s.handleComboCreate))

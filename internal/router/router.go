@@ -119,6 +119,7 @@ type Provider struct {
 	Plugin           bool              // login provider deferred to a plugin
 	Login            string            // official-login plugin ("codex", "glm") or ""
 	Upstream         map[string]string // catalog model id -> served id
+	DefaultModel     string            // custom endpoint: model for bare "prefix" / "prefix/default"
 	Pool             *Pool
 }
 
@@ -370,7 +371,7 @@ func Build(snap *store.Snapshot, limits map[string]KeyLimit) *State {
 
 func nodeProvider(n store.Node, prefix string) *Provider {
 	base := strings.TrimRight(n.BaseURL, "/")
-	p := &Provider{ID: n.ID, Name: n.Name, Prefix: prefix, Pool: &Pool{}, CacheControl: true}
+	p := &Provider{ID: n.ID, Name: n.Name, Prefix: prefix, Pool: &Pool{}, CacheControl: true, DefaultModel: n.DefaultModel}
 	switch {
 	case strings.HasPrefix(n.Type, "anthropic"):
 		p.URLs[translate.Anthropic] = base + "/messages"
@@ -460,6 +461,10 @@ func (s *State) resolve(model string, depth int) ([]Target, error) {
 		return s.resolveList(model, models, depth)
 	}
 	prefix, name, ok := strings.Cut(model, "/")
+	if p := s.providers[prefix]; p != nil && p.DefaultModel != "" && (name == "" || name == "default") {
+		// a custom endpoint's default model: "prefix", "prefix/" or "prefix/default"
+		return []Target{{Provider: p, Model: p.DefaultModel, Label: prefix + "/" + p.DefaultModel}}, nil
+	}
 	if !ok || name == "" {
 		return nil, fmt.Errorf("%w: %q (use prefix/model or a combo name)", ErrModelNotFound, model)
 	}

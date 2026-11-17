@@ -18,6 +18,7 @@ import (
 type Node struct {
 	ID, Name, Prefix, Type, APIType, BaseURL string
 	Aliases                                  []string // extra prefixes that also reach this endpoint
+	DefaultModel                             string   // model for tests and bare "prefix" / "prefix/default" requests ("" = first listed)
 }
 
 // Connection is one provider account.
@@ -164,8 +165,8 @@ func (s *Store) ReplaceAll(snap *Snapshot) error {
 		}
 	}
 	for i, n := range snap.Nodes {
-		if _, err := tx.Exec(`INSERT INTO nodes (id,name,prefix,type,api_type,base_url,ord,aliases) VALUES (?,?,?,?,?,?,?,?)`,
-			n.ID, n.Name, n.Prefix, n.Type, n.APIType, n.BaseURL, i, strings.Join(n.Aliases, ",")); err != nil {
+		if _, err := tx.Exec(`INSERT INTO nodes (id,name,prefix,type,api_type,base_url,ord,aliases,default_model) VALUES (?,?,?,?,?,?,?,?,?)`,
+			n.ID, n.Name, n.Prefix, n.Type, n.APIType, n.BaseURL, i, strings.Join(n.Aliases, ","), n.DefaultModel); err != nil {
 			return err
 		}
 	}
@@ -238,14 +239,14 @@ func (s *Store) ReplaceAll(snap *Snapshot) error {
 // Load reads the whole configuration, decrypting secrets into memory.
 func (s *Store) Load() (*Snapshot, error) {
 	snap := &Snapshot{Settings: map[string]json.RawMessage{}}
-	rows, err := s.db.Query(`SELECT id,name,prefix,type,api_type,base_url,COALESCE(aliases,'') FROM nodes ORDER BY ord`)
+	rows, err := s.db.Query(`SELECT id,name,prefix,type,api_type,base_url,COALESCE(aliases,''),COALESCE(default_model,'') FROM nodes ORDER BY ord`)
 	if err != nil {
 		return nil, err
 	}
 	for rows.Next() {
 		var n Node
 		var aliases string
-		if err := rows.Scan(&n.ID, &n.Name, &n.Prefix, &n.Type, &n.APIType, &n.BaseURL, &aliases); err != nil {
+		if err := rows.Scan(&n.ID, &n.Name, &n.Prefix, &n.Type, &n.APIType, &n.BaseURL, &aliases, &n.DefaultModel); err != nil {
 			return nil, err
 		}
 		if aliases != "" {

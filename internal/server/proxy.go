@@ -65,7 +65,7 @@ type proxyReq struct {
 	irErr  error
 	parsed bool
 
-	injectedUsage bool // we asked an OpenAI upstream for a usage chunk the client did not request
+	injectedUsage bool   // we asked an OpenAI upstream for a usage chunk the client did not request
 	netErr        string // last "could not reach" failure, for the final error message
 }
 

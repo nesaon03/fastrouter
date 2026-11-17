@@ -528,7 +528,7 @@ function ProvidersPage({ data, reload, go, query }) {
           style=${p.accounts.length && p.accounts.every((a) => !a.active) ? "opacity:.55" : ""}>
         <div class="prov-card"><div class="row grow" style="gap:12px;min-width:0"><${Logo} p=${p} />
           <div class="grow" style="min-width:0"><div class="prov-name truncate">${p.name}</div>
-            <div class="prov-meta">${cardStatus(p)}<${Badge}>${p.kind === "anthropic-compatible" ? "Messages" : p.apiType === "responses" ? "Responses" : "Chat"}</${Badge}><span class="muted mono small">${p.prefix}/</span></div></div></div>
+            <div class="prov-meta">${cardStatus(p)}<${Badge}>${p.kind === "anthropic-compatible" ? "Messages" : p.apiType === "responses" ? "Responses" : "Chat"}</${Badge}><span class="prefix-tag mono" title=${`Models are called as ${p.prefix}/model` + (p.defaultModel ? ` · default ${p.defaultModel}` : "")}>${p.prefix}/</span></div></div></div>
           ${p.accounts.length > 0 && html`<span onClick=${(e) => e.stopPropagation()}><${Toggle} sm on=${p.accounts.some((a) => a.active)} onChange=${(v) => toggleAll(p, v)} /></span>`}</div></div>`)}</div>`
         : html`<div class="empty-line"><${Icon} n="extension" />No custom providers — use buttons above to add OpenAI/Anthropic compatible endpoints</div>`}
     </section>
@@ -586,31 +586,95 @@ function AccountForm({ data, provider, account, onClose, onSaved }) {
     </form></${Modal}>`;
 }
 
+// Custom endpoint form, laid out like 9Router's AddCompatibleModal: name, prefix,
+// API style, base URL, key (for the check), optional model ID, then Check API.
+const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 32);
+const prefixProblem = (v) => !v ? "" : /\//.test(v) ? "No slash — it becomes prefix/model" : /\s/.test(v) ? "No spaces"
+  : !/^[a-z0-9][a-z0-9_-]{0,31}$/.test(v) ? "Lower-case letters, digits, - or _ (max 32)" : "";
 function NodeForm({ node, type, onClose, onSaved }) {
-  const [f, setF] = useState(node ? { name: node.name, prefix: node.prefix, baseUrl: node.baseUrl, type: node.kind, apiType: node.apiType || "chat" }
-    : { name: "", prefix: "", baseUrl: "", type: type || "openai-compatible", apiType: "chat" });
+  const [f, setF] = useState(node ? { name: node.name, prefix: node.prefix, baseUrl: node.baseUrl, type: node.kind, apiType: node.apiType || "chat", modelId: node.defaultModel || "" }
+    : { name: "", prefix: "", baseUrl: "", type: type || "openai-compatible", apiType: "chat", modelId: "" });
+  const [key, setKey] = useState("");
+  const [keepKey, setKeepKey] = useState(true);
+  const [touched, setTouched] = useState(!!node);
+  const [pfx, setPfx] = useState({ ok: true, msg: "" });
+  const [chk, setChk] = useState(null);
+  const [checking, setChecking] = useState(false);
   const [busy, setBusy] = useState(false);
-  const set = (k) => (e) => setF({ ...f, [k]: e && e.target ? e.target.value : e });
+  const anth = f.type === "anthropic-compatible";
+  const saved = node && node.accounts && node.accounts.some((a) => a.active && a.keyHint);
+  const set = (k) => (e) => { const v = e && e.target ? e.target.value : e; setF((o) => ({ ...o, [k]: v })); if (k !== "name") setChk(null); };
+  const setName = (e) => { const v = e.target.value; setF((o) => ({ ...o, name: v, prefix: touched ? o.prefix : slug(v) })); };
+  const local = prefixProblem(f.prefix.trim());
+  useEffect(() => {
+    const v = f.prefix.trim();
+    if (!v || local) { setPfx({ ok: !local, msg: local }); return; }
+    const t = setTimeout(() => api("GET", `/api/admin/nodes/prefix?prefix=${encodeURIComponent(v)}${node ? "&except=" + encodeURIComponent(node.id) : ""}`)
+      .then((r) => setPfx({ ok: r.ok, msg: r.ok ? "" : r.message }), () => {}), 250);
+    return () => clearTimeout(t);
+  }, [f.prefix]);
+  const check = async () => {
+    setChecking(true); setChk(null);
+    try {
+      const r = await api("POST", "/api/admin/nodes/check", { type: f.type, apiType: f.apiType, baseUrl: f.baseUrl, apiKey: key, modelId: f.modelId.trim(), prefix: f.prefix.trim(), nodeId: node ? node.id : "" });
+      setChk(r);
+    } catch (x) { setChk({ ok: false, class: "network", message: String(x.message || x) }); }
+    setChecking(false);
+  };
   const save = async (e) => {
     if (e) e.preventDefault();
     setBusy(true);
-    const body = { name: f.name, prefix: f.prefix, baseUrl: f.baseUrl };
-    if (f.type === "openai-compatible") body.apiType = f.apiType;
+    const body = { name: f.name.trim(), prefix: f.prefix.trim(), baseUrl: f.baseUrl.trim(), modelId: f.modelId.trim() };
+    if (!anth) body.apiType = f.apiType;
     try {
       if (node) await run(() => api("PATCH", `/api/admin/nodes/${encodeURIComponent(node.id)}`, body), "Endpoint saved");
-      else await run(() => api("POST", "/api/admin/nodes", { ...body, type: f.type }), "Endpoint added — now add an account to it");
-      await onSaved(); onClose();
+      else {
+        const r = await run(() => api("POST", "/api/admin/nodes", { ...body, type: f.type }), key && keepKey ? "Endpoint added with its key" : "Endpoint added — now add an account to it");
+        if (key && keepKey) await api("POST", "/api/admin/accounts", { provider: r.id, name: "default", apiKey: key, active: true });
+      }
+      setKey(""); await onSaved(); onClose();
     } catch (x) { setBusy(false); }
   };
-  return html`<${Modal} title=${node ? "Edit endpoint" : "Add compatible endpoint"} icon="link" onClose=${onClose}
-    foot=${html`<button class="btn ghost" onClick=${onClose}>Cancel</button><button class="btn primary" disabled=${busy || !f.name || !f.prefix || !f.baseUrl} onClick=${save}><${Icon} n="save" />Save</button>`}>
-    <form onSubmit=${save} class="col" style="gap:16px">
-      ${!node && html`<${Field} label="Type"><${Seg} value=${f.type} onChange=${set("type")} options=${[["openai-compatible", "OpenAI compatible"], ["anthropic-compatible", "Anthropic compatible"]]} /></${Field}>`}
-      <div class="grid g2"><${Field} label="Name"><input class="input" value=${f.name} placeholder="My gateway" onInput=${set("name")} /></${Field}>
-        <${Field} label="Model prefix" hint=${html`Models are called as <code>${f.prefix || "prefix"}/model</code>`}><input class="input mono" value=${f.prefix} placeholder="gw" onInput=${set("prefix")} /></${Field}></div>
-      <${Field} label="Base URL" hint=${f.type === "openai-compatible" ? "Up to /v1 — FastRouter adds /chat/completions or /responses." : "Up to /v1 — FastRouter adds /messages."}>
-        <input class="input mono" value=${f.baseUrl} placeholder="https://api.example.com/v1" onInput=${set("baseUrl")} /></${Field}>
-      ${f.type === "openai-compatible" && html`<${Field} label="API style"><${Seg} value=${f.apiType} onChange=${set("apiType")} options=${[["chat", "Chat Completions"], ["responses", "Responses"]]} /></${Field}>`}
+  const can = f.name.trim() && f.prefix.trim() && f.baseUrl.trim() && pfx.ok && !local;
+  const canCheck = f.baseUrl.trim() && (key || saved) && !checking;
+  const req = (l) => html`${l}<span class="req">*</span>`;
+  const opt = (l) => html`${l}<span class="opt">optional</span>`;
+  const pre = f.prefix.trim() || (anth ? "ac-prod" : "oc-prod");
+  return html`<${Modal} title=${node ? "Edit endpoint" : anth ? "Add Anthropic Compatible" : "Add OpenAI Compatible"} icon=${node ? "edit" : "add_link"} onClose=${onClose}
+    foot=${html`<button class="btn ghost" onClick=${onClose}>Cancel</button><button class="btn primary" disabled=${busy || !can} onClick=${save}><${Icon} n="save" />${node ? "Save" : "Add endpoint"}</button>`}>
+    <form onSubmit=${save} class="col node-form" style="gap:16px">
+      ${!node && html`<${Field} label="Type"><${Seg} value=${f.type} onChange=${(v) => { set("type")(v); }} options=${[["openai-compatible", "OpenAI compatible"], ["anthropic-compatible", "Anthropic compatible"]]} /></${Field}>`}
+      <div class="grid g2">
+        <${Field} label=${req("Name")} hint="A friendly label for this endpoint."><input class="input" value=${f.name} maxlength="100" placeholder=${anth ? "Anthropic Compatible (Prod)" : "OpenAI Compatible (Prod)"} onInput=${setName} /></${Field}>
+        <${Field} label=${req("Prefix")} hint=${pfx.msg || local ? html`<span class="danger-text">${local || pfx.msg}</span>` : html`Call models as <code>${pre}/model</code>`}>
+          <div class="input-wrap"><input class="input mono ${local || !pfx.ok ? "invalid" : ""}" value=${f.prefix} maxlength="32" placeholder=${anth ? "ac-prod" : "oc-prod"} spellcheck="false"
+            onInput=${(e) => { setTouched(true); set("prefix")(e); }} />
+            ${f.prefix.trim() && html`<span class="input-adorn ${local || !pfx.ok ? "bad" : "good"}"><${Icon} n=${local || !pfx.ok ? "error" : "check_circle"} /></span>`}</div></${Field}></div>
+      ${!anth && html`<${Field} label="API style" hint=${f.apiType === "responses" ? "Requests go to /responses." : "Requests go to /chat/completions."}><${Seg} value=${f.apiType} onChange=${set("apiType")} options=${[["chat", "Chat Completions"], ["responses", "Responses"]]} /></${Field}>`}
+      <${Field} label=${req("Base URL")} hint=${anth ? "Up to /v1 — FastRouter adds /messages and /models." : "Up to /v1 — FastRouter adds /models and the request path."}>
+        <input class="input mono" value=${f.baseUrl} placeholder=${anth ? "https://api.anthropic.com/v1" : "https://api.openai.com/v1"} spellcheck="false" onInput=${set("baseUrl")} /></${Field}>
+      <div class="grid g2">
+        <${Field} label=${node ? opt("API key (for check)") : "API key (for check)"} hint=${node ? (saved ? "Blank uses the saved key. Keys are never shown." : "No saved key yet — add an account after saving.") : "Used for Check API. Never shown again."}>
+          <${SecretInput} value=${key} onInput=${(v) => { setKey(v); setChk(null); }} placeholder=${node && saved ? "Saved key " + node.accounts.find((a) => a.active && a.keyHint).keyHint : anth ? "sk-ant-…" : "sk-…"} /></${Field}>
+        <${Field} label=${opt("Model ID")} hint="Default model for tests and prefix/default. Empty uses the first listed model.">
+          <input class="input mono" value=${f.modelId} maxlength="200" placeholder=${anth ? "e.g. claude-sonnet-4-5" : "e.g. gpt-4.1-mini"} spellcheck="false" onInput=${set("modelId")} /></${Field}></div>
+      ${!node && key && html`<label class="row small" style="gap:8px;cursor:pointer"><input type="checkbox" checked=${keepKey} onChange=${(e) => setKeepKey(e.target.checked)} />Save this key as the endpoint's first account (encrypted)</label>`}
+      <div class="check-box ${chk ? (chk.ok ? "ok" : "bad") : ""}">
+        <div class="row" style="gap:12px">
+          <div class="row" style="gap:8px;min-width:0;flex-wrap:wrap">
+            <button type="button" class="btn outline sm" disabled=${!canCheck} onClick=${check}><${Icon} n=${checking ? "progress_activity" : "network_check"} cls=${checking ? "spin" : ""} />${checking ? "Checking…" : "Check API"}</button>
+            ${!chk && !checking && html`<span class="small muted">${canCheck ? "Lists models, or sends one tiny request. Nothing is saved." : "Enter a base URL and key to check."}</span>`}
+            ${chk && html`<${Badge} kind=${chk.ok ? "success" : "error"} icon=${chk.ok ? "check_circle" : "cancel"}>${chk.ok ? "Valid" : "Invalid"}</${Badge}>`}
+            ${chk && chk.ms > 0 && html`<span class="badge"><${Icon} n="timer" />${chk.ms} ms</span>`}
+            ${chk && !chk.ok && chk.class && html`<${Badge} kind="warning">${CLASS_LABEL[chk.class] || chk.class}</${Badge}>`}</div>
+</div>
+        ${chk && html`<div class="small check-msg">${chk.message ? chk.message.charAt(0).toUpperCase() + chk.message.slice(1) : ""}
+          ${chk.method && html`<span class="muted"> · ${chk.method === "models" ? "GET /models" : "tiny request" + (chk.usedModel ? " to " + chk.usedModel : "")}${chk.status ? " · HTTP " + chk.status : ""}${chk.keySource === "saved" ? " · saved key" : ""}</span>`}
+          ${chk.modelFound === false && html`<div class="warn-text">Model ID "${f.modelId.trim()}" is not in the list.</div>`}
+          ${chk.prefixOk === false && html`<div class="danger-text">${chk.prefixMessage}</div>`}</div>`}
+        ${chk && chk.sample && chk.sample.length > 0 && html`<div class="chips">${chk.sample.map((m) => html`<button type="button" class="chip mono ${f.modelId.trim() === m ? "on" : ""}" title="Use as Model ID" onClick=${() => setF((o) => ({ ...o, modelId: m }))}>${m}</button>`)}
+          ${chk.models > chk.sample.length && html`<span class="small muted">+${chk.models - chk.sample.length} more</span>`}</div>`}
+      </div>
     </form></${Modal}>`;
 }
 
@@ -686,7 +750,7 @@ function ProviderDetail({ data, id, reload, go, query }) {
       <div class="grow" style="min-width:0">
         <div class="row" style="gap:12px;flex-wrap:wrap"><h1 class="pd-title">${meta.name}</h1>
           ${(p.website || meta.key) && html`<a class="pd-link" href=${meta.key && !isLogin ? meta.key : p.website || meta.key} target="_blank" rel="noopener noreferrer"><${Icon} n="open_in_new" />${meta.key && !isLogin ? "Get API Key" : "Sign up / Learn more"}</a>`}</div>
-        <div class="muted">${p.accounts.length} connection${p.accounts.length === 1 ? "" : "s"} · model prefix <span class="mono">${p.prefix}/</span>${p.baseUrl ? html` · <span class="mono">${p.baseUrl}</span>` : ""}</div>
+        <div class="muted">${p.accounts.length} connection${p.accounts.length === 1 ? "" : "s"} · model prefix <span class="mono prefix-tag">${p.prefix}/</span>${p.defaultModel ? html` · default model <span class="mono">${p.defaultModel}</span>` : ""}${p.baseUrl ? html` · <span class="mono">${p.baseUrl}</span>` : ""}</div>
       </div>
       ${p.kind.endsWith("compatible") && html`<div class="row" style="gap:8px"><button class="btn outline" onClick=${() => setModal({ t: "node" })}><${Icon} n="edit" />Edit endpoint</button>
         <button class="btn ghost" onClick=${() => setModal({ t: "delnode" })}><${Icon} n="delete" />Delete</button></div>`}

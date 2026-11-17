@@ -468,6 +468,25 @@ func cleanModels(in []string, max int) ([]string, error) {
 }
 
 // prefixTaken reports whether a model prefix already reaches another provider.
+// checkPrefix validates a custom endpoint's model prefix: one lower-case word
+// (no slash or spaces) that no other provider or endpoint answers to.
+func checkPrefix(sn *store.Snapshot, raw, exceptNode string) (string, error) {
+	p := strings.ToLower(strings.TrimSpace(raw))
+	switch {
+	case p == "":
+		return "", bad("prefix is required")
+	case strings.Contains(p, "/"):
+		return "", bad("prefix can't contain a slash (it becomes prefix/model)")
+	case strings.ContainsAny(p, " \t"):
+		return "", bad("prefix can't contain spaces")
+	case !prefixRe.MatchString(p):
+		return "", bad("prefix must be lower-case letters, digits, - or _ (max 32)")
+	case prefixTaken(sn, p, exceptNode):
+		return "", bad("prefix %q is already used by another provider", p)
+	}
+	return p, nil
+}
+
 func prefixTaken(sn *store.Snapshot, prefix, exceptNode string) bool {
 	if catalog.Reserved(prefix) {
 		return true
@@ -542,6 +561,7 @@ type adminProvider struct {
 	Regions  []string       `json:"regions,omitempty"`
 	BaseURL  string         `json:"baseUrl,omitempty"`
 	APIType  string         `json:"apiType,omitempty"`
+	Model    string         `json:"defaultModel,omitempty"`
 	Usable   int            `json:"usable"`
 	Accounts []adminAccount `json:"accounts"`
 	Color    string         `json:"color,omitempty"`
@@ -659,7 +679,7 @@ func (s *Server) handleAdminState(w http.ResponseWriter, r *http.Request) {
 			kind = "anthropic-compatible"
 		}
 		provs = append(provs, adminProvider{ID: n.ID, Name: n.Name, Prefix: n.Prefix, Aliases: append([]string{n.Prefix}, n.Aliases...),
-			Kind: kind, BaseURL: n.BaseURL, APIType: n.APIType, Usable: usable[n.ID], Accounts: sortAccts(acctsBy[n.ID])})
+			Kind: kind, BaseURL: n.BaseURL, APIType: n.APIType, Model: n.DefaultModel, Usable: usable[n.ID], Accounts: sortAccts(acctsBy[n.ID])})
 	}
 
 	type key struct {
@@ -1030,6 +1050,7 @@ type nodeIn struct {
 	Type    *string `json:"type"`
 	APIType *string `json:"apiType"`
 	BaseURL *string `json:"baseUrl"`
+	ModelID *string `json:"modelId"`
 }
 
 func applyNode(sn *store.Snapshot, n *store.Node, in nodeIn) error {
@@ -1041,14 +1062,18 @@ func applyNode(sn *store.Snapshot, n *store.Node, in nodeIn) error {
 		n.Name = v
 	}
 	if in.Prefix != nil {
-		p := strings.ToLower(strings.TrimSpace(*in.Prefix))
-		if !prefixRe.MatchString(p) {
-			return bad("prefix must be lower-case letters, digits, - or _ (max 32)")
-		}
-		if prefixTaken(sn, p, n.ID) {
-			return bad("prefix %q is already used", p)
+		p, err := checkPrefix(sn, *in.Prefix, n.ID)
+		if err != nil {
+			return err
 		}
 		n.Prefix = p
+	}
+	if in.ModelID != nil {
+		m := strings.TrimSpace(*in.ModelID)
+		if len(m) > 200 || strings.ContainsAny(m, "\t\r\n") {
+			return bad("model ID must be one line, at most 200 characters")
+		}
+		n.DefaultModel = m
 	}
 	if in.Type != nil {
 		if *in.Type != "openai-compatible" && *in.Type != "anthropic-compatible" {

@@ -2,7 +2,7 @@
    globals.css and components (MIT, decolua/9router; see NOTICE.txt). */
 
 @font-face { font-family: "Inter"; font-style: normal; font-weight: 400 700; font-display: swap; src: url(fonts/inter-latin.woff2) format("woff2"); }
-@font-face { font-family: "Material Symbols Outlined"; font-style: normal; font-weight: 400; font-display: block; src: url(fonts/material-symbols.woff2?v=6e541e87) format("woff2"); }
+@font-face { font-family: "Material Symbols Outlined"; font-style: normal; font-weight: 400; font-display: block; src: url(fonts/material-symbols.woff2?v=d201dcf1) format("woff2"); }
 
 :root {
   --brand-50:#fdf1ed; --brand-100:#fadccf; --brand-200:#f4b59c; --brand-300:#ee8d6a; --brand-400:#ea7855;
@@ -558,3 +558,23 @@ textarea.input { height:auto; padding:10px 12px; resize:vertical; font-size:12px
 .roles-body { border-top:1px solid var(--border-subtle); padding:10px 12px; display:flex; flex-direction:column; gap:10px; }
 .role-row { display:grid; grid-template-columns:200px 1fr; gap:12px; align-items:center; }
 @media (max-width:700px) { .role-row { grid-template-columns:1fr; } }
+
+/* custom endpoint form */
+.field label .req { color:var(--danger); margin-left:3px; }
+.field label .opt { margin-left:6px; font-size:11px; font-weight:500; color:var(--muted); background:var(--surface-2); border-radius:999px; padding:1px 7px; }
+.input.invalid { border-color:var(--danger); }
+.input.invalid:focus { box-shadow:0 0 0 3px rgba(239,68,68,.15); }
+.input-adorn { position:absolute; right:10px; top:50%; transform:translateY(-50%); display:flex; pointer-events:none; }
+.input-adorn .material-symbols-outlined, .input-adorn .ms { font-size:18px; }
+.input-adorn.good { color:var(--success); } .input-adorn.bad { color:var(--danger); }
+.check-box { border:1px solid var(--border); background:var(--surface-2); border-radius:12px; padding:12px 14px; display:flex; flex-direction:column; gap:10px; transition:border-color .15s, background .15s; }
+.check-box.ok { border-color:rgba(34,197,94,.45); background:rgba(34,197,94,.06); }
+.check-box.bad { border-color:rgba(239,68,68,.45); background:rgba(239,68,68,.06); }
+.check-msg { color:var(--text); line-height:1.5; word-break:break-word; }
+.warn-text { color:var(--amber-fg); margin-top:4px; }
+.chips { display:flex; flex-wrap:wrap; gap:6px; align-items:center; }
+.chip { border:1px solid var(--border); background:var(--surface); color:var(--text); border-radius:999px; padding:2px 9px; font-size:11.5px; cursor:pointer; }
+.chip:hover { border-color:var(--primary); } .chip.on { border-color:var(--primary); color:var(--primary); background:rgba(229,106,74,.08); }
+.prefix-tag { font-size:11px; font-weight:600; padding:1px 7px; border-radius:6px; background:rgba(229,106,74,.1); color:var(--brand-600); }
+.dark .prefix-tag { color:var(--brand-300); }
+.nowrap { white-space:nowrap; }

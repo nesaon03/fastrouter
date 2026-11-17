@@ -8,6 +8,7 @@ import (
 
 // Phase 2 columns, added in place so Phase 1 databases keep their history.
 var migrations = []string{
+	`ALTER TABLE nodes ADD COLUMN default_model TEXT DEFAULT ''`,
 	`ALTER TABLE usage ADD COLUMN provider TEXT DEFAULT ''`,
 	`ALTER TABLE usage ADD COLUMN key_id TEXT DEFAULT ''`,
 	`ALTER TABLE usage ADD COLUMN input INTEGER DEFAULT 0`,

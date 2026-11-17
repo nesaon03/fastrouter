@@ -49,6 +49,9 @@ func testModel(st *router.State, p *router.Provider, override string, working ma
 	if override != "" {
 		return override
 	}
+	if p.DefaultModel != "" {
+		return p.DefaultModel
+	}
 	skip := func(id string) bool {
 		l := strings.ToLower(id)
 		for _, w := range []string{"embed", "image", "veo", "tts", "whisper", "rerank", "moderation", "audio", "imagen"} {
