@@ -23,6 +23,7 @@ import (
 	"github.com/zenpo/fastrouter/internal/saver"
 	"github.com/zenpo/fastrouter/internal/store"
 	tr "github.com/zenpo/fastrouter/internal/translate"
+	"github.com/zenpo/fastrouter/internal/tunnel"
 	"golang.org/x/crypto/bcrypt"
 )
 
@@ -64,6 +65,9 @@ type Server struct {
 	host    string
 
 	bench benchState // Speed Test tab
+
+	cf *tunnel.Cloudflared // Endpoint page: Cloudflare quick tunnel
+	ts *tunnel.Tailscale   // Endpoint page: Tailscale Serve / Funnel
 }
 
 // New builds a server from config and a loaded snapshot. st may be nil (tests).
@@ -88,6 +92,8 @@ func New(cfg config.Config, snap *store.Snapshot, st *store.Store) *Server {
 		port:         cfg.Port,
 		host:         cfg.Host,
 	}
+	s.cf = &tunnel.Cloudflared{Dir: cfg.DataDir, Port: cfg.Port}
+	s.ts = &tunnel.Tailscale{Port: cfg.Port}
 	for _, h := range cfg.AllowedHosts {
 		s.allowedHosts[strings.ToLower(strings.TrimSpace(h))] = true
 	}
@@ -143,7 +149,10 @@ func (s *Server) Reload(snap *store.Snapshot) {
 func (s *Server) Saver() *saver.Saver { return s.saver.Load() }
 
 // Close flushes background writes.
-func (s *Server) Close() { s.rec.close() }
+func (s *Server) Close() {
+	s.cf.Disable() // stops the process only; the saved setting stays as it was
+	s.rec.close()
+}
 
 // Handler returns the HTTP routes.
 func (s *Server) Handler() http.Handler {
@@ -211,6 +220,14 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/admin/bench/{id}/stop", s.adminWrite(s.handleBenchStop))
 	mux.Handle("DELETE /api/admin/bench/{id}", s.adminWrite(s.handleBenchDelete))
 	mux.Handle("GET /api/admin/bench/{id}/export", s.adminRead(s.handleBenchExport))
+	mux.Handle("GET /api/admin/endpoint", s.adminRead(s.handleEndpoint))
+	mux.Handle("POST /api/admin/tunnel/install", s.adminWrite(s.handleTunnelInstall))
+	mux.Handle("POST /api/admin/tunnel/enable", s.adminWrite(s.handleTunnelEnable))
+	mux.Handle("POST /api/admin/tunnel/disable", s.adminWrite(s.handleTunnelDisable))
+	mux.Handle("POST /api/admin/tailscale/enable", s.adminWrite(s.handleTailscaleEnable))
+	mux.Handle("POST /api/admin/tailscale/disable", s.adminWrite(s.handleTailscaleDisable))
+	mux.Handle("POST /api/admin/tailscale/login", s.adminWrite(s.handleTailscaleLogin))
+	mux.Handle("POST /api/admin/remote-dashboard", s.adminWrite(s.handleRemoteDashboard))
 	mux.HandleFunc("GET /skills/{name}/SKILL.md", s.handleSkill)
 
 	// The SPA itself is static and public; all data comes from the APIs above.
@@ -219,7 +236,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/dashboard/", http.StatusFound)
 	})
-	return mux
+	return s.remoteGuard(mux)
 }
 
 // auth checks the local API key. With no keys configured, only loopback clients are allowed.
@@ -312,6 +329,9 @@ func (s *Server) checkPassword(hash, pass string) bool {
 // otherwise spend quota (CSRF) or read answers after DNS rebinding. Returns
 // a reason to refuse, or "".
 func (s *Server) openModeRefusal(r *http.Request) string {
+	if s.proxied(r) {
+		return "requests through a tunnel or proxy need an API key"
+	}
 	if !s.hostAllowed(r.Host) {
 		return "Host " + r.Host + " is not allowed without an API key (add it to allowedHosts or create an API key)"
 	}

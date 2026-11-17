@@ -231,6 +231,7 @@ func serve(cfgPath, host string, port int) error {
 	bg, stopBG := context.WithCancel(context.Background())
 	defer stopBG()
 	go srv.RunTokenRefresh(bg, time.Minute) // Codex accounts signed in through FastRouter
+	srv.ResumeTunnel()                      // only if the user left the Cloudflare tunnel on
 	if hr, err := srv.Saver().StartHeadroom(bg, filepath.Join(cfg.DataDir, "headroom")); err != nil {
 		log.Printf("headroom autostart skipped: %v", err)
 	} else if hr != nil {

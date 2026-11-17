@@ -22,7 +22,7 @@ async function api(method, path, body, retried) {
     onUnauthorized();
   }
   if (res.status === 401 && !path.startsWith("/api/auth/")) onUnauthorized();
-  if (!res.ok) throw new Error((data && (data.error || data.message)) || res.statusText);
+  if (!res.ok) { const e = new Error((data && (data.error || data.message)) || res.statusText); e.data = data; throw e; }
   return data;
 }
 
@@ -650,29 +650,145 @@ function Login({ onDone, error }) {
 }
 
 /* ------------------------------------------------------------ endpoint */
-function EndpointPage({ data, go }) {
+/* Endpoint card: Local / Tunnel / Tailscale, like 9Router's API Endpoint. */
+const TUNNEL_BENEFITS = [["public", "Access anywhere", "Use FastRouter from any network, no port forwarding"],
+  ["share", "Share endpoint", "Hand the URL to a teammate or another computer"],
+  ["code_blocks", "Use in Cursor / Cline", "Cloud IDEs and remote agents can reach it"],
+  ["lock", "Encrypted", "HTTPS end to end through Cloudflare"]];
+function SecurityChecks({ sec, go, onClose }) {
+  const items = [[sec.activeKeys > 0, "API key", sec.activeKeys > 0 ? `${sec.activeKeys} active — callers must send one` : "Create one first: without a key FastRouter refuses tunnel traffic", "keys"],
+    [sec.passwordSet, "Dashboard password", sec.passwordSet ? "Set" : "Set one in Settings first", "settings"]];
+  return html`<div class="ep-checks">${items.map(([ok, l, s, page]) => html`<div class="ep-check ${ok ? "ok" : "bad"}">
+    <${Icon} n=${ok ? "check_circle" : "cancel"} fill /><div class="grow"><strong>${l}</strong><span>${s}</span></div>
+    ${!ok && html`<button class="btn outline xs" onClick=${() => { onClose && onClose(); go(page); }}>Open</button>`}</div>`)}</div>`;
+}
+function EpBox({ kind = "", spin, icon, children }) {
+  return html`<div class="ep-box ${kind}">${spin ? html`<${Icon} n="progress_activity" cls="spin" />` : icon && html`<${Icon} n=${icon} />`}<span class="grow">${children}</span></div>`;
+}
+function EpUrl({ url, id, copied, copy }) {
+  return html`<input class="input mono grow" readonly value=${url} onFocus=${(e) => e.target.select()} /><${CopyBtn} text=${url} id=${id} copied=${copied} copy=${copy} />`;
+}
+const PowerBtn = ({ onClick, title }) => html`<button class="icon-btn danger ep-power" title=${title} onClick=${onClick}><${Icon} n="power_settings_new" /></button>`;
+
+function EndpointCard({ data, go }) {
   const [copied, copy] = useCopy();
+  const [ep, setEp] = useState(null);
+  const [busy, setBusy] = useState({});
+  const [err, setErr] = useState({});
+  const [modal, setModal] = useState("");
+  const [base, setBase] = useState("local");
+  const [tsMode, setTsMode] = useState("serve");
+  const load = useCallback(() => api("GET", "/api/admin/endpoint").then(setEp).catch(() => {}), []);
+  const cf = ep && ep.tunnel, ts = ep && ep.tailscale, sec = (ep && ep.security) || { activeKeys: 0, passwordSet: false };
+  const moving = cf && (cf.download.active || (cf.enabled && (cf.state !== "running" || !cf.reachable)));
+  useEffect(() => { load(); const t = setInterval(() => !document.hidden && load(), moving ? 2000 : 15000); return () => clearInterval(t); }, [moving]);
+  const ready = sec.activeKeys > 0 && sec.passwordSet;
+  const act = async (k, path, body, after) => {
+    setBusy((b) => ({ ...b, [k]: true })); setErr((e) => ({ ...e, [k]: null }));
+    try { const r = await api("POST", path, body || {}); after && after(r); await load(); return true; }
+    catch (e) { setErr((x) => ({ ...x, [k]: { msg: e.message, url: e.data && e.data.actionUrl } })); return false; }
+    finally { setBusy((b) => ({ ...b, [k]: false })); }
+  };
+  const local = ep ? ep.local : location.origin;
+  const tunnelUrl = cf && cf.enabled && cf.url ? cf.url : "";
+  const tsUrl = ts && ts.mode !== "off" ? ts.url : "";
+  const bases = [["local", "Local", local], ...(tunnelUrl ? [["tunnel", "Tunnel", tunnelUrl]] : []), ...(tsUrl ? [["tailscale", "Tailscale", tsUrl]] : [])];
+  const cur = (bases.find((b) => b[0] === base) || bases[0])[2];
+  const exposed = !!(tunnelUrl || tsUrl || (cf && cf.enabled));
+  const keys = sec.activeKeys;
+
+  const tunnelRow = () => {
+    if (!cf) return html`<${EpBox} spin>Checking…</${EpBox}>`;
+    if (cf.download.active) return html`<${EpBox} spin>Downloading cloudflared… ${cf.download.progress}%</${EpBox}>`;
+    if (busy.cf) return html`<${EpBox} spin>${cf.enabled ? "Working…" : "Creating tunnel…"}</${EpBox}>`;
+    if (cf.enabled && cf.url) return html`<${EpUrl} url=${cf.url + "/v1"} id="tunnel" copied=${copied} copy=${copy} />
+      <${Badge} kind=${cf.reachable ? "success" : "warning"} dot>${cf.reachable ? "Live" : cf.state === "reconnecting" ? "Reconnecting" : "Checking"}</${Badge}>
+      <${PowerBtn} title="Disable tunnel" onClick=${() => setModal("tunnel-off")} />`;
+    if (cf.enabled) return html`<${EpBox} kind="warn" spin>${cf.state === "reconnecting" ? "Tunnel reconnecting…" : "Creating tunnel…"}</${EpBox}>
+      <${PowerBtn} title="Disable tunnel" onClick=${() => act("cf", "/api/admin/tunnel/disable")} />`;
+    const e = err.cf || (cf.download.error && { msg: "Download failed: " + cf.download.error }) || (cf.error && { msg: cf.error });
+    if (!cf.installed) return html`<${EpBox} kind=${e ? "err" : ""} icon=${e ? "error" : "cloud_off"}>${e ? e.msg : "cloudflared is not installed"}</${EpBox}>
+      <button class="btn outline sm" title="Downloads cloudflared from Cloudflare's GitHub releases into FastRouter's folder" onClick=${() => act("cf", "/api/admin/tunnel/install")}><${Icon} n="download" />Install</button>`;
+    return html`${e ? html`<${EpBox} kind="err" icon="error">${e.msg}</${EpBox}>` : html`<${EpBox} icon="cloud">Off — public HTTPS URL through Cloudflare, no account needed</${EpBox}>`}
+      <button class="btn primary sm" onClick=${() => setModal("tunnel")}><${Icon} n="cloud_upload" />Enable</button>`;
+  };
+  const tailscaleRow = () => {
+    if (!ts) return html`<${EpBox} spin>Checking…</${EpBox}>`;
+    if (busy.ts) return html`<${EpBox} spin>Talking to Tailscale…</${EpBox}>`;
+    const e = err.ts;
+    const errBox = e && html`<${EpBox} kind="err" icon="error">${e.msg}</${EpBox}>${e.url && html`<a class="btn outline sm" href=${e.url} target="_blank" rel="noopener noreferrer"><${Icon} n="open_in_new" />Open</a>`}`;
+    if (!ts.installed) return html`<${EpBox} icon="vpn_lock">Tailscale is not installed</${EpBox}>
+      <a class="btn outline sm" href=${ep.tailscaleInstallUrl} target="_blank" rel="noopener noreferrer" title="Official Tailscale installer — nothing downloads until you click"><${Icon} n="download" />Install</a>`;
+    if (!ts.running) return html`<${EpBox} kind="warn" icon="warning">Tailscale is installed but not running — open the Tailscale app</${EpBox}>`;
+    if (!ts.loggedIn) return html`${errBox || html`<${EpBox} kind="warn" icon="login">Tailscale is not logged in</${EpBox}>`}
+      <button class="btn ts sm" onClick=${() => act("ts", "/api/admin/tailscale/login", {}, (r) => r.authUrl && window.open(r.authUrl, "_blank", "noopener,noreferrer"))}><${Icon} n="login" />Log in</button>`;
+    if (ts.mode !== "off") return html`<${EpUrl} url=${ts.url + "/v1"} id="ts" copied=${copied} copy=${copy} />
+      <${Badge} kind=${ts.mode === "funnel" ? "warning" : "info"} icon=${ts.mode === "funnel" ? "public" : "lock"}>${ts.mode === "funnel" ? "Public" : "Tailnet"}</${Badge}>
+      <${PowerBtn} title="Turn off Tailscale ${ts.mode === "funnel" ? "Funnel" : "Serve"}" onClick=${() => act("ts", "/api/admin/tailscale/disable")} />`;
+    return html`${errBox || html`<${EpBox} icon="vpn_lock">Off — <span class="mono">${ts.dnsName}</span>${ts.ips && ts.ips[0] ? " · " + ts.ips[0] : ""}</${EpBox}>`}
+      <button class="btn ts sm" onClick=${() => { setTsMode("serve"); setModal("ts"); }}><${Icon} n="vpn_lock" />Enable</button>`;
+  };
+
+  return html`
+    <div class="card">
+      <div class="card-title"><div><h2><${Icon} n="api" />API Endpoint</h2><p>Your FastRouter base URL — on this computer, through a Cloudflare tunnel, or over Tailscale.</p></div>
+        <${Badge} kind=${keys ? "success" : "warning"} dot>${keys ? keys + " active API key" + (keys > 1 ? "s" : "") : "No API key — local only"}</${Badge}></div>
+      <div class="col" style="gap:8px">
+        <div class="ep-row"><span class="ep-tag">Local</span><${EpUrl} url=${local + "/v1"} id="local" copied=${copied} copy=${copy} />
+          <${Badge} kind="success" dot>Running</${Badge}></div>
+        ${ep && (ep.listensAll && ep.lan.length ? ep.lan.map((u, i) => html`<div class="ep-row"><span class="ep-tag">LAN</span><${EpUrl} url=${u + "/v1"} id=${"lan" + i} copied=${copied} copy=${copy} />
+            <${Badge} kind=${keys ? "success" : "warning"} dot>${keys ? "Key required" : "Needs a key"}</${Badge}></div>`)
+          : html`<div class="ep-row"><span class="ep-tag off">LAN</span><${EpBox} icon="lan">Other devices can't reach this port — FastRouter listens on ${ep.host || "127.0.0.1"} only. Use Tunnel or Tailscale${ep.lan[0] ? html`, or set <span class="mono">"host": "0.0.0.0"</span> in fastrouter.json for ${ep.lan[0]}` : ""}.</${EpBox}></div>`)}
+        <div class="ep-row"><span class="ep-tag ${tunnelUrl ? "" : "off"}">Tunnel</span>${tunnelRow()}</div>
+        <div class="ep-row"><span class="ep-tag ${tsUrl ? "" : "off"}">Tailscale</span>${tailscaleRow()}</div>
+      </div>
+      ${exposed && !ready && html`<div class="ep-warn"><${Icon} n="gpp_maybe" />${keys ? "" : "No API key is active — tunnel requests are refused until you create one. "}${sec.passwordSet ? "" : "No dashboard password is set — set one in Settings."}</div>`}
+      ${(exposed || (ts && ts.mode !== "off")) && ep.security.remoteDashboard && html`<div class="ep-warn"><${Icon} n="warning" />The dashboard is reachable through the tunnel (password protected). Turn it off below if you only need the API.</div>`}
+      <div class="ep-sub">
+        <div class="row" style="justify-content:space-between;gap:10px;flex-wrap:wrap">
+          <span class="label small"><${Icon} n="swap_horiz" />Client formats</span>
+          ${bases.length > 1 && html`<${Seg} value=${base} options=${bases.map(([v, l]) => [v, l])} onChange=${setBase} />`}</div>
+        ${[["OpenAI", cur + "/v1"], ["Anthropic", cur], ["Gemini", cur + "/v1beta"]].map(([l, u]) => html`<div class="ep-row sm">
+          <span class="ep-tag fmt">${l}</span><input class="input mono grow" readonly value=${u} /><${CopyBtn} text=${u} id=${"f" + l} copied=${copied} copy=${copy} /></div>`)}
+        <div class="row ep-dash"><div class="grow"><strong class="small">Dashboard over tunnel</strong><div class="muted small">Off: Tunnel and Tailscale serve only the API (/v1, /v1beta) with an API key; this page stays on this computer.</div></div>
+          <${Toggle} on=${!!(ep && ep.security.remoteDashboard)} disabled=${!ep || (!sec.passwordSet && !ep.security.remoteDashboard)} title=${sec.passwordSet ? "" : "Set a dashboard password first"}
+            onChange=${(v) => act("dash", "/api/admin/remote-dashboard", { enabled: v }).then((ok) => !ok && toast("Couldn't change dashboard access", "error"))} /></div>
+      </div>
+    </div>
+    ${modal === "tunnel" && html`<${Modal} title="Enable Cloudflare Tunnel" icon="cloud_upload" onClose=${() => setModal("")}
+      foot=${html`<button class="btn ghost" onClick=${() => setModal("")}>Cancel</button>
+        <button class="btn primary" disabled=${!ready} onClick=${() => { setModal(""); act("cf", "/api/admin/tunnel/enable"); }}><${Icon} n="cloud_upload" />Enable tunnel</button>`}>
+      <div class="ep-benefits">${TUNNEL_BENEFITS.map(([ic, t, s]) => html`<div><${Icon} n=${ic} /><strong>${t}</strong><span>${s}</span></div>`)}</div>
+      <p class="muted small">Runs a Cloudflare quick tunnel (<span class="mono">${cf && cf.source === "9router" ? "using 9Router's cloudflared" : "cloudflared"}</span>) to this FastRouter. The trycloudflare.com URL changes each time the tunnel restarts. It restarts by itself if it drops.</p>
+      <${SecurityChecks} sec=${sec} go=${go} onClose=${() => setModal("")} /></${Modal}>`}
+    ${modal === "tunnel-off" && html`<${Confirm} title="Disable tunnel?" text="The public URL stops working right away. Enabling again gives a new URL." label="Disable"
+      onYes=${() => act("cf", "/api/admin/tunnel/disable")} onClose=${() => setModal("")} />`}
+    ${modal === "ts" && ts && html`<${Modal} title="Enable Tailscale" icon="vpn_lock" onClose=${() => setModal("")}
+      foot=${html`<button class="btn ghost" onClick=${() => setModal("")}>Cancel</button>
+        <button class="btn ts" disabled=${!ready} onClick=${() => { setModal(""); act("ts", "/api/admin/tailscale/enable", { mode: tsMode }); }}><${Icon} n="vpn_lock" />Enable ${tsMode === "funnel" ? "Funnel" : "Serve"}</button>`}>
+      <${Seg} value=${tsMode} options=${[["serve", "Tailnet only (Serve)"], ["funnel", "Public (Funnel)"]]} onChange=${setTsMode} />
+      <p class="muted small" style="margin:12px 0">${tsMode === "serve"
+        ? html`Devices on your tailnet reach FastRouter at <span class="mono">${ts.https ? "https://" + ts.dnsName : "http://" + ts.dnsName + ":" + ep.port}</span>.${ts.https ? "" : " Your tailnet has no HTTPS certificates, so Serve uses plain HTTP inside the encrypted tailnet."}`
+        : ts.https ? html`Anyone on the internet can reach <span class="mono">https://${ts.dnsName}</span> — an API key is still required.`
+        : html`Funnel needs HTTPS certificates. Turn on HTTPS on the DNS page of the Tailscale admin console first.`}
+        ${" "}Other Tailscale Serve ports${ts.otherPorts && ts.otherPorts.length ? " (" + ts.otherPorts.join(", ") + ")" : ""} are left as they are.</p>
+      <${SecurityChecks} sec=${sec} go=${go} onClose=${() => setModal("")} /></${Modal}>`}`;
+}
+
+function EndpointPage({ data, go }) {
   const [usage, setUsage] = useState(null);
   useEffect(() => { api("GET", "/api/usage?window=24h").then(setUsage).catch(() => {}); }, []);
   const origin = location.origin;
-  const rows = [["OpenAI", origin + "/v1"], ["Anthropic", origin], ["Gemini", origin + "/v1beta"]];
   const connected = data.providers.filter((p) => p.accounts.length > 0);
   const accounts = connected.reduce((n, p) => n + p.accounts.length, 0);
   const usable = data.providers.reduce((n, p) => n + p.usable, 0);
   const t = ((usage && usage.models) || []).reduce((a, r) => ({ req: a.req + r.requests, tok: a.tok + r.input_tokens + r.output_tokens, cost: a.cost + r.cost_usd }), { req: 0, tok: 0, cost: 0 });
-  const keys = data.keys.filter((k) => k.active).length;
   const stats = [["dns", "Providers", connected.length, `${data.providers.length} available`],
     ["group", "Accounts", accounts, `${usable} usable right now`],
     ["layers", "Combos", data.combos.length, `${data.models.length} routable models`],
     ["speed", "Requests · 24h", fmt(t.req), t.req ? `${fmt(t.tok)} tokens · ${money(t.cost)}` : "No traffic yet"]];
   return html`
-    <div class="card">
-      <div class="card-title"><div><h2><${Icon} n="api" />API Endpoint</h2><p>Point any OpenAI, Anthropic or Gemini client here. Formats are translated for you.</p></div>
-        <${Badge} kind=${keys ? "success" : "warning"} dot>${keys ? keys + " active API key" + (keys > 1 ? "s" : "") : "No API key — local only"}</${Badge}></div>
-      <div class="col" style="gap:8px">${rows.map(([l, u]) => html`<div class="ep-row">
-        <span class="ep-tag">${l}</span><input class="input mono grow" readonly value=${u} />
-        <${CopyBtn} text=${u} id=${l} copied=${copied} copy=${copy} /></div>`)}</div>
-    </div>
+    <${EndpointCard} data=${data} go=${go} />
     <div class="grid g4">${stats.map(([ic, l, v, s]) => html`<div class="card sm stat"><span class="label"><${Icon} n=${ic} />${l}</span><span class="value">${v}</span><span class="sub">${s}</span></div>`)}</div>
     <div class="card">
       <div class="card-title"><div><h2><${Icon} n="hub" />Routing</h2><p>Clients → FastRouter → your providers, with failover between accounts.</p></div>
