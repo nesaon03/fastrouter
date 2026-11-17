@@ -73,7 +73,7 @@ func TestTunnelKeepsDashboardLocal(t *testing.T) {
 	if err := s.exposeReady(); err != nil {
 		t.Fatalf("key + password should allow exposing: %v", err)
 	}
-	if err := s.setSettingBool("remoteDashboard", true); err != nil {
+	if err := s.setSettingBool("frRemoteDashboard", true); err != nil {
 		t.Fatal(err)
 	}
 	if c := get(t, hs.URL+"/api/status", cf, "pw"); c != 200 {
@@ -81,5 +81,15 @@ func TestTunnelKeepsDashboardLocal(t *testing.T) {
 	}
 	if c := get(t, hs.URL+"/api/status", cf, ""); c != 401 {
 		t.Errorf("remote dashboard on, no password: %d, want 401", c)
+	}
+}
+
+// 9Router stores its own "tunnelEnabled"; an imported copy must not start
+// FastRouter's tunnel.
+func TestImported9RouterTunnelSettingIgnored(t *testing.T) {
+	s, _ := newTestServer(t, &store.Snapshot{Settings: map[string]json.RawMessage{"tunnelEnabled": json.RawMessage("true"), "tunnelDashboardAccess": json.RawMessage("true")}})
+	s.ResumeTunnel()
+	if s.cf.Status().Enabled {
+		t.Fatal("tunnel resumed from 9Router's setting")
 	}
 }

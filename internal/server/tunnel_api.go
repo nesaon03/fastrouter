@@ -51,7 +51,7 @@ func (s *Server) exposeReady() error {
 
 // ResumeTunnel restarts the Cloudflare tunnel at startup if it was left on.
 func (s *Server) ResumeTunnel() {
-	if !s.settingBool("tunnelEnabled") {
+	if !s.settingBool("frTunnelEnabled") {
 		return
 	}
 	if err := s.exposeReady(); err != nil {
@@ -98,7 +98,7 @@ func (s *Server) handleEndpoint(w http.ResponseWriter, r *http.Request) {
 		"security": map[string]any{
 			"activeKeys":      active,
 			"passwordSet":     st.Snap.DashboardPassword != "",
-			"remoteDashboard": s.settingBool("remoteDashboard"),
+			"remoteDashboard": s.settingBool("frRemoteDashboard"),
 		},
 	})
 }
@@ -120,7 +120,7 @@ func (s *Server) handleTunnelEnable(w http.ResponseWriter, r *http.Request) {
 		adminErr(w, http.StatusBadRequest, err.Error())
 		return
 	}
-	if err := s.setSettingBool("tunnelEnabled", true); err != nil {
+	if err := s.setSettingBool("frTunnelEnabled", true); err != nil {
 		adminErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -129,7 +129,7 @@ func (s *Server) handleTunnelEnable(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) handleTunnelDisable(w http.ResponseWriter, r *http.Request) {
 	s.cf.Disable()
-	if err := s.setSettingBool("tunnelEnabled", false); err != nil {
+	if err := s.setSettingBool("frTunnelEnabled", false); err != nil {
 		adminErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -190,7 +190,7 @@ func (s *Server) handleRemoteDashboard(w http.ResponseWriter, r *http.Request) {
 		adminErr(w, http.StatusConflict, "set a dashboard password first")
 		return
 	}
-	if err := s.setSettingBool("remoteDashboard", in.Enabled); err != nil {
+	if err := s.setSettingBool("frRemoteDashboard", in.Enabled); err != nil {
 		adminErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -232,7 +232,7 @@ func publicPath(p string) bool {
 // the password). The /v1 API stays reachable but needs an API key.
 func (s *Server) remoteGuard(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if publicPath(r.URL.Path) || !s.proxied(r) || s.settingBool("remoteDashboard") {
+		if publicPath(r.URL.Path) || !s.proxied(r) || s.settingBool("frRemoteDashboard") {
 			next.ServeHTTP(w, r)
 			return
 		}
