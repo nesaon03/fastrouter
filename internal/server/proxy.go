@@ -66,6 +66,7 @@ type proxyReq struct {
 	parsed bool
 
 	injectedUsage bool // we asked an OpenAI upstream for a usage chunk the client did not request
+	netErr        string // last "could not reach" failure, for the final error message
 }
 
 func (p *proxyReq) parse() (*tr.Request, error) {
@@ -242,6 +243,9 @@ func (s *Server) route(w http.ResponseWriter, p *proxyReq, targets []router.Targ
 		return
 	}
 	msg := "no upstream could serve this model"
+	if p.netErr != "" {
+		reasons = append(reasons, p.netErr)
+	}
 	if len(reasons) > 0 {
 		msg += ": " + strings.Join(reasons, "; ")
 	}
@@ -361,11 +365,18 @@ func (s *Server) attempt(w http.ResponseWriter, a *attempt) (bool, *upstreamErr)
 	var usage tr.Usage
 	rec := func(status int) { s.record(a, start, status, usage) }
 
-	resp, err := s.client.Do(req)
+	var resp *http.Response
+	if a.ad != nil && a.ad.Do != nil {
+		resp, err = a.ad.Do(req, a.body, oauth.Account{ID: acct.ID, Extra: acct.Extra})
+	} else {
+		resp, err = s.client.Do(req)
+	}
 	if err != nil {
 		if p.r.Context().Err() == nil {
 			acct.Fail(s.cfgCooldown, 0)
-			log.Printf("upstream %s (account %s) failed before first byte: %s", label, acct.ID, secret.Redact(errString(err, context.Cause(ctx))))
+			msg := secret.Redact(errString(err, context.Cause(ctx)))
+			log.Printf("upstream %s (account %s) failed before first byte: %s", label, acct.ID, msg)
+			p.netErr = label + ": could not reach the provider (" + shortNetErr(errors.New(msg)) + ")"
 		}
 		rec(0)
 		return false, nil

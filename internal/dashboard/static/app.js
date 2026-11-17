@@ -857,7 +857,16 @@ function SignIn({ provider, conn, onClose, onSaved }) {
     setBusy(false);
   };
   const name = provMeta(provider).name;
-  const pasteHint = provider.id === "vertex" ? "Paste the service-account JSON key file" : provider.id === "claude" ? "Paste the code Claude shows (code#state), or the localhost address" : "Paste the address your browser ended on (http://localhost…/callback?code=…)";
+  const importApp = async () => {
+    setBusy(true);
+    try {
+      const g = await api("POST", `/api/login/flows/${flow.id}/callback`, { text: "import" });
+      setFlow(g); if (g.status === "done") { toast("Signed in"); await onSaved(); }
+    } catch (e) { toast(e.message, "error"); }
+    setBusy(false);
+  };
+  const isCursor = provider.id === "cursor";
+  const pasteHint = isCursor ? "Or paste the access token (cursorAuth/accessToken) and machine id (storage.serviceMachineId) from Cursor's state.vscdb, one per line" : provider.id === "vertex" ? "Paste the service-account JSON key file" : provider.id === "claude" ? "Paste the code Claude shows (code#state), or the localhost address" : "Paste the address your browser ended on (http://localhost…/callback?code=…)";
   return html`<${Modal} title=${`Connect ${name}`} icon="login" onClose=${onClose} foot=${html`<button class="btn ghost" onClick=${onClose}>${flow && flow.status === "done" ? "Done" : "Close"}</button>`}>
     ${err && html`<div class="notice err"><${Icon} n="error" />${err}</div>`}
     ${!flow && !err && html`<p class="muted row" style="gap:8px"><${Icon} n="progress_activity" cls="spin" />Starting sign-in…</p>`}
@@ -875,9 +884,12 @@ function SignIn({ provider, conn, onClose, onSaved }) {
       <${Field} label="Paste callback (optional)"><div class="row"><input class="input mono grow" value=${paste} placeholder=${pasteHint} onInput=${(e) => setPaste(e.target.value)} />
         <button class="btn secondary" disabled=${!paste || busy} onClick=${submit}>Submit</button></div></${Field}>
       <p class="small muted row" style="gap:6px"><${Icon} n="sync" cls="spin" style="font-size:16px" />Waiting for sign-in…</p></div>`}
+    ${flow && flow.status === "pending" && flow.kind === "paste" && isCursor && html`<div class="col" style="gap:10px;margin-bottom:12px">
+      <p class="small">Cursor has no web sign-in for other apps. FastRouter imports the session of the Cursor IDE signed in on this PC (like 9Router's auto-import) and re-reads it when it nears expiry.</p>
+      <button class="btn primary" disabled=${busy} onClick=${importApp}><${Icon} n="download" />${busy ? "Importing…" : "Import from Cursor on this PC"}</button></div>`}
     ${flow && flow.status === "pending" && flow.kind === "paste" && html`<div class="col" style="gap:12px">
-      <p class="small">${pasteHint}. It is stored encrypted and never shown again; FastRouter mints short-lived access tokens from it.</p>
-      <textarea class="input mono" rows="7" spellcheck="false" value=${paste} placeholder='{"type": "service_account", ...}' onInput=${(e) => setPaste(e.target.value)}></textarea>
+      <p class="small">${pasteHint}. ${isCursor ? "It is stored encrypted and never shown again." : "It is stored encrypted and never shown again; FastRouter mints short-lived access tokens from it."}</p>
+      <textarea class="input mono" rows=${isCursor ? 4 : 7} spellcheck="false" value=${paste} placeholder=${isCursor ? "eyJhbGciOi…\nd6eec8e1-…" : '{"type": "service_account", ...}'} onInput=${(e) => setPaste(e.target.value)}></textarea>
       <button class="btn primary" disabled=${!paste || busy} onClick=${submit}><${Icon} n="upload_file" />${busy ? "Checking…" : "Connect"}</button></div>`}
   </${Modal}>`;
 }

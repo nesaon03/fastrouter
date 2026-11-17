@@ -2,12 +2,14 @@ package server
 
 import (
 	"context"
+	"fmt"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/zenpo/fastrouter/internal/catalog"
+	"github.com/zenpo/fastrouter/internal/oauth"
 	"github.com/zenpo/fastrouter/internal/router"
 	tr "github.com/zenpo/fastrouter/internal/translate"
 )
@@ -70,6 +72,15 @@ func (s *Server) probeAccount(ctx context.Context, p *router.Provider, a *router
 	if p.Login == "codex" {
 		q := s.fetchQuota(ctx, quotaCred{provider: "codex", key: a.Key(), accountID: a.AccountID})
 		res.OK, res.Message = q.Error == "", firstNonEmpty(q.Error, "Signed in, usage API reachable")
+		return res
+	}
+	if p.ID == "cursor" {
+		ms, err := oauth.CursorModels(ctx, a.Key(), a.Extra["machineId"], true)
+		if err != nil {
+			res.Message = "Cursor rejected the session: " + err.Error()
+			return res
+		}
+		res.OK, res.Message = true, fmt.Sprintf("Signed in, %d models available", len(ms))
 		return res
 	}
 	u, f := modelsURL(p, a)

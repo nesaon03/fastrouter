@@ -29,7 +29,7 @@ func TestImportRedactedBackup(t *testing.T) {
 	}{
 		{"connections", sum.Connections, 23},
 		{"active connections", sum.ActiveConnections, 20},
-		{"plugin connections", sum.PluginConnections, 1}, // cursor (antigravity is handled by internal/oauth, codex and glm by internal/login)
+		{"plugin connections", sum.PluginConnections, 0}, // cursor is handled by internal/oauth now (antigravity too; codex and glm by internal/login)
 		{"nodes (7 + 1 rebuilt)", len(sum.Nodes), 8},
 		{"rebuilt nodes", sum.RebuiltNodes, 1},
 		{"combos", len(sum.Combos), 4},
@@ -72,7 +72,7 @@ func TestImportRedactedBackup(t *testing.T) {
 				t.Errorf("antigravity account status = %q, want ok", c.Status)
 			}
 		}
-		want := map[string]string{"cursor": "needs-plugin", "codex": "ok", "glm": "ok"}[c.Provider]
+		want := map[string]string{"cursor": "ok", "codex": "ok", "glm": "ok"}[c.Provider]
 		if want != "" && c.Status != want {
 			t.Errorf("%s status = %q, want %q", c.Provider, c.Status, want)
 		}

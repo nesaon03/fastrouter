@@ -42,6 +42,10 @@ type Adapter struct {
 	Response func(io.ReadCloser) io.ReadCloser
 	// ForceStream: the upstream only streams; the proxy folds it for JSON clients.
 	ForceStream bool
+	// Do replaces the HTTP call for providers with a custom transport (Cursor's
+	// HTTP/2 Connect stream). body is the translated request; the response it
+	// returns is read like an upstream answer.
+	Do func(req *http.Request, body []byte, a Account) (*http.Response, error)
 }
 
 var adapters = map[string]*Adapter{}

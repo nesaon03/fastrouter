@@ -1716,6 +1716,21 @@ func (s *Server) handleProviderModels(w http.ResponseWriter, r *http.Request) {
 			out = append(out, model{ID: m.ID, Name: m.Name, Upstream: u, Disabled: off[m.ID]})
 		}
 	}
+	if p, ok := st.Provider(id); ok && id == "cursor" { // the account's live model picker
+		for _, a := range p.Pool.Accounts() {
+			ms, err := oauth.CursorModels(r.Context(), a.Key(), a.Extra["machineId"], false)
+			if err != nil {
+				continue
+			}
+			for _, m := range ms {
+				if !seen[m.ID] && !m.Hidden {
+					seen[m.ID] = true
+					out = append(out, model{ID: m.ID, Name: m.Name, Disabled: off[m.ID]})
+				}
+			}
+			break
+		}
+	}
 	thinking := ""
 	var th map[string]struct {
 		Mode string `json:"mode"`

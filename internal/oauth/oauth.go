@@ -146,7 +146,9 @@ func Apply(c *store.Connection, r *Result, now time.Time) {
 		c.AuthType = "oauth"
 	}
 	c.Status = "ok"
-	delete(c.Meta, "lastError")
+	for _, k := range []string{"lastError", "bannedAt", "lastErrorAt", "errorCode", "testStatus", "rateLimitedUntil", "backoffLevel"} {
+		delete(c.Meta, k) // a fresh sign-in or refresh clears old (incl. imported 9Router) error state
+	}
 }
 
 // Secret reads a credential stored at the top level or under providerSpecificData.
@@ -185,7 +187,7 @@ func AccessKey(c store.Connection) string {
 // Extra is the non-secret per-account data request shaping needs.
 func Extra(c store.Connection) map[string]string {
 	m := map[string]string{}
-	for _, k := range []string{"projectId", "deviceId", "orgId", "email", "userId", "location"} {
+	for _, k := range []string{"projectId", "deviceId", "orgId", "email", "userId", "location", "machineId"} {
 		if v := Meta(c, k); v != "" {
 			m[k] = v
 		}

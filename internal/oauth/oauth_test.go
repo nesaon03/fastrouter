@@ -230,7 +230,7 @@ func TestRefresherDueRules(t *testing.T) {
 		{mk("claude", "", -time.Minute), true},            // expired
 		{mk("claude", "fastrouter", 3*time.Hour), true},   // own session: 4h lead
 		{mk("kilocode", "fastrouter", -time.Hour), false}, // no refresh grant
-		{mk("cursor", "fastrouter", -time.Hour), false},   // not ours
+		{mk("opencode", "fastrouter", -time.Hour), false}, // not ours
 	}
 	for _, tc := range cases {
 		if got := r.Due(tc.c, now); got != tc.want {

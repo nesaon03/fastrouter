@@ -98,8 +98,10 @@ var builtins = []Provider{
 	{ID: "iflow", Aliases: []string{"if"}, ChatURL: "https://apis.iflow.cn/v1/chat/completions", Login: "oauth"},
 	{ID: "grok-cli", Aliases: []string{"gcli"}, ResponsesURL: "https://cli-chat-proxy.grok.com/v1/responses", Login: "oauth"},
 
+	// Cursor IDE: Connect-RPC over HTTP/2 (internal/oauth/cursor.go); token imported from the Cursor app.
+	{ID: "cursor", Aliases: []string{"cu"}, ChatURL: "https://agent.api5.cursor.sh/agent.v1.AgentService/Run", Login: "oauth"},
+
 	// Logins that need provider workarounds (custom binary protocols): imported, but left for a plugin.
-	{ID: "cursor", Aliases: []string{"cu"}, Plugin: true},
 	{ID: "opencode", Aliases: []string{"oc"}, Plugin: true},
 }
 

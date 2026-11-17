@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"github.com/zenpo/fastrouter/internal/secret"
+	"io"
 	"net/http"
 	"sort"
 	"strconv"
@@ -14,6 +14,7 @@ import (
 
 	"github.com/zenpo/fastrouter/internal/catalog"
 	"github.com/zenpo/fastrouter/internal/router"
+	"github.com/zenpo/fastrouter/internal/secret"
 	tr "github.com/zenpo/fastrouter/internal/translate"
 )
 
@@ -60,7 +61,7 @@ func testModel(st *router.State, p *router.Provider, override string, working ma
 	pref := map[string]string{"antigravity": "gemini-3.8-flash-low", "gemini-cli": "gemini-3-flash-preview", "github": "gpt-5-mini",
 		"claude": "claude-haiku-4-5-20251001", "deepseek": "deepseek-v4.1-flash", "openai": "gpt-5-mini", "gemini": "gemini-3.8-flash",
 		"grok-cli": "grok-4.5", "vertex": "gemini-3-flash-preview", "kimi": "kimi-for-coding", "minimax-code": "MiniMax-M2.7",
-		"minimax-code-global": "MiniMax-M2.7", "openrouter": "openrouter/free"}
+		"minimax-code-global": "MiniMax-M2.7", "openrouter": "openrouter/free", "cursor": "default"}
 	if m := pref[p.ID]; m != "" {
 		return m
 	}
@@ -123,6 +124,17 @@ func (c *captureWriter) Write(b []byte) (int, error) {
 }
 func (c *captureWriter) Flush() {}
 
+// outOfFunds spots "no balance / out of credits" errors some gateways send
+// as 401/403 (modelhub answers in Russian: "Недостаточно баланса").
+func outOfFunds(l string) bool {
+	for _, w := range []string{"balance", "credit", "insufficient funds", "top up", "payment", "баланс", "余额"} {
+		if strings.Contains(l, w) {
+			return true
+		}
+	}
+	return false
+}
+
 func errClass(status int, msg string) string {
 	l := strings.ToLower(msg)
 	switch {
@@ -131,7 +143,7 @@ func errClass(status int, msg string) string {
 	case status == 503 && (strings.Contains(l, "demand") || strings.Contains(l, "overloaded")):
 		return "overloaded"
 	case status == 401 || status == 403:
-		if strings.Contains(l, "quota") || strings.Contains(l, "billing") || strings.Contains(l, "subscription") {
+		if strings.Contains(l, "quota") || strings.Contains(l, "billing") || strings.Contains(l, "subscription") || outOfFunds(l) {
 			return "quota"
 		}
 		return "auth"
@@ -213,6 +225,8 @@ func (s *Server) liveTest(ctx context.Context, st *router.State, p *router.Provi
 		}
 	case cw.status == 200:
 		res.Class, res.Message = "empty", "answer had no choices"
+	case cw.status == http.StatusBadGateway && strings.Contains(out.Error.Message, "could not reach the provider"):
+		res.Class, res.Message = "network", classMessage("network", 0)+": "+scrubKey(secret.Redact(out.Error.Message), a.Key())
 	default:
 		res.Class = errClass(cw.status, out.Error.Message)
 		real := scrubKey(secret.Redact(strings.TrimSpace(out.Error.Message)), a.Key())
@@ -261,7 +275,11 @@ func (s *Server) LiveTest(ctx context.Context, o LiveOptions) []LiveResult {
 		}
 		for _, a := range p.Pool.Accounts() {
 			if o.Account == "" || a.ID == o.Account {
-				jobs = append(jobs, job{p, a, testModel(st, p, o.Models[p.ID], working)})
+				m := testModel(st, p, o.Models[p.ID], working)
+				if m == "" { // e.g. a custom endpoint with no catalog: the account's default, else its models list
+					m = firstNonEmpty(connMeta(st, a.ID, "defaultModel"), s.discoverModel(ctx, p, a))
+				}
+				jobs = append(jobs, job{p, a, m})
 			}
 		}
 	}
@@ -291,6 +309,54 @@ func (s *Server) RefreshDue(ctx context.Context) int {
 	}
 	n := s.oauthRefresher.RunOnce(ctx)
 	return n + s.refresher.RunOnce(ctx)
+}
+
+func connMeta(st *router.State, id, k string) string {
+	if st.Snap != nil {
+		for _, c := range st.Snap.Connections {
+			if c.ID == id {
+				v, _ := c.Meta[k].(string)
+				return strings.TrimSpace(v)
+			}
+		}
+	}
+	return ""
+}
+
+// discoverModel asks the provider's models list for a chat model to test with.
+func (s *Server) discoverModel(ctx context.Context, p *router.Provider, a *router.Account) string {
+	u, f := modelsURL(p, a)
+	if u == "" || f != tr.OpenAI {
+		return ""
+	}
+	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
+	if err != nil {
+		return ""
+	}
+	req.Header.Set("Authorization", "Bearer "+a.Key())
+	req.Header.Set("Accept", "application/json")
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return ""
+	}
+	defer resp.Body.Close()
+	var out struct {
+		Data []struct {
+			ID string `json:"id"`
+		} `json:"data"`
+	}
+	if resp.StatusCode != http.StatusOK || json.NewDecoder(io.LimitReader(resp.Body, 4<<20)).Decode(&out) != nil {
+		return ""
+	}
+	for _, m := range out.Data {
+		l := strings.ToLower(m.ID)
+		if m.ID != "" && !strings.Contains(l, "embed") && !strings.Contains(l, "rerank") && !strings.Contains(l, "whisper") && !strings.Contains(l, "tts") {
+			return m.ID
+		}
+	}
+	return ""
 }
 
 func connStatus(st *router.State, id string) string {
