@@ -22,6 +22,9 @@ var migrations = []string{
 	`ALTER TABLE connections ADD COLUMN cost REAL DEFAULT 0`,
 	`CREATE INDEX IF NOT EXISTS usage_ts ON usage(ts)`,
 	`ALTER TABLE nodes ADD COLUMN aliases TEXT DEFAULT ''`,
+	`CREATE TABLE IF NOT EXISTS bench_runs (id TEXT PRIMARY KEY, started_at TEXT, finished_at TEXT, status TEXT,
+		source TEXT, options TEXT, summary TEXT, results TEXT)`,
+	`CREATE INDEX IF NOT EXISTS bench_runs_started ON bench_runs(started_at)`,
 }
 
 func migrate(db *sql.DB) error {

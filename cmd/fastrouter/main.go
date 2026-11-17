@@ -22,6 +22,7 @@ import (
 	"text/tabwriter"
 	"time"
 
+	"github.com/zenpo/fastrouter/internal/bench"
 	"github.com/zenpo/fastrouter/internal/config"
 	"github.com/zenpo/fastrouter/internal/importer"
 	"github.com/zenpo/fastrouter/internal/logring"
@@ -37,6 +38,10 @@ Usage:
   fastrouter test-providers [--config path] [--provider id] [--model id=model]... [--json] [--no-refresh]
       sends one "Say OK" (max 5 tokens) per active account and prints
       provider, account, PASS/FAIL, latency and error class (never keys or bodies)
+  fastrouter bench [--config path] [--port n] [--model id]... [--working] [--endpoint chat,messages,responses]
+                   [--runs 3] [--prompt tiny|medium] [--stream=true] [--ide] [--json] [--no-save]
+      measures a running FastRouter the way an IDE/CLI calls it: TTFT, total time,
+      tokens/sec and FastRouter's own overhead per request (min/avg/p50/p95)
   fastrouter service install|uninstall|status [--config path] [--host h] [--port n] [--dry-run]
   fastrouter version | --version
 
@@ -99,6 +104,20 @@ func main() {
 		})
 		_ = fs.Parse(args)
 		err = runProviderTest(*cfgPath, *prov, models, *asJSON, !*noRefresh)
+	case "bench":
+		var models []string
+		fs.Func("model", "model or combo to test (repeatable)", func(v string) error { models = append(models, v); return nil })
+		working := fs.Bool("working", false, "test every working provider's model")
+		eps := fs.String("endpoint", "chat", "comma list: chat, messages, responses")
+		runs := fs.Int("runs", 3, "runs per model and endpoint")
+		prompt := fs.String("prompt", "tiny", "tiny or medium")
+		stream := fs.Bool("stream", true, "stream the answers")
+		ide := fs.Bool("ide", false, "Simulate IDE: system prompt + tools in each client's shape")
+		asJSON := fs.Bool("json", false, "print JSON")
+		noSave := fs.Bool("no-save", false, "do not add the run to the Speed Test history")
+		_ = fs.Parse(args)
+		o := bench.Options{Models: models, Endpoints: strings.Split(*eps, ","), Runs: *runs, Prompt: *prompt, Stream: *stream, IDE: *ide}
+		err = runBench(*cfgPath, *host, *port, o, *working, *asJSON, !*noSave)
 	case "version":
 		fmt.Println(versionString())
 	case "service":

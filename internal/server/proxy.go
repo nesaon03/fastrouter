@@ -65,8 +65,9 @@ type proxyReq struct {
 	irErr  error
 	parsed bool
 
-	injectedUsage bool   // we asked an OpenAI upstream for a usage chunk the client did not request
-	netErr        string // last "could not reach" failure, for the final error message
+	injectedUsage bool    // we asked an OpenAI upstream for a usage chunk the client did not request
+	netErr        string  // last "could not reach" failure, for the final error message
+	tm            *timing // set when the client asked for X-FastRouter-Timing
 }
 
 func (p *proxyReq) parse() (*tr.Request, error) {
@@ -86,6 +87,8 @@ func (p *proxyReq) clientSetThinking() bool {
 
 func (s *Server) handleProxy(cf tr.Format) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
+		tm := newTiming(w, r, time.Now())
+		defer tm.finish(w)
 		body, err := readBody(r, maxBody)
 		if errors.Is(err, errTooLarge) {
 			writeError(w, cf, http.StatusRequestEntityTooLarge, "invalid_request_error", "request body is over the 64 MB limit")
@@ -95,7 +98,7 @@ func (s *Server) handleProxy(cf tr.Format) http.HandlerFunc {
 			writeError(w, cf, http.StatusBadRequest, "invalid_request_error", "could not read request body")
 			return
 		}
-		p := &proxyReq{r: r, cf: cf, body: body}
+		p := &proxyReq{r: r, cf: cf, body: body, tm: tm}
 		if err := scanHead(body, &p.head); err != nil {
 			writeError(w, cf, http.StatusBadRequest, "invalid_request_error", err.Error())
 			return
@@ -366,6 +369,7 @@ func (s *Server) attempt(w http.ResponseWriter, a *attempt) (bool, *upstreamErr)
 	rec := func(status int) { s.record(a, start, status, usage) }
 
 	var resp *http.Response
+	p.tm.send()
 	if a.ad != nil && a.ad.Do != nil {
 		resp, err = a.ad.Do(req, a.body, oauth.Account{ID: acct.ID, Extra: acct.Extra})
 	} else {
@@ -382,6 +386,7 @@ func (s *Server) attempt(w http.ResponseWriter, a *attempt) (bool, *upstreamErr)
 		return false, nil
 	}
 	defer resp.Body.Close()
+	p.tm.headers()
 
 	if resp.StatusCode >= 300 && resp.StatusCode < 400 { // H3: a redirect is an upstream fault
 		rec(resp.StatusCode)
@@ -420,7 +425,9 @@ func (s *Server) attempt(w http.ResponseWriter, a *attempt) (bool, *upstreamErr)
 func (s *Server) finishJSON(w http.ResponseWriter, a *attempt, resp *http.Response, idle *time.Timer, usage *tr.Usage,
 	rec func(int), ctx context.Context) (bool, *upstreamErr) {
 	p, acct := a.p, a.acct
+	p.tm.firstByte()
 	raw, err := io.ReadAll(&idleReader{r: io.LimitReader(resp.Body, maxBody), t: idle, d: s.cfgIdle})
+	p.tm.ready()
 	if err != nil || len(bytes.TrimSpace(raw)) == 0 {
 		if p.r.Context().Err() == nil {
 			acct.Fail(s.cfgCooldown, 0)
@@ -462,6 +469,7 @@ func (s *Server) finishJSON(w http.ResponseWriter, a *attempt, resp *http.Respon
 	}
 	setResponseHeaders(w.Header(), resp, a, ct)
 	w.WriteHeader(resp.StatusCode)
+	p.tm.clientWrite()
 	_, _ = w.Write(out)
 	rec(resp.StatusCode)
 	return true, nil
@@ -531,6 +539,7 @@ func (s *Server) finishStream(w http.ResponseWriter, a *attempt, resp *http.Resp
 			break
 		}
 		frames++
+		p.tm.firstByte()
 		idle.Reset(s.cfgIdle)
 		var evs []tr.Event
 		if !passthrough || !committed || bytes.Contains(f.Data, []byte("sage")) {
@@ -562,7 +571,9 @@ func (s *Server) finishStream(w http.ResponseWriter, a *attempt, resp *http.Resp
 		if !committed {
 			pending = append(pending, out...)
 			if sawContent || time.Now().After(holdUntil) {
+				p.tm.ready()
 				commit()
+				p.tm.clientWrite()
 				if _, werr := w.Write(pending); werr != nil {
 					clientGone = true
 					break
@@ -640,7 +651,9 @@ func (s *Server) finishStream(w http.ResponseWriter, a *attempt, resp *http.Resp
 			pending = append(pending, tr.NewEncoder(p.cf, a.t.Label).Fail(broken)...)
 		}
 		if !committed {
+			p.tm.ready()
 			commit()
+			p.tm.clientWrite()
 		}
 		_, _ = w.Write(pending)
 		if flusher != nil {
@@ -657,8 +670,10 @@ func (s *Server) finishStream(w http.ResponseWriter, a *attempt, resp *http.Resp
 			rec(resp.StatusCode)
 			return false, &upstreamErr{status: http.StatusBadGateway, body: []byte(err.Error())}
 		}
+		p.tm.ready()
 		setResponseHeaders(w.Header(), resp, a, "application/json")
 		w.WriteHeader(resp.StatusCode)
+		p.tm.clientWrite()
 		_, _ = w.Write(out)
 		rec(resp.StatusCode)
 		return true, nil
@@ -668,7 +683,9 @@ func (s *Server) finishStream(w http.ResponseWriter, a *attempt, resp *http.Resp
 		pending = append(pending, enc.Close()...)
 	}
 	if !committed {
+		p.tm.ready()
 		commit()
+		p.tm.clientWrite()
 	}
 	if len(pending) > 0 {
 		_, _ = w.Write(pending)

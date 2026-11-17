@@ -61,6 +61,9 @@ type Server struct {
 
 	dataDir string // CLI Tools backups live under dataDir/cli-backups
 	port    int
+	host    string
+
+	bench benchState // Speed Test tab
 }
 
 // New builds a server from config and a loaded snapshot. st may be nil (tests).
@@ -83,6 +86,7 @@ func New(cfg config.Config, snap *store.Snapshot, st *store.Store) *Server {
 		hr:           newHeadroomCtl(cfg.DataDir),
 		dataDir:      cfg.DataDir,
 		port:         cfg.Port,
+		host:         cfg.Host,
 	}
 	for _, h := range cfg.AllowedHosts {
 		s.allowedHosts[strings.ToLower(strings.TrimSpace(h))] = true
@@ -200,6 +204,13 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/admin/cli-tools/{id}/apply", s.adminWrite(s.handleCLIApply))
 	mux.Handle("POST /api/admin/cli-tools/{id}/reset", s.adminWrite(s.handleCLIReset))
 	mux.Handle("GET /api/admin/skills", s.adminRead(s.handleSkillList))
+	mux.Handle("GET /api/admin/bench/options", s.adminRead(s.handleBenchOptions))
+	mux.Handle("GET /api/admin/bench/history", s.adminRead(s.handleBenchHistory))
+	mux.Handle("POST /api/admin/bench", s.adminWrite(s.handleBenchStart))
+	mux.Handle("GET /api/admin/bench/{id}", s.adminRead(s.handleBenchGet))
+	mux.Handle("POST /api/admin/bench/{id}/stop", s.adminWrite(s.handleBenchStop))
+	mux.Handle("DELETE /api/admin/bench/{id}", s.adminWrite(s.handleBenchDelete))
+	mux.Handle("GET /api/admin/bench/{id}/export", s.adminRead(s.handleBenchExport))
 	mux.HandleFunc("GET /skills/{name}/SKILL.md", s.handleSkill)
 
 	// The SPA itself is static and public; all data comes from the APIs above.
