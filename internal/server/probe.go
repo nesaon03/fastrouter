@@ -69,6 +69,9 @@ func (s *Server) probeAccount(ctx context.Context, p *router.Provider, a *router
 	res := probeResult{Provider: p.ID, Account: a.ID, Name: maskEmail(a.Name)}
 	start := time.Now()
 	defer func() { res.Ms = time.Since(start).Milliseconds() }()
+	if p.DecisionURL != "" {
+		return s.decisionProbe(ctx, p, a)
+	}
 	if p.Login == "codex" {
 		q := s.fetchQuota(ctx, quotaCred{provider: "codex", key: a.Key(), accountID: a.AccountID})
 		res.OK, res.Message = q.Error == "", firstNonEmpty(q.Error, "Signed in, usage API reachable")

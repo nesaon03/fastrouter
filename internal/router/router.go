@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/zenpo/fastrouter/internal/catalog"
+	"github.com/zenpo/fastrouter/internal/discover"
 	"github.com/zenpo/fastrouter/internal/login"
 	"github.com/zenpo/fastrouter/internal/oauth"
 	"github.com/zenpo/fastrouter/internal/store"
@@ -119,6 +120,8 @@ type Provider struct {
 	Plugin           bool              // login provider deferred to a plugin
 	Login            string            // official-login plugin ("codex", "glm") or ""
 	Upstream         map[string]string // catalog model id -> served id
+	DecisionURL      string            // typed-judgment endpoint ("" = not a decision engine)
+	DecisionModel    string            // default decision model id
 	DefaultModel     string            // custom endpoint: model for bare "prefix" / "prefix/default"
 	Pool             *Pool
 }
@@ -147,13 +150,19 @@ type Combo struct {
 	Models     []string
 	RoundRobin bool
 	// Strategy is fallback, round-robin, smart (a router model picks the
-	// order) or fusion (every model answers, a judge writes the reply).
-	Strategy    string
-	SmartPolicy string  // smart: "smart" (switch on high confidence), "strict" or "per-turn"
-	Threshold   float64 // smart: confidence needed to switch a session's model
-	RouterModel string  // smart: model that picks; default the first combo model
-	JudgeModel  string  // fusion: model that writes the answer; default the first combo model
-	next        atomic.Uint64
+	// order), fusion (every model answers, a judge writes the reply) or swarm
+	// (agents answer, debate each other for a few synchronized rounds, and a
+	// judge writes the reply).
+	Strategy      string
+	SmartPolicy   string  // smart: "smart" (switch on high confidence), "strict" or "per-turn"
+	Threshold     float64 // smart: confidence needed to switch a session's model
+	RouterModel   string  // smart: model that picks; default the first combo model
+	RouterEngine  string  // smart: "model" (default) or "decision" (typed choice from a decision engine)
+	DecisionModel string  // smart/cascade: decision engine model, e.g. "jev"; "" = auto
+	JudgeModel    string  // fusion/swarm: model that writes the answer; default the first combo model
+	Rounds        int     // swarm: debate rounds; 0 means the default, capped when applied
+	Roles         bool    // swarm: give each agent a distinct reasoning lens in round 1
+	next          atomic.Uint64
 }
 
 // Target is one (provider, upstream model) candidate.
@@ -174,6 +183,10 @@ type State struct {
 
 	visionCaps map[string]bool // "providerID/model" -> declared vision capability
 	vision     *Combo          // capacityAdapter vision pool (nil = off)
+	// discovered holds the "providerID/model" keys that came from a provider's
+	// own model list, so a 404 for one can be recorded without touching the
+	// catalog's models.
+	discovered map[string]bool
 	// CCFilterNaming answers Claude Code's topic-naming requests locally (imported setting).
 	CCFilterNaming bool
 }
@@ -216,7 +229,8 @@ func Build(snap *store.Snapshot, limits map[string]KeyLimit) *State {
 			return nil
 		}
 		p := &Provider{ID: c.ID, Name: c.ID, Prefix: c.PrimaryAlias(), Plugin: c.Plugin, Login: c.Login, Upstream: c.Upstream, Pool: &Pool{},
-			PreferNative: c.PreferNative, Official: c.Official, CacheControl: c.CacheControl}
+			PreferNative: c.PreferNative, Official: c.Official, CacheControl: c.CacheControl,
+			DecisionURL: c.DecisionURL, DecisionModel: c.DecisionModel}
 		p.URLs[translate.OpenAI], p.URLs[translate.Anthropic] = c.ChatURL, c.MessagesURL
 		p.URLs[translate.Responses], p.URLs[translate.Gemini] = c.ResponsesURL, c.GeminiURL
 		add(p, append([]string{c.ID}, c.Aliases...)...)
@@ -315,7 +329,11 @@ func Build(snap *store.Snapshot, limits map[string]KeyLimit) *State {
 		SmartPolicy         string  `json:"smartPolicy"`
 		ConfidenceThreshold float64 `json:"confidenceThreshold"`
 		RouterModel         string  `json:"routerModel"`
+		RouterEngine        string  `json:"routerEngine"`
+		DecisionModel       string  `json:"decisionModel"`
 		JudgeModel          string  `json:"judgeModel"`
+		Rounds              int     `json:"rounds"`
+		Roles               bool    `json:"roles"`
 	}
 	_ = json.Unmarshal(snap.Settings["comboStrategies"], &comboOpts)
 	for _, c := range snap.Combos {
@@ -324,7 +342,8 @@ func Build(snap *store.Snapshot, limits map[string]KeyLimit) *State {
 		}
 		o := comboOpts[c.Name]
 		cb := &Combo{Name: c.Name, Models: c.Models, RoundRobin: c.Strategy == "round-robin", Strategy: c.Strategy,
-			SmartPolicy: o.SmartPolicy, Threshold: o.ConfidenceThreshold, RouterModel: o.RouterModel, JudgeModel: o.JudgeModel}
+			SmartPolicy: o.SmartPolicy, Threshold: o.ConfidenceThreshold, RouterModel: o.RouterModel, RouterEngine: o.RouterEngine,
+			DecisionModel: o.DecisionModel, JudgeModel: o.JudgeModel, Rounds: o.Rounds, Roles: o.Roles}
 		if cb.SmartPolicy == "" {
 			cb.SmartPolicy = "smart"
 		}
@@ -353,6 +372,7 @@ func Build(snap *store.Snapshot, limits map[string]KeyLimit) *State {
 			s.Models = append(s.Models, s.PrefixFor(p)+"/"+m.ID)
 		}
 	}
+	s.mergeDiscovered(snap)
 	var adapter struct {
 		Vision *struct {
 			Enabled    *bool    `json:"enabled"`
@@ -367,6 +387,61 @@ func Build(snap *store.Snapshot, limits map[string]KeyLimit) *State {
 	_ = json.Unmarshal(snap.Settings["ccFilterNaming"], &s.CCFilterNaming)
 	s.keys = buildKeys(snap.APIKeys, limits)
 	return s
+}
+
+// mergeDiscovered adds the models a provider's own /models list reported, so a
+// model released after this build is listed without a new binary. Routing never
+// needed the catalog (resolve is prefix-only), so this only affects /v1/models,
+// the dashboard picker and vision detection.
+//
+// The catalog stays authoritative: a discovered id that is only a wire id (a
+// value of the provider's Upstream map) is skipped, and an id the catalog or a
+// custom model already lists is not duplicated.
+func (s *State) mergeDiscovered(snap *store.Snapshot) {
+	if snap == nil || len(snap.Discovered) == 0 {
+		return
+	}
+	seen := make(map[string]bool, len(s.Models))
+	for _, m := range s.Models {
+		seen[m] = true
+	}
+	s.discovered = make(map[string]bool, len(snap.Discovered))
+	for _, dm := range snap.Discovered {
+		if dm.Model == "" || dm.Status == store.DiscoveredDead {
+			continue
+		}
+		p := s.providers[dm.Provider]
+		if p == nil || p.Plugin {
+			continue
+		}
+		if discover.IsWireID(p.Upstream, dm.Model) {
+			continue
+		}
+		s.discovered[p.ID+"/"+dm.Model] = true
+		name := s.PrefixFor(p) + "/" + dm.Model
+		if seen[name] {
+			continue
+		}
+		seen[name] = true
+		s.Models = append(s.Models, name)
+		if visionCap(dm.Caps) {
+			s.visionCaps[p.ID+"/"+dm.Model] = true
+		}
+	}
+}
+
+// visionCap reads {"vision":true} from a discovered model's caps JSON.
+func visionCap(caps string) bool {
+	if caps == "" {
+		return false
+	}
+	var c struct {
+		Vision *bool `json:"vision"`
+	}
+	if json.Unmarshal([]byte(caps), &c) != nil {
+		return false
+	}
+	return c.Vision != nil && *c.Vision
 }
 
 func nodeProvider(n store.Node, prefix string) *Provider {
@@ -429,6 +504,12 @@ func (s *State) Resolve(model string) ([]Target, error) {
 func (s *State) Combo(name string) (*Combo, bool) {
 	c, ok := s.combos[name]
 	return c, ok
+}
+
+// IsDiscovered reports whether providerID/model came from a provider's own
+// model list rather than the compiled catalog.
+func (s *State) IsDiscovered(providerID, model string) bool {
+	return s.discovered[providerID+"/"+model]
 }
 
 // ResolveModels resolves an ordered model list (as a fallback chain) into

@@ -7,3 +7,7 @@ secret.key
 fastrouter.json
 /dist/
 /fastrouter.exe
+npm/vendor/
+node_modules/
+package-lock.json
+*.tgz

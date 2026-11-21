@@ -39,6 +39,9 @@ Usage:
       sends one "Say OK" (max 5 tokens) per active account and prints
       provider, account, PASS/FAIL, latency and error class (never keys or bodies)
   fastrouter codex-credits [--config path]        (read-only: Codex reset credits and expiry)
+  fastrouter models [--refresh] [--config path] [--provider id] [--json]
+      lists the model ids the providers themselves report (the discovery
+      overlay), newest first; --refresh polls them now (needs network)
   fastrouter bench [--config path] [--port n] [--model id]... [--working] [--endpoint chat,messages,responses]
                    [--runs 3] [--prompt tiny|medium] [--stream=true] [--ide] [--json] [--no-save]
       measures a running FastRouter the way an IDE/CLI calls it: TTFT, total time,
@@ -124,6 +127,13 @@ func main() {
 	case "codex-credits":
 		_ = fs.Parse(args)
 		err = runCodexCredits(*cfgPath)
+	case "models":
+		refresh := fs.Bool("refresh", false, "poll the providers now")
+		prov := fs.String("provider", "", "only this provider id")
+		asJSON := fs.Bool("json", false, "print JSON")
+		forget := fs.Bool("forget", false, "drop this provider's discovered rows (needs --provider)")
+		_ = fs.Parse(args)
+		err = runModels(*cfgPath, *refresh, *prov, *asJSON, *forget)
 	case "version":
 		fmt.Println(versionString())
 	case "service":
@@ -236,6 +246,7 @@ func serve(cfgPath, host string, port int) error {
 	defer stopBG()
 	go srv.RunTokenRefresh(bg, time.Minute) // Codex accounts signed in through FastRouter
 	go srv.RunAutoPing(bg)                  // Codex auto-ping, only for accounts the user opted in
+	go srv.RunModelDiscovery(bg)            // new models, from the providers' own lists
 	srv.ResumeTunnel()                      // only if the user left the Cloudflare tunnel on
 	if hr, err := srv.Saver().StartHeadroom(bg, filepath.Join(cfg.DataDir, "headroom")); err != nil {
 		log.Printf("headroom autostart skipped: %v", err)
@@ -283,6 +294,68 @@ func serve(cfgPath, host string, port int) error {
 	// ListenAndServe returns as soon as Shutdown starts; wait for in-flight
 	// requests to finish before the deferred recorder and store close.
 	<-drained
+	return nil
+}
+
+// runModels prints the discovery overlay, optionally polling first. It is the
+// CLI half of the dashboard's model picker: what the providers say they serve.
+func runModels(cfgPath string, refresh bool, provider string, asJSON bool, forget bool) error {
+	cfg, err := config.Load(cfgPath)
+	if err != nil {
+		return err
+	}
+	st, err := store.Open(cfg.DataDir)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	snap, err := st.Load()
+	if err != nil {
+		return err
+	}
+	if forget {
+		// Drop a provider's overlay. Used when a provider's list turns out not to
+		// describe what its API accepts, so the rows it left behind stop being
+		// advertised.
+		if provider == "" {
+			return errors.New("--forget needs --provider")
+		}
+		if err := st.ClearDiscovered(provider); err != nil {
+			return err
+		}
+		fmt.Printf("forgot every discovered model for %s\n", provider)
+		return nil
+	}
+	log.SetOutput(io.Discard)
+	srv := server.New(cfg, snap, st)
+	defer srv.Close()
+	added := 0
+	if refresh {
+		if !asJSON {
+			log.SetOutput(os.Stderr) // discovery problems belong on stderr, not in the table
+		}
+		if added, err = srv.RefreshDiscovered(context.Background(), provider); err != nil {
+			return err
+		}
+	}
+	rows, err := st.DiscoveredFor(provider)
+	if err != nil {
+		return err
+	}
+	if asJSON {
+		enc := json.NewEncoder(os.Stdout)
+		enc.SetIndent("", "  ")
+		return enc.Encode(map[string]any{"new": added, "models": rows})
+	}
+	tw := tabwriter.NewWriter(os.Stdout, 0, 4, 2, ' ', 0)
+	fmt.Fprintln(tw, "PROVIDER\tMODEL\tSTATUS\tMISSES\tLAST_SEEN")
+	byProvider := map[string]int{}
+	for _, r := range rows {
+		byProvider[r.Provider]++
+		fmt.Fprintf(tw, "%s\t%s\t%s\t%d\t%s\n", r.Provider, r.Model, r.Status, r.Misses, r.LastSeen)
+	}
+	_ = tw.Flush()
+	fmt.Printf("\n%d model id(s) across %d provider(s); %d new this run\n", len(rows), len(byProvider), added)
 	return nil
 }
 

@@ -127,6 +127,12 @@ function CopyBtn({ text, id, copied, copy, title = "Copy" }) {
 }
 const fmt = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n || 0));
 const money = (n) => "$" + (n || 0).toFixed(n >= 10 ? 2 : 4);
+// costCell never reports an unknown price as $0.00: when a request used tokens
+// but no rate card covers the model, it says so instead. Discovery harvests
+// public rates for unknown models, so this is a temporary state, not a bug.
+const costCell = (cost, tokens) => (!cost && tokens > 0)
+  ? html`<span class="chip off" title="No rate card for this model yet">unpriced</span>`
+  : money(cost);
 function ago(ts) {
   if (!ts) return "never";
   const s = (Date.now() - new Date(ts).getTime()) / 1000;
@@ -579,7 +585,7 @@ function SpeedHistory({ hist, cm, current, running, onView, onDelete, onClear })
 const NAV = [
   { id: "endpoint", label: "Dashboard", icon: "api", title: "Endpoint & Overview", sub: "Your local endpoint, connected providers and today's traffic" },
   { id: "providers", label: "Providers", icon: "dns", title: "Providers", sub: "Manage your AI provider connections" },
-  { id: "combos", label: "Combos & Vision", icon: "layers", title: "Combos & Vision Adapter", sub: "Named model chains: fallback, round-robin, smart router or fusion" },
+  { id: "combos", label: "Combos & Vision", icon: "layers", title: "Combos & Vision Adapter", sub: "Named model chains: fallback, round-robin, smart router, fusion, swarm or a decision-gated cascade" },
   { id: "usage", label: "Usage", icon: "bar_chart", title: "Usage", sub: "Requests, tokens and estimated cost" },
   { id: "speed-test", label: "Speed Test", icon: "speed", title: "Speed Test", sub: "How fast FastRouter answers your IDE and CLI — through the real /v1 endpoints" },
   { id: "quota", label: "Quota Tracker", icon: "data_usage", title: "Quota Tracker", sub: "Track and manage your API quota limits" },
@@ -604,13 +610,21 @@ function useTheme() {
   return [dark, toggle];
 }
 
-function Sidebar({ page, data }) {
+function Sidebar({ page, data, upd }) {
   const usable = data ? data.providers.reduce((n, p) => n + p.usable, 0) : 0;
+  const [copied, copy] = useCopy();
+  const cmd = (upd && upd.command) || "npm i -g fastrouter@latest";
   const link = (it) => html`<a href=${"#/" + it.id} class=${page === it.id ? "active" : ""}><${Icon} n=${it.icon} /><span>${it.label}</span></a>`;
   return html`<aside class="sidebar">
     <div class="lights"><i style="background:#FF5F56"></i><i style="background:#FFBD2E"></i><i style="background:#27C93F"></i></div>
     <a class="brand" href="#/endpoint"><div class="brand-tile"><${Icon} n="bolt" fill /></div>
       <div><h1>FastRouter</h1><small>v${data ? data.version : ""}</small></div></a>
+    <div class="side-update">
+      <button class="upd-cmd" title="Copy the update command" onClick=${() => copy(cmd, "upd")}>
+        <span class="mono">${cmd}</span><${Icon} n=${copied === "upd" ? "check" : "content_copy"} />
+      </button>
+      ${upd && upd.updateAvailable && html`<span class="chip ok" title=${`npm reports v${upd.latest}`}>v${upd.latest} available</span>`}
+    </div>
     <nav class="nav">${NAV.map(link)}<div class="nav-label">System</div>${SYSTEM.map(link)}</nav>
     <div class="side-foot"><div class="health"><span class="pulse"></span>Router online · ${usable} usable accounts</div></div>
   </aside>`;
@@ -804,7 +818,7 @@ function EndpointPage({ data, go }) {
     <div class="grid g2">
       <div class="card"><div class="card-title"><h2><${Icon} n="trending_up" />Top models · 24h</h2><a class="btn ghost sm" href="#/usage">Details</a></div>
         ${usage && usage.models && usage.models.length ? html`<table class="table"><tbody>${usage.models.slice(0, 6).map((r) => { const [pid, m] = splitModel(r.key); const p = data.providers.find((x) => x.id === pid);
-          return html`<tr><td class="small">${p ? html`<div class="row" style="gap:8px"><${Logo} p=${p} xs /><span class="muted">${provMeta(p).name} /</span><span class="mono">${m}</span></div>` : html`<span class="mono">${r.key}</span>`}</td><td class="num">${fmt(r.requests)} req</td><td class="num muted">${money(r.cost_usd)}</td></tr>`; })}</tbody></table>`
+          return html`<tr><td class="small">${p ? html`<div class="row" style="gap:8px"><${Logo} p=${p} xs /><span class="muted">${provMeta(p).name} /</span><span class="mono">${m}</span></div>` : html`<span class="mono">${r.key}</span>`}</td><td class="num">${fmt(r.requests)} req</td><td class="num muted">${costCell(r.cost_usd, r.input_tokens + r.output_tokens)}</td></tr>`; })}</tbody></table>`
           : html`<div class="empty" style="padding:20px"><p class="muted small">No requests in the last 24 hours.</p></div>`}</div>
       <div class="card"><div class="card-title"><h2><${Icon} n="info" />Import notes</h2><span class="muted small">${data.warnings.length}</span></div>
         <div class="col" style="gap:8px;max-height:260px;overflow:auto">${data.warnings.length === 0 ? html`<p class="muted small">Nothing to review.</p>` :
@@ -817,7 +831,7 @@ function EndpointPage({ data, go }) {
 // sections, each with Test All; status filter and search. Every provider 9Router
 // lists is shown; the ones FastRouter can't route yet say why.
 const STATUS_FILTER = [["all", "All"], ["active", "Active"], ["inactive", "Inactive"], ["none", "No connection"]];
-const SECTION_OF = { oauth: "oauth", free: "free", freeTier: "free", apikey: "apikey", webCookie: "apikey" };
+const SECTION_OF = { oauth: "oauth", free: "free", freeTier: "free", apikey: "apikey", webCookie: "apikey", decision: "decision" };
 function provStatus(p) {
   if (p.unsupported) return "unsupported";
   if (p.noAuth && p.kind !== "plugin") return "active";
@@ -880,6 +894,9 @@ function ProvidersPage({ data, reload, go, query }) {
   const oauth = group("oauth").filter(visible).sort(byPriority);
   const free = group("free").filter(visible).sort((a, b) => (b.noAuth ? 1 : 0) - (a.noAuth ? 1 : 0) || byPriority(a, b));
   const apikeyAll = group("apikey").filter(visible).sort(byName);
+  // Decision engines: their own section, plus any provider that also answers
+  // /v1/decisions once it has a key (OpenAI is one key for chat and decisions).
+  const decision = all.filter((p) => (SECTION_OF[p.category || "apikey"] === "decision" || (p.decision && p.accounts.length > 0)) && visible(p)).sort(byPriority);
   const searching = q.trim() !== "" || filter !== "all";
   const apikey = searching || showAll ? apikeyAll : apikeyAll.slice(0, 20);
   const nodes = data.providers.filter((p) => p.kind.endsWith("compatible") && visible(p));
@@ -919,9 +936,11 @@ function ProvidersPage({ data, reload, go, query }) {
     </section>
     ${section("OAuth Providers", oauth, "oauth", "OAuth")}
     ${section("Free Tier Providers", free, "free", "Free")}
+    ${section("Decision Models", decision, "decision", "Decision",
+      html`<p class="small muted" style="margin:8px 2px 0">Typed, low-latency judgments for <span class="mono">POST /v1/decisions</span>: <span class="mono">choice</span>, <span class="mono">score</span> and <span class="mono">predicate</span> questions in one call. OpenAI shows up here once its key is added — the same key serves chat and decisions.</p>`)}
     ${section("API Key Providers", apikey, "apikey", "API Key", !searching && apikeyAll.length > 20 && html`<button class="show-all" onClick=${() => setShowAll(!showAll)}>
       <${Icon} n=${showAll ? "expand_less" : "expand_more"} />${showAll ? "Show less" : `Show all ${apikeyAll.length} providers`}</button>`)}
-    ${!oauth.length && !free.length && !apikey.length && !nodes.length && html`<div class="empty-line"><${Icon} n="search_off" />No providers match your search or filters</div>`}
+    ${!oauth.length && !free.length && !decision.length && !apikey.length && !nodes.length && html`<div class="empty-line"><${Icon} n="search_off" />No providers match your search or filters</div>`}
     ${modal && modal.t === "account" && html`<${AccountForm} data=${data} onClose=${() => setModal(null)} onSaved=${reload} />`}
     ${modal && modal.t === "node" && html`<${NodeForm} type=${modal.type} onClose=${() => setModal(null)} onSaved=${reload} />`}
     ${modal && modal.t === "unsupported" && html`<${Unsupported} p=${modal.p} onClose=${() => setModal(null)} onAdd=${() => setModal({ t: "node", type: "openai-compatible" })} />`}
@@ -959,7 +978,7 @@ function AccountForm({ data, provider, account, onClose, onSaved }) {
       <button class="btn primary" disabled=${busy || !name || (!account && !key)} onClick=${save}><${Icon} n="save" />${account ? "Save" : "Add account"}</button>`}>
     <form onSubmit=${save} class="col" style="gap:16px">
       ${!account && !provider ? html`<${Field} label="Provider">
-          <select class="input" value=${prov} onChange=${(e) => setProv(e.target.value)}>${choices.map((c) => html`<option value=${c.id}>${provMeta(c).name}  (${c.prefix}/)</option>`)}</select></${Field}>`
+          <select class="input" value=${prov} onChange=${(e) => setProv(e.target.value)}>${choices.map((c) => html`<option value=${c.id}>${provMeta(c).name}  (${c.decision ? "decisions" : c.prefix + "/"})</option>`)}</select></${Field}>`
         : p && html`<div class="row section" style="padding:12px"><${Logo} p=${p} /><div><div class="strong">${meta.name}</div><div class="small muted mono">${p.prefix + "/<model>"}</div></div></div>`}
       <${Field} label="Account name" hint="Shown in the dashboard and usage reports."><input class="input" value=${name} placeholder="e.g. work, personal-2" maxlength="100" onInput=${(e) => setName(e.target.value)} /></${Field}>
       ${!isLogin && html`<${Field} label="API key" hint=${account ? `Stored encrypted. Current key ${account.keyHint || "not set"} — leave blank to keep it.` : "Stored encrypted (AES-GCM). It is never shown again, only a masked hint."}>
@@ -1100,7 +1119,9 @@ function ProviderDetail({ data, id, reload, go, query }) {
   const testOne = async (a) => {
     setTests((t) => ({ ...t, [a.id]: { running: true } }));
     try {
-      const r = await api("POST", "/api/admin/providers/test", { mode: "chat", provider: p.id, account: a.id });
+      const r = await api("POST", "/api/admin/providers/test", p.decision
+        ? { provider: p.id, account: a.id }
+        : { mode: "chat", provider: p.id, account: a.id });
       const x = r.results[0] || { ok: false, message: "account not routable (inactive or not signed in)" };
       setTests((t) => ({ ...t, [a.id]: x })); return x;
     } catch (e) { const x = { ok: false, message: e.message }; setTests((t) => ({ ...t, [a.id]: x })); return x; }
@@ -1139,13 +1160,14 @@ function ProviderDetail({ data, id, reload, go, query }) {
       <div class="grow" style="min-width:0">
         <div class="row" style="gap:12px;flex-wrap:wrap"><h1 class="pd-title">${meta.name}</h1>
           ${(p.website || meta.key) && html`<a class="pd-link" href=${meta.key && !isLogin ? meta.key : p.website || meta.key} target="_blank" rel="noopener noreferrer"><${Icon} n="open_in_new" />${meta.key && !isLogin ? "Get API Key" : "Sign up / Learn more"}</a>`}</div>
-        <div class="muted">${p.accounts.length} connection${p.accounts.length === 1 ? "" : "s"} · model prefix <span class="mono prefix-tag">${p.prefix}/</span>${p.defaultModel ? html` · default model <span class="mono">${p.defaultModel}</span>` : ""}${p.baseUrl ? html` · <span class="mono">${p.baseUrl}</span>` : ""}</div>
+        <div class="muted">${p.accounts.length} connection${p.accounts.length === 1 ? "" : "s"}${p.decision ? html` · decision model <span class="mono">${p.decisionModel || p.id}</span>` : html` · model prefix <span class="mono prefix-tag">${p.prefix}/</span>`}${p.defaultModel ? html` · default model <span class="mono">${p.defaultModel}</span>` : ""}${p.baseUrl ? html` · <span class="mono">${p.baseUrl}</span>` : ""}</div>
       </div>
       ${p.kind.endsWith("compatible") && html`<div class="row" style="gap:8px"><button class="btn outline" onClick=${() => setModal({ t: "node" })}><${Icon} n="edit" />Edit endpoint</button>
         <button class="btn ghost" onClick=${() => setModal({ t: "delnode" })}><${Icon} n="delete" />Delete</button></div>`}
     </div>
     ${p.risk && html`<div class="risk"><${Icon} n="warning" /><p><b>Risk Notice:</b> ${RISK_NOTICE}</p></div>`}
     ${p.kind === "plugin" && html`<div class="notice warn"><${Icon} n="extension" />${meta.name} talks a custom binary protocol FastRouter does not ship yet. Imported accounts are kept and skipped at runtime.</div>`}
+    ${p.decision && html`<div class="notice"><${Icon} n="bolt" />Decision engine: send typed questions to <span class="mono">POST /v1/decisions</span> (default model <span class="mono">${p.decisionModel || p.id}</span>). It is not a chat model and is not listed in <span class="mono">/v1/models</span>.</div>`}
 
     <div class="card">
       <div class="row between wrap" style="gap:12px;margin-bottom:14px">
@@ -1195,7 +1217,7 @@ function ProviderDetail({ data, id, reload, go, query }) {
         </div>`)}
         ${(isLogin || canAdd) && html`<div style="margin-top:14px"><button class="btn primary sm" onClick=${add}><${Icon} n="add" />Add</button></div>`}`}
     </div>
-    <${ModelsCard} data=${data} p=${p} reload=${reload} firstAccount=${(accts.find((a) => a.active) || {}).id} />
+    ${!(p.decision && p.category === "decision") && html`<${ModelsCard} data=${data} p=${p} reload=${reload} firstAccount=${(accts.find((a) => a.active) || {}).id} />`}
 
     ${modal && modal.t === "add" && html`<${AccountForm} data=${data} provider=${p} onClose=${() => setModal(null)} onSaved=${reload} />`}
     ${modal && modal.t === "edit" && html`<${AccountForm} data=${data} account=${modal.a} onClose=${() => setModal(null)} onSaved=${reload} />`}
@@ -1228,8 +1250,67 @@ function capsOf(id) {
   return out;
 }
 
+/* Add a model by hand: the manual half of discovery. A preview, an alias or a
+   private deployment that no /models list mentions still needs to be pickable. */
+function AddModel({ p, prefix, onClose, onSaved }) {
+  const [id, setId] = useState("");
+  const [vision, setVision] = useState(false);
+  const [reasoning, setReasoning] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const [test, setTest] = useState("");
+  const [msg, setMsg] = useState("");
+  const clean = id.trim();
+  const add = async () => {
+    setBusy(true); setMsg("");
+    try {
+      await api("POST", "/api/admin/models", { provider: p.id, id: clean, name: clean, type: "llm", vision, reasoning });
+      toast(`${prefix}/${clean} added`);
+      await onSaved(); onClose();
+    } catch (e) { setMsg(e.message); setBusy(false); }
+  };
+  const probe = async () => {
+    setTest("run"); setMsg("");
+    try {
+      const r = await api("POST", "/api/admin/providers/test", { mode: "chat", provider: p.id, model: clean });
+      const x = r.results && r.results[0];
+      if (x && x.ok) { setTest("ok"); setMsg(`Answered in ${x.ms}ms`); }
+      else { setTest("error"); setMsg((x && x.message) || "No active account to test with"); }
+    } catch (e) { setTest("error"); setMsg(e.message); }
+  };
+  return html`<${Modal} title="Add Custom Model" icon="add" onClose=${onClose}
+    foot=${html`<button class="btn ghost" onClick=${onClose}>Cancel</button>
+      <button class="btn primary" disabled=${!clean || busy} onClick=${add}><${Icon} n="add" />Add Model</button>`}>
+    <${Field} label="Model type">
+      <select class="input" disabled><option>Chat / LLM</option></select>
+      <div class="hint">Chat models appear in this provider's Available Models.</div>
+    </${Field}>
+    <${Field} label="Model ID">
+      <div class="row" style="gap:8px">
+        <input class="input mono grow" autofocus value=${id} placeholder="e.g. claude-opus-4-5"
+          onInput=${(e) => { setId(e.target.value); setTest(""); }} />
+        <button class="btn outline" disabled=${!clean || test === "run"} onClick=${probe}>
+          <${Icon} n=${test === "run" ? "progress_activity" : "science"} cls=${test === "run" ? "spin" : ""} />Test</button>
+      </div>
+      <div class="hint">Sent to provider as: <span class="mono">${clean || "model-id"}</span></div>
+    </${Field}>
+    <div class="field"><label>Capabilities</label>
+      <div class="row wrap" style="gap:22px">
+        <label class="row small" style="gap:10px;cursor:pointer">
+          <${Toggle} on=${vision} onChange=${setVision} />
+          <span><b>Vision</b><br /><span class="muted">Supports image input</span></span></label>
+        <label class="row small" style="gap:10px;cursor:pointer">
+          <${Toggle} on=${reasoning} onChange=${setReasoning} />
+          <span><b>Reasoning</b><br /><span class="muted">Supports reasoning / thinking</span></span></label>
+      </div></div>
+    ${msg && html`<div class="notice ${test === "ok" ? "ok" : test === "error" ? "err" : ""}">
+      <${Icon} n=${test === "ok" ? "check_circle" : test === "error" ? "error" : "info"} />${msg}</div>`}
+  </${Modal}>`;
+}
+
 function ModelsCard({ data, p, reload, firstAccount }) {
   const [info, setInfo] = useState(null);
+  const [adding, setAdding] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [copied, copy] = useCopy();
   const [tests, setTests] = useState({});
   const load = () => api("GET", `/api/admin/providers/${encodeURIComponent(p.id)}/models`).then(setInfo, () => setInfo({ models: [], prefix: p.prefix, thinking: "auto" }));
@@ -1240,6 +1321,20 @@ function ModelsCard({ data, p, reload, firstAccount }) {
   const disable = (m) => setDisabled([...off.map((x) => x.id), m.id], "Model disabled");
   const enable = (m) => setDisabled(off.filter((x) => x.id !== m.id).map((x) => x.id), "Model enabled");
   const setThinking = (mode) => run(async () => { await api("PATCH", "/api/admin/settings", { providerThinking: { [p.id]: mode } }); await load(); await reload(); }, "Thinking updated");
+  const removeCustom = async (m) => {
+    await api("DELETE", `/api/admin/models?provider=${encodeURIComponent(p.id)}&id=${encodeURIComponent(m.id)}`);
+    toast(`${info.prefix}/${m.id} removed`); await load(); await reload();
+  };
+  const refresh = async () => {
+    setRefreshing(true);
+    try {
+      const r = await api("POST", `/api/admin/providers/${encodeURIComponent(p.id)}/refresh-models`, {});
+      toast(r.new ? `${r.new} new model${r.new === 1 ? "" : "s"}` : "Already up to date");
+      await load(); await reload();
+    } catch (e) { toast(e.message, "error"); }
+    setRefreshing(false);
+  };
+
   const test = async (m) => {
     setTests((t) => ({ ...t, [m.id]: "run" }));
     try {
@@ -1258,7 +1353,8 @@ function ModelsCard({ data, p, reload, firstAccount }) {
       <div class="mchip-act">
         <button title="Test" disabled=${st === "run" || !firstAccount} onClick=${() => test(m)}><${Icon} n=${st === "run" ? "progress_activity" : "science"} cls=${st === "run" ? "spin" : ""} /></button>
         <button title="Copy" onClick=${() => copy(full, m.id)}><${Icon} n=${copied === m.id ? "check" : "content_copy"} /></button>
-        <button title="Disable this model" class="x" onClick=${() => disable(m)}><${Icon} n="close" /></button>
+        ${m.custom ? html`<button title="Remove this custom model" class="x" onClick=${() => removeCustom(m)}><${Icon} n="delete" /></button>`
+          : html`<button title="Disable this model" class="x" onClick=${() => disable(m)}><${Icon} n="close" /></button>`}
       </div></div>`;
   };
   return html`<div class="card pd-models">
@@ -1267,6 +1363,9 @@ function ModelsCard({ data, p, reload, firstAccount }) {
       <div class="row" style="gap:10px">
         <label class="row small muted" style="gap:6px"><${Icon} n="psychology" />Thinking:
           <select class="input select-sm" value=${info.thinking || "auto"} onChange=${(e) => setThinking(e.target.value)}>${THINK.map(([v, l]) => html`<option value=${v}>${l}</option>`)}</select></label>
+        <button class="btn ghost sm" title="Ask the provider for its model list now" disabled=${refreshing} onClick=${refresh}>
+          <${Icon} n=${refreshing ? "progress_activity" : "sync"} cls=${refreshing ? "spin" : ""} />Refresh</button>
+        <button class="btn outline sm" onClick=${() => setAdding(true)}><${Icon} n="add" />Add Model</button>
         ${on.length > 0 && html`<button class="btn outline sm" onClick=${() => setDisabled(info.models.map((m) => m.id), "All models disabled")}><${Icon} n="visibility_off" />Disable All</button>`}
         ${off.length > 0 && html`<button class="btn ghost sm" onClick=${() => setDisabled([], "All models enabled")}><${Icon} n="restart_alt" />Enable All</button>`}
       </div></div>
@@ -1275,6 +1374,7 @@ function ModelsCard({ data, p, reload, firstAccount }) {
     ${off.length > 0 && html`<details class="moff"><summary class="small muted">${off.length} disabled model${off.length === 1 ? "" : "s"}</summary>
       <div class="row wrap" style="gap:6px;margin-top:8px">${off.map((m) => html`<button class="chip" title="Enable" onClick=${() => enable(m)}><span class="mono">${m.id}</span><${Icon} n="add" /></button>`)}</div></details>`}
     ${!firstAccount && info.models.length > 0 && html`<p class="small muted" style="margin-top:10px">Add an active connection to test models.</p>`}
+    ${adding && html`<${AddModel} p=${p} prefix=${info.prefix} onClose=${() => setAdding(false)} onSaved=${async () => { await load(); await reload(); }} />`}
   </div>`;
 }
 
@@ -1353,12 +1453,14 @@ function ModelChain({ data, models, empty, sep = "chevron_right" }) {
   if (!models.length) return html`<span class="small muted">${empty}</span>`;
   return html`<div class="combo-models">${models.map((m, i) => html`${i > 0 && html`<span class="arrow-sep"><${Icon} n=${sep} style="font-size:16px" /></span>`}<${ModelTag} data=${data} id=${m} />`)}</div>`;
 }
-// The four combo strategies 9Router offers (combos/page.js STRATEGY_OPTIONS).
+// Combo strategies: the four from 9Router plus the decision-gated cascade.
 const STRATEGY = {
   fallback: { label: "Fallback", short: "Fallback", icon: "low_priority", badge: "primary", desc: "Always start with model 1; move to the next when it fails." },
   "round-robin": { label: "Round-robin", short: "Round-robin", icon: "autorenew", badge: "info", desc: "Rotate the starting model on every request to spread load." },
   smart: { label: "Smart Router", short: "Smart", icon: "auto_awesome", badge: "warning", desc: "System One style: a router model reads the request and picks the best model; sticky per conversation." },
   fusion: { label: "Fusion", short: "Fusion", icon: "merge", badge: "success", desc: "Ask every model in parallel (the panel), then a judge model writes one answer from their replies." },
+  swarm: { label: "Swarm Agent", short: "Swarm", icon: "forum", badge: "info", desc: "Agents answer, then debate each other for a few synchronized rounds; a judge writes the final answer." },
+  cascade: { label: "Cascade", short: "Cascade", icon: "arrow_downward", badge: "success", desc: "Answer with the cheap model, let a decision engine accept it or escalate to the next (stronger) model." },
 };
 const POLICY = [["smart", "Smart"], ["strict", "Strict"], ["per-turn", "Per-turn"]];
 const POLICY_HINT = { smart: "Keep the conversation's model; switch only when the router is confident.", strict: "Pick once per conversation and never switch.", "per-turn": "Ask the router on every turn and follow its pick." };
@@ -1369,14 +1471,20 @@ function ComboForm({ data, combo, onClose, onSaved }) {
   const [policy, setPolicy] = useState((combo && combo.smartPolicy) || "smart");
   const [threshold, setThreshold] = useState(String((combo && combo.confidenceThreshold) || 0.8));
   const [routerModel, setRouterModel] = useState((combo && combo.routerModel) || "");
+  const [routerEngine, setRouterEngine] = useState((combo && combo.routerEngine) || "model");
+  const [decisionModel, setDecisionModel] = useState((combo && combo.decisionModel) || "");
   const [judgeModel, setJudgeModel] = useState((combo && combo.judgeModel) || "");
+  const [rounds, setRounds] = useState(String((combo && combo.rounds) || 2));
+  const [roles, setRoles] = useState(!!(combo && combo.roles));
   const [busy, setBusy] = useState(false);
   const save = async () => {
     setBusy(true);
     try {
       const body = { name, strategy, models };
-      if (strategy === "smart") Object.assign(body, { smartPolicy: policy, confidenceThreshold: Math.min(1, Math.max(0.1, parseFloat(threshold) || 0.8)), routerModel });
+      if (strategy === "smart") Object.assign(body, { smartPolicy: policy, confidenceThreshold: Math.min(1, Math.max(0.1, parseFloat(threshold) || 0.8)), routerModel, routerEngine, decisionModel });
+      if (strategy === "cascade") body.decisionModel = decisionModel;
       if (strategy === "fusion") body.judgeModel = judgeModel;
+      if (strategy === "swarm") Object.assign(body, { judgeModel, rounds: Math.min(3, Math.max(1, parseInt(rounds, 10) || 2)), roles });
       if (combo) await run(() => api("PATCH", `/api/admin/combos/${combo.id}`, body), "Combo saved");
       else await run(() => api("POST", "/api/admin/combos", body), "Combo created");
       await onSaved(); onClose();
@@ -1384,7 +1492,7 @@ function ComboForm({ data, combo, onClose, onSaved }) {
   };
   const self = combo ? combo.name : name;
   return html`<${Modal} wide title=${combo ? "Edit combo" : "New combo"} icon="layers" onClose=${onClose}
-    foot=${html`<button class="btn ghost" onClick=${onClose}>Cancel</button><button class="btn primary" disabled=${busy || !name || !models.length || (strategy === "fusion" && models.length < 2)} onClick=${save}><${Icon} n="save" />Save combo</button>`}>
+    foot=${html`<button class="btn ghost" onClick=${onClose}>Cancel</button><button class="btn primary" disabled=${busy || !name || !models.length || ((strategy === "fusion" || strategy === "swarm") && models.length < 2)} onClick=${save}><${Icon} n="save" />Save combo</button>`}>
     <${Field} label="Combo name" hint="Clients call it as the model name."><input class="input mono" value=${name} placeholder="my-combo" onInput=${(e) => setName(e.target.value)} /></${Field}>
     <${Field} label="Strategy"><div class="strat-grid">${Object.entries(STRATEGY).map(([k, v]) => html`
       <button type="button" class="strat ${strategy === k ? "on" : ""}" onClick=${() => setStrategy(k)}>
@@ -1393,12 +1501,38 @@ function ComboForm({ data, combo, onClose, onSaved }) {
     ${strategy === "smart" && html`<div class="section col" style="gap:14px;padding:14px">
       <div class="grid g2"><${Field} label="Policy" hint=${POLICY_HINT[policy]}><${Seg} value=${policy} onChange=${setPolicy} options=${POLICY} /></${Field}>
         <${Field} label="Confidence to switch" hint="0.1–1. Used by the Smart policy."><input class="input" type="number" min="0.1" max="1" step="0.05" value=${threshold} disabled=${policy !== "smart"} onInput=${(e) => setThreshold(e.target.value)} /></${Field}></div>
-      <${Field} label="Router model" hint="A fast, cheap model that answers with JSON. Fails open to the listed order after 8s."><${ModelSelect} data=${data} value=${routerModel} onChange=${setRouterModel} exclude=${self} placeholder="Default: model 1 of this combo" /></${Field}>
+      <div class="grid g2">
+        <${Field} label="Router engine" hint="Decision asks a typed engine (Jev/Decisions) instead of a chat model: faster, no prose tokens.">
+          <${Seg} value=${routerEngine} onChange=${setRouterEngine} options=${[["model", "Chat model"], ["decision", "Decision engine"]]} /></${Field}>
+        <${Field} label="Decision model" hint="Engine model for the pick, e.g. jev or gpt-6-luna. Blank uses the first configured engine.">
+          <input class="input mono" value=${decisionModel} placeholder="jev" onInput=${(e) => setDecisionModel(e.target.value)} /></${Field}>
+      </div>
+      ${routerEngine === "model" && html`<${Field} label="Router model" hint="A fast, cheap model that answers with JSON. Fails open to the listed order after 8s."><${ModelSelect} data=${data} value=${routerModel} onChange=${setRouterModel} exclude=${self} placeholder="Default: model 1 of this combo" /></${Field}>`}
+    </div>`}
+    ${strategy === "cascade" && html`<div class="section col" style="gap:14px;padding:14px">
+      <${Field} label="Decision model" hint="Engine that accepts the draft or escalates, e.g. jev or gpt-6-luna. Blank uses the first configured engine; without one the first model's answer is sent.">
+        <input class="input mono" value=${decisionModel} placeholder="jev" onInput=${(e) => setDecisionModel(e.target.value)} /></${Field}>
+      <p class="small muted" style="margin:0">Models are the escalation ladder: the first answers, each later one is tried only when the decision engine says <span class="mono">escalate</span>. Requests with tools go straight to the last model.</p>
     </div>`}
     ${strategy === "fusion" && html`<div class="section col" style="gap:14px;padding:14px">
       <${Field} label="Judge model" hint="Reads the panel's answers and writes the final reply, streamed to the client. Quorum of 2, 8s grace for stragglers, 90s cap."><${ModelSelect} data=${data} value=${judgeModel} onChange=${setJudgeModel} exclude=${self} placeholder="Default: model 1 of the panel" /></${Field}>
     </div>`}
-    <${Field} label=${strategy === "fusion" ? "Panel models" : strategy === "smart" ? "Candidate models" : "Models"} hint=${strategy === "fusion" ? "At least two. All are asked in parallel; tools are stripped for the panel." : strategy === "smart" ? "The router picks one of these; the rest stay as fallbacks in this order." : "Drag to set the order. Each entry is prefix/model or another combo's name."}>
+    ${strategy === "swarm" && html`<div class="section col" style="gap:14px;padding:14px">
+      <div class="grid g2">
+        <${Field} label="Judge model" hint="Reads the agents' final answers and writes the reply the client receives."><${ModelSelect} data=${data} value=${judgeModel} onChange=${setJudgeModel} exclude=${self} placeholder="Default: agent 1" /></${Field}>
+        <${Field} label="Debate rounds" hint="1 = independent answers only. 2-3 = agents revise after seeing each other (skips remaining rounds early if all agents already agree).">
+          <${Seg} value=${String(rounds)} onChange=${setRounds} options=${[["1", "1"], ["2", "2"], ["3", "3"]]} /></${Field}>
+      </div>
+      <div class="row between" style="gap:12px">
+        <div class="col" style="gap:2px">
+          <span class="small strong">Role diversity lenses</span>
+          <span class="small muted">Give each agent a distinct lens in round 1 (Architect, Bug Hunter, Simplicity, Security) before debating.</span>
+        </div>
+        <${Toggle} on=${roles} onChange=${setRoles} />
+      </div>
+      <p class="small muted" style="margin:0">Up to 4 agents, synchronized rounds, early consensus exit, tools stripped, 150s cap. The first model is agent 1.</p>
+    </div>`}
+    <${Field} label=${strategy === "swarm" ? "Agent models" : strategy === "fusion" ? "Panel models" : strategy === "smart" ? "Candidate models" : strategy === "cascade" ? "Escalation ladder" : "Models"} hint=${strategy === "swarm" ? "Two to four. Each agent answers alone, then debates the others; the first is agent 1." : strategy === "fusion" ? "At least two. All are asked in parallel; tools are stripped for the panel." : strategy === "smart" ? "The router picks one of these; the rest stay as fallbacks in this order." : strategy === "cascade" ? "First is the cheap attempt; later entries are tried only when the decision engine escalates." : "Drag to set the order. Each entry is prefix/model or another combo's name."}>
       <${ModelListEditor} models=${models} setModels=${setModels} data=${data} exclude=${self} /></${Field}>
   </${Modal}>`;
 }
@@ -1424,7 +1558,8 @@ function CombosPage({ data, reload }) {
               <button class="icon-btn danger" title="Delete" onClick=${() => setModal({ t: "del", c })}><${Icon} n="delete" /></button></div></div>
           <${ModelChain} data=${data} models=${c.models} sep=${c.strategy === "fusion" ? "add" : "chevron_right"} empty="Empty — add models to use it." />
           ${c.strategy === "fusion" && html`<div class="small muted" style="margin-top:10px"><${Icon} n="gavel" style="font-size:14px;vertical-align:-2px" /> Judge: ${c.judgeModel ? html`<${ModelTag} data=${data} id=${c.judgeModel} />` : "model 1"}</div>`}
-          ${c.strategy === "smart" && html`<div class="small muted" style="margin-top:10px"><${Icon} n="alt_route" style="font-size:14px;vertical-align:-2px" /> Router: ${c.routerModel ? html`<${ModelTag} data=${data} id=${c.routerModel} />` : "model 1"}</div>`}
+          ${c.strategy === "smart" && html`<div class="small muted" style="margin-top:10px"><${Icon} n="alt_route" style="font-size:14px;vertical-align:-2px" /> Router: ${c.routerEngine === "decision" ? html`<span class="mono">${c.decisionModel || "decision engine"}</span>` : c.routerModel ? html`<${ModelTag} data=${data} id=${c.routerModel} />` : "model 1"}</div>`}
+          ${c.strategy === "cascade" && html`<div class="small muted" style="margin-top:10px"><${Icon} n="arrow_downward" style="font-size:14px;vertical-align:-2px" /> Decision: <span class="mono">${c.decisionModel || "auto"}</span></div>`}
         </div>`)}</div>`}
     <div class="card">
       <div class="card-title"><div><h2><${Icon} n="image" />Vision adapter</h2><p>When a request carries images and the chosen model can't read them, FastRouter tries these vision models first.</p></div>
@@ -1454,7 +1589,7 @@ function UsageTable({ data, title, icon, list, label }) {
         return html`<tr><td class="small">${p ? html`<div class="row" style="gap:8px;min-width:0"><${Logo} p=${p} xs />${name && html`<span class="mono">${name}</span><span class="muted">·</span>`}<span class=${name ? "muted" : ""}>${provMeta(p).name}</span>${model && html`<span class="muted">/</span><span class="mono truncate">${model}</span>`}</div>`
           : html`<span class="mono">${r.name || r.key}</span>`}</td>
         <td><div class="row" style="gap:8px"><div class="bar grow"><i style=${`width:${(100 * r.requests) / max}%`}></i></div><span class="small" style="min-width:42px">${fmt(r.requests)}</span>${r.failures ? html`<${Badge} kind="error">${r.failures} failed</${Badge}>` : ""}</div></td>
-        <td class="num small">${fmt(r.input_tokens)} / ${fmt(r.output_tokens)}</td><td class="num small muted">${fmt(r.cache_read_tokens)}</td><td class="num small">${r.avg_latency_ms} ms</td><td class="num small">${money(r.cost_usd)}</td></tr>`; })}</tbody></table>`}</div>`;
+        <td class="num small">${fmt(r.input_tokens)} / ${fmt(r.output_tokens)}</td><td class="num small muted">${fmt(r.cache_read_tokens)}</td><td class="num small">${r.avg_latency_ms} ms</td><td class="num small">${costCell(r.cost_usd, r.input_tokens + r.output_tokens)}</td></tr>`; })}</tbody></table>`}</div>`;
 }
 // Usage page, after 9Router's usage/page.js: Overview / Details tabs, period
 // pills, five stat cards, provider topology, recent requests and a chart.
@@ -1711,7 +1846,7 @@ function UsageDetails({ data, period }) {
           <td class="mono small">${x.model}</td><td class="small muted">${x.account}</td>
           <td>${x.status >= 200 && x.status < 300 ? html`<${Badge} kind="success">${x.status}</${Badge}>` : html`<${Badge} kind="error">${x.status || "net"}</${Badge}>`}</td>
           <td class="num small tok-in">${fmt(x.input_tokens)}</td><td class="num small tok-out">${fmt(x.output_tokens)}</td><td class="num small muted">${fmt(x.cache_read_tokens)}</td>
-          <td class="num small">${x.latency_ms} ms</td><td class="num small">${money(x.cost_usd)}</td></tr>`; })}</tbody></table>`}
+          <td class="num small">${x.latency_ms} ms</td><td class="num small">${costCell(x.cost_usd, x.input_tokens + x.output_tokens)}</td></tr>`; })}</tbody></table>`}
     ${total > size && html`<div class="row between" style="padding:12px 18px;border-top:1px solid var(--border-subtle)"><span class="small muted">${page * size + 1}–${Math.min(total, (page + 1) * size)} of ${fmt(total)}</span>
       <div class="row" style="gap:6px"><button class="btn outline sm" disabled=${page === 0} onClick=${() => setPage(page - 1)}><${Icon} n="chevron_left" />Prev</button>
         <button class="btn outline sm" disabled=${(page + 1) * size >= total} onClick=${() => setPage(page + 1)}>Next<${Icon} n="chevron_right" /></button></div></div>`}
@@ -2151,7 +2286,34 @@ function TokenSaverPage({ data, reload }) {
   const refresh = useCallback(async (fresh) => { try { setHr(await api("GET", "/api/admin/headroom" + (fresh ? "?fresh=1" : ""))); } catch (e) {} }, []);
   useEffect(() => { refresh(false); }, []);
   useEffect(() => { if (!hr || !hr.busy) return; const t = setTimeout(() => refresh(true), 1500); return () => clearTimeout(t); }, [hr]);
-  const hrLabel = !hr ? "Checking…" : hr.busy ? "Installing…" : hr.running ? "Running" : !hr.localUrl ? "External" : hr.installed ? "Stopped" : "Not installed";
+  const hrState = (() => {
+    const on = s.headroomEnabled;
+    if (!hr) return { label: "Checking…", cls: "off" };
+    if (hr.busy) return { label: "Installing…", cls: "warn" };
+    if (!on) return { label: "Off", cls: "off" };
+    if (hr.running) return { label: "Running", cls: "ok" };
+    // Switched on and not serving: that is broken, not merely idle.
+    if (!hr.localUrl) return { label: "Unreachable", cls: "bad" };
+    if (hr.installed) return { label: "Stopped", cls: "bad" };
+    return { label: "Not installed", cls: "bad" };
+  })();
+  const hrLabel = hrState.label;
+  // What each saver actually did, from the last requests it rewrote. Green means
+  // on and working, grey means switched off, red means switched on but unable to
+  // do its job. RTK, Caveman and Ponytail run in-process, so they are never red:
+  // either they are on or they are not.
+  const runs = data.savers || {};
+  const state = (k, enabled) => {
+    const r = runs[k] || { count: 0, running: false };
+    if (!enabled) return { label: "Off", cls: "off", title: "Switched off" };
+    if (r.running) return { label: "Running", cls: "ok", title: `${r.count} request${r.count === 1 ? "" : "s"} so far, last ${r.agoSec < 60 ? `${r.agoSec}s` : `${Math.round(r.agoSec / 60)}m`} ago` };
+    if (r.count > 0) return { label: "Idle", cls: "ok", title: `${r.count} request${r.count === 1 ? "" : "s"} total, none in the last 5 minutes` };
+    return { label: "On", cls: "ok", title: "Switched on, no request has needed it yet" };
+  };
+  const StateChip = ({ k, enabled }) => {
+    const s2 = state(k, enabled);
+    return html`<span class="chip ${s2.cls}" title=${s2.title}>${s2.label}</span>`;
+  };
   const extrasCall = (path, body, ok) => run(async () => { await api("POST", "/api/admin/headroom/" + path, body); setPending([]); await refresh(true); }, ok);
   const toggleExtra = async (extra, on) => {
     await save(extra === "code" ? { headroomCodeAware: on } : { headroomKompress: on }, `[${extra}] ${on ? "on" : "off"}`);
@@ -2162,12 +2324,12 @@ function TokenSaverPage({ data, reload }) {
   return html`<div class="card ts-card">
     <h2 class="ts-title"><${Icon} n="bolt" />Token Saver</h2>
     <div class="ts-row">
-      <div class="grow"><div class="ts-t">Compress tool output ${link("https://github.com/rtk-ai/rtk", "RTK")}<${Lock} k="rtkEnabled" /></div>
+      <div class="grow"><div class="ts-t">Compress tool output ${link("https://github.com/rtk-ai/rtk", "RTK")}<${StateChip} k="rtk" enabled=${s.rtkEnabled} /><${Lock} k="rtkEnabled" /></div>
         <div class="ts-d">git/grep/ls/tree/logs → 60-90% fewer input tokens</div></div>
       <${Toggle} on=${s.rtkEnabled} disabled=${locked("rtkEnabled")} onChange=${(v) => save({ rtkEnabled: v }, v ? "RTK on" : "RTK off")} /></div>
     <div class="ts-row">
       <div class="grow"><div class="ts-t">Compress context ${link("https://github.com/chopratejas/headroom", "Headroom")}
-          <span class="chip ${hr && hr.running ? "ok" : "warn"}">${hrLabel}</span>
+          <span class="chip ${hrState.cls}">${hrLabel}</span>
           <button class="link small" onClick=${() => { setSetup(true); refresh(true); }}>${hr && hr.running ? "Manage" : "Setup"}</button><${Lock} k="headroomEnabled" /></div>
         <div class="ts-d">Compress prompts via /v1/compress before routing to the model</div>
         ${hr && hr.installed && html`<div class="ts-extras">
@@ -2182,12 +2344,12 @@ function TokenSaverPage({ data, reload }) {
           ${hr.busy && html`<pre class="code-box log" style="width:100%">${hr.log || "Starting…"}</pre>`}</div>`}</div>
       <${Toggle} on=${s.headroomEnabled} disabled=${locked("headroomEnabled")} onChange=${(v) => save({ headroomEnabled: v }, v ? "Headroom on" : "Headroom off")} /></div>
     <div class="ts-row">
-      <div class="grow"><div class="ts-t">Compress LLM output ${link("https://github.com/JuliusBrussee/caveman", "Caveman")}<${Lock} k="caveman" /></div>
+      <div class="grow"><div class="ts-t">Compress LLM output ${link("https://github.com/JuliusBrussee/caveman", "Caveman")}<${StateChip} k="caveman" enabled=${s.cavemanEnabled} /><${Lock} k="caveman" /></div>
         <div class="ts-d">Terse-style system prompt → ~65% fewer output tokens (up to 87%)</div></div>
       <${SegLv} value=${s.cavemanLevel} levels=${CAVEMAN_LV} disabled=${locked("caveman")} onChange=${(v) => save({ cavemanLevel: v })} />
       <${Toggle} on=${s.cavemanEnabled} disabled=${locked("caveman")} onChange=${(v) => save({ cavemanEnabled: v }, v ? "Caveman on" : "Caveman off")} /></div>
     <div class="ts-row">
-      <div class="grow"><div class="ts-t">Lazy senior dev ${link("https://github.com/DietrichGebert/ponytail", "Ponytail")}<${Lock} k="ponytail" /></div>
+      <div class="grow"><div class="ts-t">Lazy senior dev ${link("https://github.com/DietrichGebert/ponytail", "Ponytail")}<${StateChip} k="ponytail" enabled=${s.ponytailEnabled} /><${Lock} k="ponytail" /></div>
         <div class="ts-d">Bias the model toward minimal code: YAGNI, reuse stdlib, deletion over addition</div></div>
       <${SegLv} value=${s.ponytailLevel} levels=${PONYTAIL_LV} disabled=${locked("ponytail")} onChange=${(v) => save({ ponytailLevel: v })} />
       <${Toggle} on=${s.ponytailEnabled} disabled=${locked("ponytail")} onChange=${(v) => save({ ponytailEnabled: v }, v ? "Ponytail on" : "Ponytail off")} /></div>
@@ -2318,8 +2480,76 @@ function SettingsPage({ data, reload, relogin }) {
         <div class="d">Route image requests to a vision model when the chosen one is text-only. ${s.vision.models.length} model${s.vision.models.length === 1 ? "" : "s"} configured — <a href="#/combos">edit list</a>.</div></div></div>
         <${Toggle} on=${s.vision.enabled} onChange=${(v) => save({ vision: { ...s.vision, enabled: v } }, v ? "Vision fallback on" : "Vision fallback off")} /></div>
     </div>
+    <${DecisionCard} data=${data} save=${save} />
+    <${AutostartCard} data=${data} reload=${reload} />
     <${PasswordCard} passwordSet=${data.passwordSet} relogin=${relogin} />`;
 }
+
+/* Start with the PC: a per-user Startup shortcut (Windows), a systemd user unit
+   (Linux) or a LaunchAgent (macOS) — the same thing `fastrouter service install`
+   writes, so the two can never disagree. */
+function AutostartCard({ data, reload }) {
+  const [busy, setBusy] = useState(false);
+  const a = data.autostart || {};
+  const set = async (on) => {
+    setBusy(true);
+    try { await api("POST", "/api/admin/autostart", { enable: on }); toast(on ? "Starts when you sign in" : "Autostart off"); await reload(); }
+    catch (e) { toast(e.message, "error"); }
+    setBusy(false);
+  };
+  const title = "Start FastRouter when you sign in";
+  const desc = a.supported === false
+    ? (a.reason || "Not supported on this system.")
+    : a.installed
+      ? "Installed — it starts minimized at your next logon, on the port and config it runs now."
+      : "Adds a per-user login entry, so the router is already up after a reboot. No admin rights needed.";
+  const control = a.supported === false
+    ? html`<${Badge} kind="warning">Unsupported</${Badge}>`
+    : html`<div class="row" style="gap:10px">
+        ${busy && html`<${Icon} n="progress_activity" cls="spin" />`}
+        <${Badge} kind=${a.installed ? "success" : ""} dot>${a.installed ? "Enabled" : "Off"}</${Badge}>
+        <${Toggle} on=${!!a.installed} disabled=${busy} onChange=${set} aria-label="Start with Windows" />
+      </div>`;
+  return html`<div class="card">
+    <div class="set-row">
+      <div class="saver-head">
+        <div class="saver-icon"><${Icon} n="power_settings_new" /></div>
+        <div>
+          <div class="t">${title}</div>
+          <div class="d">${desc}</div>
+          ${a.supported !== false && a.path
+            ? html`<div class="d mono small" style="margin-top:4px;opacity:.7;word-break:break-all">${a.path}</div>`
+            : ""}
+        </div>
+      </div>
+      ${control}
+    </div>
+  </div>`;
+}
+function DecisionCard({ data, save }) {
+  const d = data.settings.decision || {};
+  const g = d.gates || {};
+  const [cache, setCache] = useState(String(d.cacheSeconds ?? 900));
+  const [reject, setReject] = useState((g.reject || []).join(", "));
+  const [review, setReview] = useState((g.review || []).join(", "));
+  const split = (v) => v.split(",").map((x) => x.trim()).filter(Boolean);
+  return html`<div class="card">
+    <div class="card-title"><div><h2><${Icon} n="bolt" />Decision engines</h2><p>Local gate and answer cache in front of <span class="mono">POST /v1/decisions</span>.</p></div></div>
+    <div class="set-row"><div><div class="t">Cache answers</div><div class="d">Seconds to reuse an identical judgment. 0 turns the cache off.</div></div>
+      <div class="row" style="gap:8px"><input class="input" type="number" min="0" max="86400" style="width:110px" value=${cache} onInput=${(e) => setCache(e.target.value)} />
+        <button class="btn outline sm" disabled=${cache === String(d.cacheSeconds ?? 900)} onClick=${() => save({ decision: { cacheSeconds: Math.max(0, Math.min(86400, parseInt(cache, 10) || 0)) } }, "Decision cache updated")}>Save</button></div></div>
+    <div class="set-row" style="align-items:flex-start">
+      <div style="max-width:440px"><div class="t">Local gate</div>
+        <div class="d">Phrases that settle a <span class="mono">choice</span> question without calling an engine. Comma-separated; a verdict is only used when the question offers it.</div></div>
+      <div class="col" style="gap:8px;min-width:280px">
+        <input class="input" placeholder="reject: writes mbr, boot disk" value=${reject} onInput=${(e) => setReject(e.target.value)} />
+        <input class="input" placeholder="review: hvci off, secure boot off" value=${review} onInput=${(e) => setReview(e.target.value)} />
+        <button class="btn outline sm" onClick=${() => save({ decision: { gates: { reject: split(reject), review: split(review) } } }, "Gate rules saved")}>Save gate rules</button>
+      </div>
+    </div>
+  </div>`;
+}
+
 function PasswordCard({ passwordSet, relogin }) {
   const [cur, setCur] = useState(""), [pw, setPw] = useState(""), [pw2, setPw2] = useState("");
   const [busy, setBusy] = useState(false);
@@ -2348,8 +2578,15 @@ function App() {
   const [dark, toggleTheme] = useTheme();
   const [auth, setAuth] = useState(null); // null = checking
   const [data, setData] = useState(null);
+  const [upd, setUpd] = useState(null);
   const [err, setErr] = useState("");
   const reload = useCallback(async () => { try { setData(await api("GET", "/api/admin/state")); setErr(""); } catch (e) { setErr(e.message); } }, []);
+  useEffect(() => {
+    if (!data) return;
+    let live = true;
+    api("GET", "/api/update").then((u) => { if (live) setUpd(u); }).catch(() => {});
+    return () => { live = false; };
+  }, [!!data]);
   const check = useCallback(async () => {
     try {
       const s = await api("GET", "/api/auth/session");
@@ -2373,7 +2610,7 @@ function App() {
   else if (page === "providers" && sub) body = html`<${ProviderDetail} ...${props} id=${decodeURIComponent(sub)} />`;
   else { const Page = PAGES[meta.id]; body = html`<${Page} ...${props} />`; }
   return html`<div class="shell">
-    <${Sidebar} page=${meta.id} data=${data} />
+    <${Sidebar} page=${meta.id} data=${data} upd=${upd} />
     <main class="main">
       <${Header} meta=${meta} dark=${dark} toggleTheme=${toggleTheme} onLogout=${logout} passwordSet=${data && data.passwordSet} />
       <div class="content"><div class="content-inner" key=${hash.split("?")[0]}>${body}</div></div>

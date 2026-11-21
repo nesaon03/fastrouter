@@ -32,10 +32,11 @@ var framePool = sync.Pool{New: func() any { return tr.NewFrameReader(nil) }}
 
 // upstreamErr is a failed attempt that can still be reported to the client.
 type upstreamErr struct {
-	status int
-	body   []byte
-	header http.Header
-	uf     tr.Format // format of body (M3)
+	status   int
+	body     []byte
+	header   http.Header
+	uf       tr.Format // format of body (M3)
+	modelGap bool      // this account does not serve the model: try another one
 }
 
 // reqHead is the part of a client body read on every request. The raw fields
@@ -130,7 +131,7 @@ func (s *Server) handleProxy(cf tr.Format) http.HandlerFunc {
 		if s.bypass(w, p, st) {
 			return
 		}
-		if c, ok := st.Combo(p.model); ok && (c.Strategy == "smart" || c.Strategy == "fusion") {
+		if c, ok := st.Combo(p.model); ok && (c.Strategy == "smart" || c.Strategy == "fusion" || c.Strategy == "swarm" || c.Strategy == "cascade") {
 			s.specialCombo(w, p, st, c)
 			return
 		}
@@ -174,13 +175,9 @@ func (s *Server) route(w http.ResponseWriter, p *proxyReq, targets []router.Targ
 			writeError(w, p.cf, http.StatusBadRequest, "invalid_request_error", "could not read request: "+err.Error())
 			return
 		}
+		var saverTag string
 		if sv := s.saver.Load(); sv.Enabled() && !saver.OptedOut(p.r.Header) {
-			var tag string
-			if upBody, tag = sv.Apply(p.r.Context(), upBody, uf, t.Model); tag != "" {
-				w.Header().Set(saver.TagHeader, tag)
-			} else {
-				w.Header().Del(saver.TagHeader)
-			}
+			upBody, saverTag = sv.Apply(p.r.Context(), upBody, uf, t.Model)
 		}
 		var codex *login.CodexRequest
 		if t.Provider.Login == login.Codex && uf == tr.Responses {
@@ -199,7 +196,14 @@ func (s *Server) route(w http.ResponseWriter, p *proxyReq, targets []router.Targ
 			}
 		}
 		order := t.Provider.Pool.Order(time.Now())
+		now := time.Now()
 		for i, acct := range order {
+			// An account that already said it does not serve this model is
+			// skipped for this model only; other models still use it.
+			if s.blocks.blocked(acct.ID, t.Model, now) {
+				reasons = append(reasons, t.Label+": account "+acct.Name+" does not serve this model")
+				continue
+			}
 			u := url
 			if acct.URLs[uf] != "" {
 				u = acct.URLs[uf]
@@ -224,7 +228,7 @@ func (s *Server) route(w http.ResponseWriter, p *proxyReq, targets []router.Targ
 					u += "/" + gemModel + ":generateContent"
 				}
 			}
-			a := attempt{p: p, t: t, acct: acct, uf: uf, url: u, body: body, codex: codex, ad: ad,
+			a := attempt{p: p, t: t, acct: acct, uf: uf, url: u, body: body, codex: codex, ad: ad, saverTag: saverTag,
 				canRetry: i < len(order)-1 || anyUsable(targets[ti+1:])}
 			live := s.inflightFor(t.Provider.ID)
 			live.Add(1)
@@ -235,7 +239,7 @@ func (s *Server) route(w http.ResponseWriter, p *proxyReq, targets []router.Targ
 			}
 			if uerr != nil {
 				last = uerr
-				if !retryable(uerr.status) {
+				if !retryable(uerr.status) && !uerr.modelGap {
 					s.writeUpstream(w, p.cf, uf, uerr)
 					return
 				}
@@ -341,6 +345,7 @@ type attempt struct {
 	body     []byte
 	codex    *login.CodexRequest // shaped Codex request (Codex targets only)
 	ad       *oauth.Adapter      // OAuth provider adapter (nil otherwise)
+	saverTag string              // token savers that ran on this target's body
 	canRetry bool                // another account or target is left to fail over to
 }
 
@@ -375,6 +380,12 @@ func (s *Server) attempt(w http.ResponseWriter, a *attempt) (bool, *upstreamErr)
 	var usage tr.Usage
 	rec := func(status int) { s.record(a, start, status, usage) }
 
+	// Token saver activity is counted as soon as an upstream call is actually
+	// sent (even if the upstream fails in a test/demo environment), while the
+	// response header is only attached on the winning response in setResponseHeaders.
+	if a.saverTag != "" {
+		s.noteSaverTag(a.saverTag)
+	}
 	var resp *http.Response
 	p.tm.send()
 	if a.ad != nil && a.ad.Do != nil {
@@ -409,12 +420,22 @@ func (s *Server) attempt(w http.ResponseWriter, a *attempt) (bool, *upstreamErr)
 				s.noteBan(a.t.Provider.ID, acct, secret.Redact(msg))
 			}
 		}
+		if msg := upstreamMessage(eb); modelUnsupported(resp.StatusCode, msg) {
+			// A plan gap is not a broken credential: remember this account+model
+			// pair instead of cooling the whole account down, and let the caller
+			// try the next account even when the status is not usually retryable.
+			s.blocks.block(acct.ID, a.t.Model, time.Now())
+			log.Printf("upstream %s (account %s) does not serve %s (%d: %s); skipping that pair for %s",
+				label, acct.ID, a.t.Model, resp.StatusCode, secret.Redact(msg), modelBlockTTL)
+			return false, &upstreamErr{status: resp.StatusCode, body: eb, header: resp.Header, uf: a.uf, modelGap: true}
+		}
 		if retryable(resp.StatusCode) {
 			acct.Fail(s.cfgCooldown, retryAfter(resp.Header))
 			log.Printf("upstream %s (account %s) returned %d; trying next", label, acct.ID, resp.StatusCode)
 		}
 		return false, &upstreamErr{status: resp.StatusCode, body: eb, header: resp.Header, uf: a.uf}
 	}
+	s.blocks.clear(acct.ID, a.t.Model) // it answers this model again (plan upgrade)
 	firstTimer.Stop()
 	if a.ad != nil && a.ad.Response != nil {
 		resp.Body = a.ad.Response(resp.Body)
@@ -549,7 +570,7 @@ func (s *Server) finishStream(w http.ResponseWriter, a *attempt, resp *http.Resp
 		p.tm.firstByte()
 		idle.Reset(s.cfgIdle)
 		var evs []tr.Event
-		if !passthrough || !committed || bytes.Contains(f.Data, []byte("sage")) {
+		if !passthrough || !committed || bytes.Contains(f.Data, []byte("usage")) || bytes.Contains(f.Data, []byte("Usage")) {
 			evs, _ = dec.Decode(f) // undecodable frames are passed through or skipped
 			if a.uf != p.cf {
 				tr.TagEvents(evs, a.uf) // H4: mark which family issued each signature
@@ -756,6 +777,11 @@ func setResponseHeaders(h http.Header, resp *http.Response, a *attempt, ct strin
 	h.Set("X-FastRouter-Model", a.t.Label)
 	if a.uf != a.p.cf {
 		h.Set("X-FastRouter-Translated", a.uf.String()+"->"+a.p.cf.String())
+	}
+	if a.saverTag != "" {
+		h.Set(saver.TagHeader, a.saverTag)
+	} else {
+		h.Del(saver.TagHeader)
 	}
 }
 

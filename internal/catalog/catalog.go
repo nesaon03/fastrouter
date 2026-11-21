@@ -36,6 +36,13 @@ type Provider struct {
 	// Extra marks providers generated from 9Router's registry (registry_gen.go).
 	// They never shadow a custom endpoint's prefix.
 	Extra bool
+
+	// DecisionURL is a typed-judgment endpoint (TypeSafe Jev, OpenAI Decisions)
+	// that answers choice/score/predicate questions instead of chat turns. Such
+	// providers are not listed in /v1/models; POST /v1/decisions reaches them.
+	DecisionURL string
+	// DecisionModel is the id sent when the client does not name one.
+	DecisionModel string
 }
 
 // Display is how the dashboard shows a provider.
@@ -65,13 +72,18 @@ var builtins = []Provider{
 			"cn":  "https://token-plan-cn.xiaomimimo.com/v1",
 			"ams": "https://token-plan-ams.xiaomimimo.com/v1",
 		}},
-	{ID: "openai", ChatURL: "https://api.openai.com/v1/chat/completions", ResponsesURL: "https://api.openai.com/v1/responses", Official: true},
+	{ID: "openai", ChatURL: "https://api.openai.com/v1/chat/completions", ResponsesURL: "https://api.openai.com/v1/responses", Official: true,
+		DecisionURL: "https://api.openai.com/v1/decisions", DecisionModel: "gpt-6-luna"},
 	{ID: "gemini", ChatURL: "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions",
 		GeminiURL: "https://generativelanguage.googleapis.com/v1beta/models", PreferNative: true, Official: true},
 	{ID: "nvidia", ChatURL: "https://integrate.api.nvidia.com/v1/chat/completions"},
 	{ID: "xai", ChatURL: "https://api.x.ai/v1/chat/completions"},
 	{ID: "ollama", ChatURL: "https://ollama.com/v1/chat/completions"}, // Ollama Cloud's OpenAI-compatible API
 	{ID: "anthropic", MessagesURL: "https://api.anthropic.com/v1/messages"},
+
+	// Decision engines: typed answers with probabilities, not prose. They are
+	// reached through POST /v1/decisions, never /v1/chat/completions.
+	{ID: "typesafe", Aliases: []string{"jev"}, DecisionURL: "https://api.typesafe.ai/v1/systemone", DecisionModel: "jev-latest"},
 
 	// Official logins handled by internal/login (ChatGPT sign-in, Z.ai sign-in).
 	{ID: "codex", Aliases: []string{"cx"}, ResponsesURL: "https://chatgpt.com/backend-api/codex/responses", Login: "codex"},
@@ -107,6 +119,24 @@ var builtins = []Provider{
 
 var all = append(append([]Provider{}, builtins...), extras...)
 
+// modelAdditions are ids a provider serves but the 9Router registry has not
+// caught up with yet. They live here, not in registry_gen.go, because that file
+// is generated and regenerating it would drop them.
+//
+// Only ids that were verified against the live API belong here: an id that the
+// provider rejects is worse than a missing one, because it looks available and
+// then fails on the first request. Codex has no published model list (its
+// /backend-api/models answers with ChatGPT product slugs, which its responses
+// endpoint rejects), so this is the only way a new Codex model gets listed.
+var modelAdditions = map[string][]Model{
+	"codex": {
+		{ID: "gpt-6.2-astra", Name: "GPT 6.2 Astra"},
+		{ID: "gpt-6.2-astra[1m]", Name: "GPT 6.2 Astra (extended context)"},
+		{ID: "gpt-6.2-sol", Name: "GPT 6.2 Sol"},
+		{ID: "gpt-6.2-sol[1m]", Name: "GPT 6.2 Sol (extended context)"},
+	},
+}
+
 var byKey, reserved = func() (map[string]*Provider, map[string]bool) {
 	m, core := map[string]*Provider{}, map[string]bool{}
 	for i := range all {
@@ -139,8 +169,25 @@ func Info(id string) (Display, bool) {
 // DisplayAll returns display details for every known provider id.
 func DisplayAll() map[string]Display { return display }
 
-// Models returns the model ids 9Router lists for a provider.
-func Models(id string) []Model { return models[id] }
+// Models returns the model ids for a provider: the registry's list plus any
+// hand-added ids the registry has not caught up with yet.
+func Models(id string) []Model {
+	base := models[id]
+	add := modelAdditions[id]
+	if len(add) == 0 {
+		return base
+	}
+	seen := make(map[string]bool, len(base)+len(add))
+	out := make([]Model, 0, len(base)+len(add))
+	for _, m := range append(append([]Model{}, base...), add...) {
+		if m.ID == "" || seen[m.ID] {
+			continue
+		}
+		seen[m.ID] = true
+		out = append(out, m)
+	}
+	return out
+}
 
 // Lookup finds a built-in provider by id or alias.
 func Lookup(idOrAlias string) (*Provider, bool) {
@@ -160,5 +207,11 @@ func init() {
 	// iFlow is hidden on 9Router's page but still signs in; give it a card.
 	if _, ok := display["iflow"]; !ok {
 		display["iflow"] = Display{Name: "iFlow", Color: "#5B5BD6", Category: "oauth", TextIcon: "IF", Priority: 150, LLM: true}
+	}
+	// Decision engines get their own Providers section. They answer typed
+	// questions through /v1/decisions and are never advertised as chat models.
+	if _, ok := display["typesafe"]; !ok {
+		display["typesafe"] = Display{Name: "TypeSafe Jev", Color: "#14B8A6", Category: "decision",
+			KeyURL: "https://typesafe.ai", TextIcon: "JV", Priority: 40}
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"github.com/zenpo/fastrouter/internal/store"
@@ -113,7 +114,7 @@ func TestImportRedactedBackup(t *testing.T) {
 			t.Errorf("found %q in plaintext in the database", needle)
 		}
 	}
-	if fi, err := os.Stat(filepath.Join(dir, "secret.key")); err != nil || fi.Mode().Perm() != 0o600 {
+	if fi, err := os.Stat(filepath.Join(dir, "secret.key")); err != nil || (runtime.GOOS != "windows" && fi.Mode().Perm() != 0o600) {
 		t.Errorf("secret.key mode = %v, err %v", fi.Mode().Perm(), err)
 	}
 }

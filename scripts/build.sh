@@ -3,22 +3,25 @@
 #
 #   scripts/build.sh                     # default targets
 #   TARGETS="linux/arm64" scripts/build.sh
-#   VERSION=1.0.0 scripts/build.sh
+#   VERSION=1.0.0 scripts/build.sh       # must match internal/server.Version
 set -eu
 cd "$(dirname "$0")/.."
 
-PKG=github.com/zenpo/fastrouter
+# The version lives in the source; a -X on this non-main package symbol is
+# silently dropped by the toolchain, so never pass one here.
+SRC_VERSION=$(./scripts/check-version.sh)
+if [ -n "${VERSION:-}" ] && [ "${VERSION#v}" != "$SRC_VERSION" ]; then
+	echo "VERSION=$VERSION does not match internal/server.Version=$SRC_VERSION" >&2
+	exit 1
+fi
+VERSION=$SRC_VERSION
+
 TARGETS=${TARGETS:-"windows/amd64 linux/amd64 darwin/arm64"}
 COMMIT=${COMMIT:-$(git rev-parse --short=12 HEAD 2>/dev/null || echo unknown)}
-if [ -z "${VERSION:-}" ]; then
-	VERSION=$(git describe --tags --exact-match 2>/dev/null || true)
-	[ -n "$VERSION" ] || VERSION="0.0.0-dev+$COMMIT"
-	if [ -n "$(git status --porcelain 2>/dev/null)" ]; then VERSION="$VERSION.dirty"; fi
-fi
 # Commit time keeps builds reproducible; override with DATE=...
 DATE=${DATE:-$(git log -1 --format=%cI 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)}
 
-LDFLAGS="-s -w -X $PKG/internal/server.Version=$VERSION -X main.commit=$COMMIT -X main.date=$DATE"
+LDFLAGS="-s -w -X main.commit=$COMMIT -X main.date=$DATE"
 
 # Every Material Symbol the dashboard uses must be in the subset font (else it shows as text).
 go test -count=1 -run TestIconFontHasEveryUsedIcon ./internal/dashboard >/dev/null || { echo "icon font is missing glyphs: run python3 scripts/icons.py" >&2; exit 1; }

@@ -56,12 +56,15 @@ type Warning struct{ Kind, Subject, Message string }
 
 // Snapshot is the full configuration.
 type Snapshot struct {
-	Nodes             []Node
-	Connections       []Connection
-	Combos            []Combo
-	APIKeys           []APIKey
-	CustomModels      []CustomModel
-	Warnings          []Warning
+	Nodes        []Node
+	Connections  []Connection
+	Combos       []Combo
+	APIKeys      []APIKey
+	CustomModels []CustomModel
+	Warnings     []Warning
+	// Discovered is the run-time model-discovery overlay (see DiscoveredModel).
+	// It is not imported configuration and survives a config rewrite.
+	Discovered        []DiscoveredModel
 	Settings          map[string]json.RawMessage // non-secret 9Router settings, by key
 	DashboardPassword string                     // kept exactly as imported (bcrypt hash)
 }
@@ -365,7 +368,13 @@ func (s *Store) Load() (*Snapshot, error) {
 		snap.Settings[k] = json.RawMessage(v.String)
 	}
 	rows.Close()
-	return snap, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	if err := s.loadDiscovered(snap); err != nil {
+		return nil, err
+	}
+	return snap, nil
 }
 
 // SealedSetting reports whether a setting is stored encrypted: 9Router's proxy

@@ -26,6 +26,9 @@ func (d *Duration) UnmarshalJSON(b []byte) error {
 
 // Config is the on-disk configuration (fastrouter.json in the data dir).
 type Config struct {
+	// Path is where this configuration was loaded from. It is not written back:
+	// it exists so the dashboard can register autostart with the same file.
+	Path string `json:"-"`
 	// Host defaults to 127.0.0.1. Set "0.0.0.0" to expose on the network (opt-in).
 	Host string `json:"host"`
 	Port int    `json:"port"`
@@ -50,6 +53,11 @@ type Config struct {
 	// TokenSavers override the imported 9Router token-saver settings. A field
 	// left out uses the imported value (9Router's default if never set).
 	TokenSavers TokenSavers `json:"tokenSavers"`
+
+	// ModelDiscovery polls each configured provider's own model list, so a model
+	// released after this build still shows up in /v1/models and the dashboard.
+	// On by default: it sends one GET per provider every six hours.
+	ModelDiscovery ModelDiscovery `json:"modelDiscovery"`
 
 	// Plugins configures the official-login providers (Codex, GLM).
 	Plugins Plugins `json:"plugins"`
@@ -86,6 +94,13 @@ type Plugins struct {
 	CodexCallbackPort int `json:"codexCallbackPort,omitempty"`
 }
 
+// ModelDiscovery configures the runtime model-list poller.
+type ModelDiscovery struct {
+	// Enabled defaults to true; set false to rely on the compiled catalog only.
+	Enabled *bool    `json:"enabled,omitempty"`
+	Every   Duration `json:"every,omitempty"` // default 6h
+}
+
 // KeyLimit limits one local API key.
 type KeyLimit struct {
 	RPM    int      `json:"rpm"`    // requests per minute, 0 = unlimited
@@ -98,12 +113,12 @@ func Default() Config {
 		Host:             "127.0.0.1",
 		Port:             20128,
 		ConnectTimeout:   Duration(10 * time.Second),
-		FirstByteTimeout: Duration(120 * time.Second),
+		FirstByteTimeout: Duration(45 * time.Second),
 		IdleTimeout:      Duration(90 * time.Second),
 		CooldownBase:     Duration(30 * time.Second),
 		MaxIdleConnsPer:  64,
 
-		EmptyResponseWait: Duration(45 * time.Second),
+		EmptyResponseWait: Duration(15 * time.Second),
 	}
 }
 
@@ -119,6 +134,7 @@ func DefaultPath() string {
 // Load reads path, writing a default file there if it does not exist yet.
 func Load(path string) (Config, error) {
 	cfg := Default()
+	cfg.Path = path
 	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return cfg, err
 	}

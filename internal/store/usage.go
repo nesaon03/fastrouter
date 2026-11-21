@@ -25,6 +25,15 @@ var migrations = []string{
 	`CREATE TABLE IF NOT EXISTS bench_runs (id TEXT PRIMARY KEY, started_at TEXT, finished_at TEXT, status TEXT,
 		source TEXT, options TEXT, summary TEXT, results TEXT)`,
 	`CREATE INDEX IF NOT EXISTS bench_runs_started ON bench_runs(started_at)`,
+	// Runtime model discovery. Deliberately absent from ReplaceAll's table list:
+	// a config rewrite (dashboard edit, re-import) must not forget what the
+	// providers actually serve.
+	`CREATE TABLE IF NOT EXISTS discovered_models (
+		provider TEXT NOT NULL, model TEXT NOT NULL,
+		first_seen TEXT, last_seen TEXT, last_ok_at TEXT DEFAULT '',
+		status TEXT, source TEXT, misses INTEGER DEFAULT 0, caps TEXT DEFAULT '',
+		PRIMARY KEY (provider, model))`,
+	`CREATE INDEX IF NOT EXISTS discovered_provider ON discovered_models(provider)`,
 }
 
 func migrate(db *sql.DB) error {

@@ -24,11 +24,14 @@ import (
 	"github.com/zenpo/fastrouter/internal/store"
 	tr "github.com/zenpo/fastrouter/internal/translate"
 	"github.com/zenpo/fastrouter/internal/tunnel"
+	"github.com/zenpo/fastrouter/internal/update"
 	"golang.org/x/crypto/bcrypt"
 )
 
-// Version is set at build time with -ldflags "-X .../server.Version=..."
-var Version = "0.2.0-phase2"
+// Version is the build's version. It defaults to the release the source is on;
+// -ldflags "-X .../server.Version=..." overrides it when the toolchain honours
+// it (main.commit and main.date come from the VCS stamps instead).
+var Version = "0.6.0"
 
 // Server routes client requests to upstreams.
 type Server struct {
@@ -63,6 +66,30 @@ type Server struct {
 	dataDir string // CLI Tools backups live under dataDir/cli-backups
 	port    int
 	host    string
+	cfgPath string // the config file this process loaded (for autostart)
+
+	cfgDiscovery config.ModelDiscovery // runtime model-list poller
+
+	// harvested holds rate cards learned from a public price list (see
+	// harvestPricing); they are re-applied whenever Reload builds a new table.
+	harvestMu sync.Mutex
+	harvested map[string]pricing.Price
+	harvestAt time.Time
+
+	// blocks remembers account+model pairs an account said it does not serve,
+	// so one plan gap costs one failed request per model, not one per call.
+	blocks modelBlock
+
+	// decCache serves repeated decision judgments without a second engine call.
+	decMu    sync.Mutex
+	decCache map[[32]byte]decisionCacheEntry
+
+	// updates checks the npm release channel (cached, read-only).
+	updates *update.Checker
+
+	// saverRuns records when each token saver last actually changed a request,
+	// so the Token Saver page can show real activity instead of the toggle.
+	saverRuns saverRuns
 
 	bench benchState // Speed Test tab
 
@@ -93,6 +120,9 @@ func New(cfg config.Config, snap *store.Snapshot, st *store.Store) *Server {
 		dataDir:      cfg.DataDir,
 		port:         cfg.Port,
 		host:         cfg.Host,
+		cfgPath:      cfg.Path,
+		cfgDiscovery: cfg.ModelDiscovery,
+		updates:      update.New(),
 	}
 	s.cf = &tunnel.Cloudflared{Dir: cfg.DataDir, Port: cfg.Port}
 	s.ts = &tunnel.Tailscale{Port: cfg.Port}
@@ -143,6 +173,14 @@ func (s *Server) Reload(snap *store.Snapshot) {
 		log.Printf("imported pricing overrides ignored: %v", err)
 		t, _ = pricing.New(nil)
 	}
+	// Harvested rates live outside the table (they come from a public list, not
+	// from settings), so a reload must put them back or a config write would
+	// silently unpriced every discovered model again.
+	s.harvestMu.Lock()
+	for id, p := range s.harvested {
+		t.Learn(id, p)
+	}
+	s.harvestMu.Unlock()
 	s.rec.prices.Store(t)
 	s.saver.Store(saver.New(snap.Settings, s.tsCfg))
 }
@@ -163,6 +201,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /v1/messages", s.auth(tr.Anthropic, s.handleProxy(tr.Anthropic)))
 	mux.Handle("POST /v1/responses", s.auth(tr.Responses, s.handleProxy(tr.Responses)))
 	mux.Handle("POST /v1/messages/count_tokens", s.auth(tr.Anthropic, http.HandlerFunc(s.handleCountTokens)))
+	mux.Handle("POST /v1/decisions", s.auth(tr.OpenAI, http.HandlerFunc(s.handleDecisions)))
+	mux.Handle("POST /v1/embeddings", s.auth(tr.OpenAI, s.handleOpenAIPass("embeddings")))
+	mux.Handle("POST /v1/images/generations", s.auth(tr.OpenAI, s.handleOpenAIPass("images")))
+	mux.Handle("POST /v1/audio/transcriptions", s.auth(tr.OpenAI, s.handleOpenAIPass("transcriptions")))
+	mux.Handle("POST /v1/audio/speech", s.auth(tr.OpenAI, s.handleOpenAIPass("speech")))
 	mux.Handle("POST /v1beta/models/{rest...}", s.auth(tr.Gemini, s.handleProxy(tr.Gemini)))
 	mux.Handle("GET /v1beta/models", s.auth(tr.Gemini, http.HandlerFunc(s.handleGeminiModels)))
 	mux.Handle("GET /v1/models", s.auth(tr.OpenAI, http.HandlerFunc(s.handleModels)))
@@ -183,6 +226,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/auth/logout", s.adminWrite(s.handleLogout))
 	mux.Handle("POST /api/auth/password", s.adminWrite(s.handleSetPassword))
 	mux.Handle("GET /api/admin/state", s.adminRead(s.handleAdminState))
+	mux.Handle("GET /api/update", s.dashAuth(http.HandlerFunc(s.handleUpdate)))
 	mux.Handle("POST /api/admin/accounts", s.adminWrite(s.handleAccountCreate))
 	mux.Handle("POST /api/admin/accounts/reorder", s.adminWrite(s.handleAccountReorder))
 	mux.Handle("PATCH /api/admin/accounts/{id}", s.adminWrite(s.handleAccountUpdate))
@@ -207,6 +251,11 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/admin/quota/{id}/codex-reset-credits", s.adminWrite(s.handleResetConsume))
 	mux.Handle("PUT /api/admin/quota/{id}/autoping", s.adminWrite(s.handleAutoPingSave))
 	mux.Handle("GET /api/admin/providers/{id}/models", s.adminRead(s.handleProviderModels))
+	mux.Handle("POST /api/admin/providers/{id}/refresh-models", s.adminWrite(s.handleModelRefresh))
+	mux.Handle("POST /api/admin/models", s.adminWrite(s.handleModelCreate))
+	mux.Handle("DELETE /api/admin/models", s.adminWrite(s.handleModelDelete))
+	mux.Handle("GET /api/admin/autostart", s.adminRead(s.handleAutostartGet))
+	mux.Handle("POST /api/admin/autostart", s.adminWrite(s.handleAutostartSet))
 	mux.Handle("GET /api/admin/headroom", s.adminRead(s.handleHeadroomStatus))
 	mux.Handle("POST /api/admin/headroom/install", s.adminWrite(s.handleHeadroomInstall))
 	mux.Handle("POST /api/admin/headroom/uninstall", s.adminWrite(s.handleHeadroomUninstall))

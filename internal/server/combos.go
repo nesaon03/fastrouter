@@ -32,6 +32,7 @@ const (
 	stickyMax        = 5000
 	fusionHardLimit  = 90 * time.Second
 	fusionGraceAfter = 8 * time.Second
+	cascadeHardLimit = 120 * time.Second
 )
 
 type stickyEntry struct {
@@ -82,10 +83,17 @@ func contains(list []string, v string) bool {
 	return false
 }
 
-// specialCombo serves smart and fusion combos.
+// specialCombo serves smart, fusion and swarm combos.
 func (s *Server) specialCombo(w http.ResponseWriter, p *proxyReq, st *router.State, c *router.Combo) {
-	if c.Strategy == "fusion" {
+	switch c.Strategy {
+	case "fusion":
 		s.fusion(w, p, st, c)
+		return
+	case "swarm":
+		s.swarm(w, p, st, c)
+		return
+	case "cascade":
+		s.cascade(w, p, st, c)
 		return
 	}
 	order := s.smartOrder(p, c)
@@ -237,6 +245,9 @@ func (s *Server) smartChoice(p *proxyReq, c *router.Combo) (*smartPick, error) {
 	if state == "" {
 		return nil, fmt.Errorf("no user text to classify")
 	}
+	if c.RouterEngine == "decision" {
+		return s.smartChoiceDecision(p, c, state)
+	}
 	routerModel := firstNonEmpty(c.RouterModel, c.Models[0])
 	var list strings.Builder
 	for _, m := range c.Models {
@@ -269,6 +280,80 @@ func (s *Server) smartChoice(p *proxyReq, c *router.Combo) (*smartPick, error) {
 		return nil, fmt.Errorf("router model %s chose %q, which is not in the combo", routerModel, pick.Choice)
 	}
 	return &pick, nil
+}
+
+// smartChoiceDecision asks a decision engine which combo model fits. A typed
+// choice costs no prose tokens and returns in one short round trip, which is
+// what makes per-turn routing affordable.
+func (s *Server) smartChoiceDecision(p *proxyReq, c *router.Combo, state string) (*smartPick, error) {
+	criteria := make(map[string]any, len(c.Models))
+	for _, m := range c.Models {
+		criteria[m] = m
+	}
+	questions, err := json.Marshal(map[string]any{"pick": map[string]any{
+		"type":         "choice",
+		"instructions": "Pick the configured model that is most appropriate for this request.",
+		"criteria":     criteria,
+	}})
+	if err != nil {
+		return nil, err
+	}
+	stateJSON, err := json.Marshal(state)
+	if err != nil {
+		return nil, err
+	}
+	ctx, cancel := context.WithTimeout(p.r.Context(), smartTimeout)
+	defer cancel()
+	res, err := s.decisionAnswer(ctx, decisionReq{Model: c.DecisionModel, State: stateJSON, Questions: questions})
+	if err != nil {
+		return nil, err
+	}
+	if res.Status < 200 || res.Status >= 300 {
+		return nil, fmt.Errorf("decision engine: HTTP %d %s", res.Status, upstreamMessage(res.Body))
+	}
+	if res.Account != nil {
+		s.recordDecision(p.r, time.Now(), res, res.Account)
+	}
+	return parseDecisionChoice(res.Body, "pick")
+}
+
+// parseDecisionChoice reads one named choice from either engine's response shape.
+func parseDecisionChoice(body []byte, name string) (*smartPick, error) {
+	var doc struct {
+		Answers json.RawMessage `json:"answers"`
+	}
+	if err := json.Unmarshal(body, &doc); err != nil || len(doc.Answers) == 0 {
+		return nil, fmt.Errorf("decision engine answered without answers")
+	}
+	type answer struct {
+		Type          string             `json:"type"`
+		Choice        string             `json:"choice"`
+		Confidence    *float64           `json:"confidence"`
+		Probabilities map[string]float64 `json:"probabilities"`
+	}
+	var got answer
+	var asMap map[string]answer
+	if err := json.Unmarshal(doc.Answers, &asMap); err == nil {
+		got = asMap[name]
+	} else {
+		var list []struct {
+			Name string `json:"name"`
+			answer
+		}
+		if err := json.Unmarshal(doc.Answers, &list); err != nil {
+			return nil, fmt.Errorf("decision engine answered in an unknown shape")
+		}
+		for _, it := range list {
+			if it.Name == name {
+				got = it.answer
+			}
+		}
+	}
+	got.Choice = strings.TrimSpace(got.Choice)
+	if got.Choice == "" {
+		return nil, fmt.Errorf("decision engine did not choose a model")
+	}
+	return &smartPick{Choice: got.Choice, Confidence: got.Confidence, Probabilities: got.Probabilities}, nil
 }
 
 // bufWriter collects an internal response.
@@ -464,4 +549,122 @@ func (s *Server) routeModel(w http.ResponseWriter, p *proxyReq, st *router.State
 		return
 	}
 	s.route(w, p, targets)
+}
+
+// cascade answers with the cheapest model, asks a decision engine whether the
+// draft is good enough, and escalates to the next (stronger) model only on
+// "escalate". The cheap answer is buffered so the verdict is read before the
+// client sees anything; a streaming client still receives a real SSE stream.
+func (s *Server) cascade(w http.ResponseWriter, p *proxyReq, st *router.State, c *router.Combo) {
+	ladder := c.Models
+	if len(ladder) == 0 {
+		writeError(w, p.cf, http.StatusNotFound, "model_not_found", "combo "+c.Name+" has no models")
+		return
+	}
+	ir, err := p.parse()
+	if err != nil {
+		writeError(w, p.cf, http.StatusBadRequest, "invalid_request_error", err.Error())
+		return
+	}
+	// A tool call has to stream from the model that emits it, so a request with
+	// tools goes straight to the strongest step.
+	if len(ladder) == 1 || len(ir.Tools) > 0 {
+		s.routeModel(w, p, st, ladder[len(ladder)-1])
+		return
+	}
+	q := *ir
+	q.Stream = false
+	q.Tools, q.ToolChoice, q.ParallelToolCalls = nil, nil, nil
+	ctx, cancel := context.WithTimeout(p.r.Context(), cascadeHardLimit)
+	defer cancel()
+	user := lastUserText(ir)
+	for i, m := range ladder {
+		if i == len(ladder)-1 {
+			log.Printf("CASCADE %s: escalating to %s", c.Name, m)
+			s.routeModel(w, p, st, m)
+			return
+		}
+		resp, err := s.internalCall(ctx, p.r, &q, m)
+		if err != nil {
+			log.Printf("CASCADE %s: %s failed (%v); escalating", c.Name, m, err)
+			continue
+		}
+		text := strings.TrimSpace(partsText(resp.Parts))
+		if text == "" {
+			log.Printf("CASCADE %s: %s answered empty; escalating", c.Name, m)
+			continue
+		}
+		verdict, err := s.cascadeVerdict(ctx, p, c, user, text)
+		switch {
+		case err != nil:
+			// No verdict is not a reason to spend a stronger model: send the
+			// draft, which is exactly what a fallback combo would have done.
+			log.Printf("CASCADE %s: no verdict for %s (%v); sending its answer", c.Name, m, err)
+			writeBufferedAnswer(w, p, m, resp)
+			return
+		case verdict == "escalate":
+			log.Printf("CASCADE %s: %s escalated by the decision engine", c.Name, m)
+		default:
+			log.Printf("CASCADE %s: %s accepted by the decision engine", c.Name, m)
+			writeBufferedAnswer(w, p, m, resp)
+			return
+		}
+	}
+}
+
+// cascadeVerdict asks the decision engine whether a draft may be sent.
+func (s *Server) cascadeVerdict(ctx context.Context, p *proxyReq, c *router.Combo, user, draft string) (string, error) {
+	state, _ := json.Marshal("Request:\n" + user + "\n\nDraft answer:\n" + clipAnswer(draft))
+	questions, _ := json.Marshal(map[string]any{"verdict": map[string]any{
+		"type":         "choice",
+		"instructions": "Is this draft good enough to send to the user?",
+		"criteria": map[string]any{
+			"accept":   "correct, complete and safe to send",
+			"escalate": "wrong, incomplete, off-topic or unsafe to send",
+		},
+	}})
+	start := time.Now()
+	res, err := s.decisionAnswer(ctx, decisionReq{Model: c.DecisionModel, State: state, Questions: questions})
+	if err != nil {
+		return "", err
+	}
+	if res.Account != nil {
+		s.recordDecision(p.r, start, res, res.Account)
+	}
+	if res.Status < 200 || res.Status >= 300 {
+		return "", fmt.Errorf("HTTP %d", res.Status)
+	}
+	pick, err := parseDecisionChoice(res.Body, "verdict")
+	if err != nil {
+		return "", err
+	}
+	return strings.ToLower(pick.Choice), nil
+}
+
+// writeBufferedAnswer relays an answer that was collected before the client
+// saw anything, in the client's format and streaming mode.
+func writeBufferedAnswer(w http.ResponseWriter, p *proxyReq, model string, resp *tr.Response) {
+	text := partsText(resp.Parts)
+	if p.stream {
+		enc := tr.NewEncoder(p.cf, model)
+		out := enc.Encode([]tr.Event{
+			{Kind: tr.EvStart, Name: model},
+			{Kind: tr.EvUsage, Usage: resp.Usage},
+			{Kind: tr.EvText, Text: text},
+			{Kind: tr.EvUsage, Usage: resp.Usage},
+			{Kind: tr.EvFinish, Finish: tr.FinishStop},
+		})
+		out = append(out, enc.Close()...)
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("X-FastRouter-Model", model)
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(out)
+		return
+	}
+	out, _ := tr.EmitResponse(p.cf, &tr.Response{Model: model, Parts: []tr.Part{{Type: tr.PartText, Text: text}},
+		Finish: tr.FinishStop, Usage: resp.Usage}, model)
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("X-FastRouter-Model", model)
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(out)
 }

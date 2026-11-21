@@ -4,6 +4,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -105,7 +106,14 @@ func TestDashboardCodexSignInFlow(t *testing.T) {
 		t.Fatal(err)
 	}
 	cfg := testConfig()
-	cfg.Plugins.CodexCallbackPort = 1 // never bindable: forces the paste path
+	// Pick an already-occupied ephemeral port so ensureCodexListener cannot bind
+	// (avoid port 1: another test in the suite may hold a listener on it).
+	busyLn, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer busyLn.Close()
+	cfg.Plugins.CodexCallbackPort = busyLn.Addr().(*net.TCPAddr).Port // forces the paste path
 	s := New(cfg, snap, st)
 	s.logins.ep.CodexToken = tok.URL
 	hs := httptest.NewServer(s.Handler())

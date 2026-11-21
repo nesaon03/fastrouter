@@ -1,0 +1,78 @@
+name: release
+
+# Tag vX.Y.Z -> build raw binaries, publish a GitHub release, publish the npm
+# package. The tag must match internal/server.Version and package.json.
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - run: go build ./... && go vet ./... && go test ./...
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: node --test npm/test.js
+
+  release:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: Resolve and verify the version
+        run: |
+          set -euo pipefail
+          VERSION="${GITHUB_REF_NAME#v}"
+          SRC=$(grep -o 'var Version = "[^"]*"' internal/server/server.go | cut -d'"' -f2)
+          PKG=$(node -p "require('./package.json').version")
+          test "$VERSION" = "$SRC" || { echo "tag v$VERSION != internal/server.Version $SRC"; exit 1; }
+          test "$VERSION" = "$PKG" || { echo "tag v$VERSION != package.json $PKG"; exit 1; }
+          echo "VERSION=$VERSION" >> "$GITHUB_ENV"
+      - name: Build raw release binaries
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          build() {
+            GOOS="$1" GOARCH="$2" CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" \
+              -o "dist/fastrouter_${VERSION}_$3" ./cmd/fastrouter
+          }
+          build windows amd64 windows_amd64.exe
+          build linux   amd64 linux_amd64
+          build linux   arm64 linux_arm64
+          build darwin  amd64 darwin_amd64
+          build darwin  arm64 darwin_arm64
+          (cd dist && sha256sum fastrouter_* > checksums.txt)
+          cat dist/checksums.txt
+      - name: Publish GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*
+          generate_release_notes: true
+
+  npm:
+    needs: release
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          registry-url: https://registry.npmjs.org
+      - name: Publish fastrouter to npm
+        run: npm publish --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

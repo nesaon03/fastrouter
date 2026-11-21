@@ -1,19 +1,21 @@
 # Packaging and release
 
-Everything here is local. Nothing is pushed or published, and nothing needs admin or root.
+Everything here is local. Nothing is pushed or published by a normal build;
+releasing is one tag push (see below).
 
 ## Version info
 
-The version is `internal/server.Version`, set at link time along with the commit and build date:
+`internal/server.Version` is the source of truth:
 
-```sh
-go build -ldflags "-X github.com/zenpo/fastrouter/internal/server.Version=1.2.3 \
-  -X main.commit=$(git rev-parse --short=12 HEAD) -X main.date=$(git log -1 --format=%cI)" ./cmd/fastrouter
-fastrouter version     # or --version / -v
-# fastrouter 1.2.3 (commit 0883fe7384e5, built 2026-11-15T23:56:33+08:00, go1.27.3 linux/amd64)
+```go
+var Version = "0.6.0"
 ```
 
-A plain `go build` from a git checkout falls back to Go's embedded VCS info for the commit and date. The same version is reported by `/health` and sent upstream in the `User-Agent` header.
+`package.json` must carry the same value — `TestPackageVersionMatchesServer`
+fails otherwise, and the release workflow refuses a tag that disagrees with
+either. A plain `go build` from a git checkout falls back to Go's embedded VCS
+info for the commit and date. The same version is reported by `/health`, the
+dashboard sidebar, the npm package and the upstream `User-Agent` header.
 
 ## Build
 
@@ -48,8 +50,58 @@ For a real version, tag first (`git tag v1.2.3`) and run `goreleaser release --c
 
 ```sh
 go build ./... && go vet ./... && go test ./...      # or: make test
+node --test npm/test.js                              # npm wrapper (offline)
 ./dist/fastrouter_*_linux_amd64 version
 ```
+
+## npm package
+
+`package.json` publishes the `fastrouter` package (MIT). It contains no binary:
+`npm/fastrouter.js` is a launcher, and `npm/install.js` runs as `postinstall` to
+download the matching raw release asset from
+`https://github.com/zenpo/fastrouter/releases/download/v<version>/` and verify it
+against `checksums.txt`.
+
+- Assets: `fastrouter_<version>_<os>_<arch>[.exe]` for windows/amd64,
+  linux/amd64, linux/arm64, darwin/amd64, darwin/arm64.
+- `FASTROUTER_DOWNLOAD_BASE` overrides the download base (mirror or local test).
+- `FASTROUTER_SKIP_DOWNLOAD=1` skips the postinstall download; the launcher
+  retries on first run.
+- `FASTROUTER_STRICT_INSTALL=1` turns a failed download into a failed install.
+- The downloaded binary lands in `npm/vendor/` (gitignored) and is chmod 0755.
+
+Check the package without publishing:
+
+```sh
+npm pack --dry-run     # list the files that would ship
+npm pack               # fastrouter-<version>.tgz
+node --test npm/test.js
+```
+
+Update flow for users is plain npm, and the dashboard sidebar shows the command
+with a copy button:
+
+```sh
+npm i -g fastrouter@latest
+```
+
+## Release
+
+1. Bump `internal/server.Version` and `package.json` to the same `X.Y.Z`.
+2. Commit, then tag and push:
+
+   ```sh
+   git tag v0.6.0
+   git push origin v0.6.0
+   ```
+
+3. `.github/workflows/release.yml` runs the tests, verifies the tag against both
+   version fields, builds the five raw binaries, writes `checksums.txt`, creates
+   the GitHub release, and publishes the npm package (`NPM_TOKEN` repository
+   secret required).
+
+The repository name in `npm/install.js` and the workflow (`zenpo/fastrouter`) is
+the release channel: if the repo moves, update both constants.
 
 ## Docker
 

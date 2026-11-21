@@ -21,6 +21,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/zenpo/fastrouter/internal/catalog"
+	"github.com/zenpo/fastrouter/internal/discover"
 	"github.com/zenpo/fastrouter/internal/login"
 	"github.com/zenpo/fastrouter/internal/oauth"
 	"github.com/zenpo/fastrouter/internal/router"
@@ -567,10 +568,12 @@ type adminProvider struct {
 	Color    string         `json:"color,omitempty"`
 	KeyURL   string         `json:"keyUrl,omitempty"`
 	Extra    bool           `json:"extra,omitempty"`
-	Category string         `json:"category,omitempty"` // 9Router section: oauth | free | freeTier | apikey | webCookie
+	Category string         `json:"category,omitempty"` // 9Router section: oauth | free | freeTier | apikey | webCookie | decision
 	Priority int            `json:"priority,omitempty"`
 	TextIcon string         `json:"textIcon,omitempty"`
 	NoAuth   bool           `json:"noAuth,omitempty"`
+	Decision bool           `json:"decision,omitempty"`      // also answers POST /v1/decisions
+	DecModel string         `json:"decisionModel,omitempty"` // default id for that endpoint
 }
 
 // modelGroup is one provider's section in the dashboard's model picker.
@@ -583,9 +586,10 @@ type modelGroup struct {
 }
 
 type pickerModel struct {
-	ID     string `json:"id"` // full routable name, prefix/model
-	Name   string `json:"name"`
-	Custom bool   `json:"custom,omitempty"`
+	ID         string `json:"id"` // full routable name, prefix/model
+	Name       string `json:"name"`
+	Custom     bool   `json:"custom,omitempty"`
+	Discovered bool   `json:"discovered,omitempty"` // listed by the provider at run time
 }
 
 func (s *Server) handleAdminState(w http.ResponseWriter, r *http.Request) {
@@ -667,6 +671,7 @@ func (s *Server) handleAdminState(w http.ResponseWriter, r *http.Request) {
 			p.Name, p.Color, p.KeyURL = d.Name, d.Color, d.KeyURL
 			p.Category, p.Priority, p.TextIcon, p.NoAuth = d.Category, d.Priority, d.TextIcon, d.NoAuth
 		}
+		p.Decision, p.DecModel = c.DecisionURL != "", c.DecisionModel
 		for r := range c.Regions {
 			p.Regions = append(p.Regions, r)
 		}
@@ -703,15 +708,19 @@ func (s *Server) handleAdminState(w http.ResponseWriter, r *http.Request) {
 		keys = append(keys, key{k.ID, k.Name, k.Active, maskSecret(k.Key), acc.Restricted, acc.Allow})
 	}
 	type combo struct {
-		ID          string   `json:"id"`
-		Name        string   `json:"name"`
-		Kind        string   `json:"kind"`
-		Strategy    string   `json:"strategy"`
-		Models      []string `json:"models"`
-		SmartPolicy string   `json:"smartPolicy,omitempty"`
-		RouterModel string   `json:"routerModel,omitempty"`
-		JudgeModel  string   `json:"judgeModel,omitempty"`
-		Threshold   float64  `json:"confidenceThreshold,omitempty"`
+		ID            string   `json:"id"`
+		Name          string   `json:"name"`
+		Kind          string   `json:"kind"`
+		Strategy      string   `json:"strategy"`
+		Models        []string `json:"models"`
+		SmartPolicy   string   `json:"smartPolicy,omitempty"`
+		RouterModel   string   `json:"routerModel,omitempty"`
+		RouterEngine  string   `json:"routerEngine,omitempty"`
+		DecisionModel string   `json:"decisionModel,omitempty"`
+		JudgeModel    string   `json:"judgeModel,omitempty"`
+		Threshold     float64  `json:"confidenceThreshold,omitempty"`
+		Rounds        int      `json:"rounds,omitempty"`
+		Roles         bool     `json:"roles,omitempty"`
 	}
 	combos := []combo{}
 	opts := comboOptions(sn)
@@ -724,8 +733,14 @@ func (s *Server) handleAdminState(w http.ResponseWriter, r *http.Request) {
 		if o := opts[c.Name]; o != nil {
 			cb.SmartPolicy, _ = o["smartPolicy"].(string)
 			cb.RouterModel, _ = o["routerModel"].(string)
+			cb.RouterEngine, _ = o["routerEngine"].(string)
+			cb.DecisionModel, _ = o["decisionModel"].(string)
 			cb.JudgeModel, _ = o["judgeModel"].(string)
 			cb.Threshold, _ = o["confidenceThreshold"].(float64)
+			if f, ok := o["rounds"].(float64); ok {
+				cb.Rounds = int(f)
+			}
+			cb.Roles, _ = o["roles"].(bool)
 		}
 		combos = append(combos, cb)
 	}
@@ -767,6 +782,8 @@ func (s *Server) handleAdminState(w http.ResponseWriter, r *http.Request) {
 		"others":      others,
 		"settings":    s.settingsView(sn),
 		"warnings":    maskWarnings(sn.Warnings),
+		"savers":      s.saverRunsView(),
+		"autostart":   s.autostartState(),
 	})
 }
 
@@ -830,6 +847,18 @@ func (s *Server) settingsView(sn *store.Snapshot) map[string]any {
 		}
 	}
 	sort.Strings(locked)
+	dec := map[string]any{"cacheSeconds": defaultDecisionCacheSeconds, "gates": map[string][]string{}}
+	var ds struct {
+		CacheSeconds *int                `json:"cacheSeconds"`
+		Gates        map[string][]string `json:"gates"`
+	}
+	get("decisionSettings", &ds)
+	if ds.CacheSeconds != nil {
+		dec["cacheSeconds"] = *ds.CacheSeconds
+	}
+	if ds.Gates != nil {
+		dec["gates"] = ds.Gates
+	}
 	return map[string]any{
 		"rtkEnabled":            b("rtkEnabled", true),
 		"cavemanEnabled":        b("cavemanEnabled", false),
@@ -847,8 +876,104 @@ func (s *Server) settingsView(sn *store.Snapshot) map[string]any {
 		"disabledModels":        disabledModels(sn),
 		"stickyRoundRobinLimit": sticky,
 		"vision":                vis,
+		"decision":              dec,
 		"lockedByConfig":        locked,
 	}
+}
+
+// ---- custom models ----
+
+// modelIDRe allows what real model ids contain (OpenRouter embeds slashes).
+var modelIDRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:/+@-]{0,119}$`)
+
+// handleModelCreate adds a custom model, the manual half of discovery: a model
+// whose id does not appear in any list (a preview, an alias, a private
+// deployment). It shows in the picker at once and routes like any other id.
+func (s *Server) handleModelCreate(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Provider  string `json:"provider"`
+		ID        string `json:"id"`
+		Name      string `json:"name"`
+		Type      string `json:"type"`
+		Vision    bool   `json:"vision"`
+		Reasoning bool   `json:"reasoning"`
+	}
+	if !decodeStrict(w, r, &in) {
+		return
+	}
+	err := s.mutate(func(sn *store.Snapshot) error {
+		st := s.state.Load()
+		// A model can be added before the account exists, so a provider with no
+		// connections yet still has to resolve: fall back to the compiled
+		// catalog, which is where its id lives.
+		id, plugin := "", false
+		if p, ok := st.Provider(strings.TrimSpace(in.Provider)); ok {
+			id, plugin = p.ID, p.Plugin
+		} else if c, ok := catalog.Lookup(strings.TrimSpace(in.Provider)); ok {
+			id, plugin = c.ID, c.Plugin
+		} else {
+			return bad("unknown provider %q", in.Provider)
+		}
+		if plugin {
+			return bad("%s cannot be routed yet", id)
+		}
+		model := strings.TrimSpace(in.ID)
+		if !modelIDRe.MatchString(model) {
+			return bad("model id must be 1 to 120 characters of letters, digits and . _ : / + @ -")
+		}
+		typ := strings.TrimSpace(in.Type)
+		if typ == "" {
+			typ = "llm"
+		}
+		if typ != "llm" {
+			return bad("only chat/LLM models can be added here")
+		}
+		name := strings.TrimSpace(in.Name)
+		if name == "" {
+			name = model
+		}
+		if _, err := cleanName(name, "name"); err != nil {
+			return err
+		}
+		for _, m := range sn.CustomModels {
+			if m.ProviderAlias == id && m.ID == model {
+				return bad("%s/%s already exists", id, model)
+			}
+		}
+		caps, _ := json.Marshal(map[string]bool{"vision": in.Vision, "reasoning": in.Reasoning})
+		sn.CustomModels = append(sn.CustomModels, store.CustomModel{
+			ProviderAlias: id, ID: model, Type: typ, Name: name, Caps: caps})
+		return nil
+	})
+	s.writeResult(w, err, map[string]bool{"ok": true})
+}
+
+// handleModelDelete removes a custom model by provider id and model id. The id
+// travels in the query string because a model id may contain slashes.
+func (s *Server) handleModelDelete(w http.ResponseWriter, r *http.Request) {
+	provider := strings.TrimSpace(r.URL.Query().Get("provider"))
+	model := strings.TrimSpace(r.URL.Query().Get("id"))
+	if provider == "" || model == "" {
+		adminErr(w, http.StatusBadRequest, "provider and id are required")
+		return
+	}
+	err := s.mutate(func(sn *store.Snapshot) error {
+		kept := sn.CustomModels[:0]
+		found := false
+		for _, m := range sn.CustomModels {
+			if m.ProviderAlias == provider && m.ID == model {
+				found = true
+				continue
+			}
+			kept = append(kept, m)
+		}
+		if !found {
+			return errNotFound
+		}
+		sn.CustomModels = kept
+		return nil
+	})
+	s.writeResult(w, err, map[string]bool{"ok": true})
 }
 
 // ---- accounts ----
@@ -1172,16 +1297,20 @@ func (s *Server) handleNodeDelete(w http.ResponseWriter, r *http.Request) {
 // ---- combos ----
 
 type comboIn struct {
-	Name        *string  `json:"name"`
-	Strategy    *string  `json:"strategy"`
-	Models      []string `json:"models"`
-	SmartPolicy *string  `json:"smartPolicy"`
-	RouterModel *string  `json:"routerModel"`
-	JudgeModel  *string  `json:"judgeModel"`
-	Threshold   *float64 `json:"confidenceThreshold"`
+	Name          *string  `json:"name"`
+	Strategy      *string  `json:"strategy"`
+	Models        []string `json:"models"`
+	SmartPolicy   *string  `json:"smartPolicy"`
+	RouterModel   *string  `json:"routerModel"`
+	RouterEngine  *string  `json:"routerEngine"`
+	DecisionModel *string  `json:"decisionModel"`
+	JudgeModel    *string  `json:"judgeModel"`
+	Threshold     *float64 `json:"confidenceThreshold"`
+	Rounds        *int     `json:"rounds"`
+	Roles         *bool    `json:"roles"`
 }
 
-var comboStrategies = map[string]bool{"fallback": true, "round-robin": true, "smart": true, "fusion": true}
+var comboStrategies = map[string]bool{"fallback": true, "round-robin": true, "smart": true, "fusion": true, "swarm": true, "cascade": true}
 var smartPolicies = map[string]bool{"smart": true, "strict": true, "per-turn": true}
 
 // comboOptions reads settings.comboStrategies (9Router's per-combo options, by name).
@@ -1225,7 +1354,7 @@ func applyCombo(sn *store.Snapshot, c *store.Combo, in comboIn) error {
 	}
 	if in.Strategy != nil {
 		if !comboStrategies[*in.Strategy] {
-			return bad("strategy must be fallback, round-robin, smart or fusion")
+			return bad("strategy must be fallback, round-robin, smart, fusion, swarm or cascade")
 		}
 		c.Strategy = *in.Strategy
 	}
@@ -1253,7 +1382,20 @@ func applyCombo(sn *store.Snapshot, c *store.Combo, in comboIn) error {
 		}
 		o["confidenceThreshold"] = *in.Threshold
 	}
-	for key, v := range map[string]*string{"routerModel": in.RouterModel, "judgeModel": in.JudgeModel} {
+	if in.Rounds != nil {
+		if *in.Rounds < 1 || *in.Rounds > swarmMaxRounds {
+			return bad("swarm rounds must be between 1 and %d", swarmMaxRounds)
+		}
+		o["rounds"] = *in.Rounds
+	}
+	if in.Roles != nil {
+		if *in.Roles {
+			o["roles"] = true
+		} else {
+			delete(o, "roles")
+		}
+	}
+	for key, v := range map[string]*string{"routerModel": in.RouterModel, "judgeModel": in.JudgeModel, "decisionModel": in.DecisionModel} {
 		if v == nil {
 			continue
 		}
@@ -1265,6 +1407,16 @@ func applyCombo(sn *store.Snapshot, c *store.Combo, in comboIn) error {
 			delete(o, key)
 		} else {
 			o[key] = m
+		}
+	}
+	if in.RouterEngine != nil {
+		switch *in.RouterEngine {
+		case "", "model":
+			delete(o, "routerEngine")
+		case "decision":
+			o["routerEngine"] = "decision"
+		default:
+			return bad("router engine must be model or decision")
 		}
 	}
 	if c.Strategy == "fallback" || c.Strategy == "" {
@@ -1464,6 +1616,13 @@ type settingsIn struct {
 	DisabledModels        map[string][]string     `json:"disabledModels"`
 	StickyRoundRobinLimit *int                    `json:"stickyRoundRobinLimit"`
 	Vision                *visionView             `json:"vision"`
+	Decision              *decisionSettingsIn     `json:"decision"`
+}
+
+// decisionSettingsIn is a partial update: a nil field is left as it is.
+type decisionSettingsIn struct {
+	CacheSeconds *int                `json:"cacheSeconds"`
+	Gates        map[string][]string `json:"gates"`
 }
 
 func providerKnown(sn *store.Snapshot, id string) bool {
@@ -1574,6 +1733,48 @@ func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 			}
 			set("disabledModels", cur)
 		}
+		if in.Decision != nil {
+			cur := map[string]any{}
+			_ = json.Unmarshal(sn.Settings["decisionSettings"], &cur)
+			if in.Decision.CacheSeconds != nil {
+				n := *in.Decision.CacheSeconds
+				if n < 0 || n > 86400 {
+					return bad("decision cache seconds must be 0 to 86400")
+				}
+				cur["cacheSeconds"] = n
+			}
+			if in.Decision.Gates != nil {
+				clean := map[string][]string{}
+				if len(in.Decision.Gates) > 20 {
+					return bad("at most 20 gate verdicts")
+				}
+				for verdict, phrases := range in.Decision.Gates {
+					v := strings.TrimSpace(verdict)
+					if v == "" {
+						return bad("gate verdict cannot be empty")
+					}
+					if len(phrases) > 50 {
+						return bad("at most 50 phrases per verdict")
+					}
+					var keep []string
+					for _, p := range phrases {
+						p = strings.TrimSpace(p)
+						if p == "" {
+							continue
+						}
+						if len(p) > 120 {
+							return bad("gate phrase must be at most 120 characters")
+						}
+						keep = append(keep, p)
+					}
+					if len(keep) > 0 {
+						clean[v] = keep
+					}
+				}
+				cur["gates"] = clean
+			}
+			set("decisionSettings", cur)
+		}
 		if in.StickyRoundRobinLimit != nil {
 			if *in.StickyRoundRobinLimit < 1 || *in.StickyRoundRobinLimit > 1000 {
 				return bad("sticky limit must be 1 to 1000")
@@ -1636,6 +1837,17 @@ func modelGroups(st *router.State, sn *store.Snapshot, provs []adminProvider) []
 				seen[m.ID] = true
 				g.Models = append(g.Models, pickerModel{ID: prefix + "/" + m.ID, Name: m.Name})
 			}
+		}
+		// Models the provider listed itself since this build (see discover_api.go).
+		for _, dm := range sn.Discovered {
+			if dm.Provider != ap.ID || dm.Status == store.DiscoveredDead || seen[dm.Model] || off[ap.ID+"/"+dm.Model] {
+				continue
+			}
+			if discover.IsWireID(p.Upstream, dm.Model) {
+				continue // the served id, not the public one
+			}
+			seen[dm.Model] = true
+			g.Models = append(g.Models, pickerModel{ID: prefix + "/" + dm.Model, Name: dm.Model, Discovered: true})
 		}
 		out = append(out, g)
 	}
@@ -1707,11 +1919,13 @@ func (s *Server) handleProviderModels(w http.ResponseWriter, r *http.Request) {
 	id := r.PathValue("id")
 	st := s.state.Load()
 	type model struct {
-		ID       string `json:"id"`
-		Name     string `json:"name"`
-		Upstream string `json:"upstream,omitempty"`
-		Custom   bool   `json:"custom,omitempty"`
-		Disabled bool   `json:"disabled,omitempty"`
+		ID         string `json:"id"`
+		Name       string `json:"name"`
+		Upstream   string `json:"upstream,omitempty"`
+		Custom     bool   `json:"custom,omitempty"`
+		Discovered bool   `json:"discovered,omitempty"`
+		Status     string `json:"status,omitempty"`
+		Disabled   bool   `json:"disabled,omitempty"`
 	}
 	prefix := id
 	var up map[string]string
@@ -1729,10 +1943,13 @@ func (s *Server) handleProviderModels(w http.ResponseWriter, r *http.Request) {
 	}
 	out, seen := []model{}, map[string]bool{}
 	for _, m := range st.Snap.CustomModels {
-		if p, ok := st.Provider(m.ProviderAlias); ok && p.ID == id && !seen[m.ID] {
-			seen[m.ID] = true
-			out = append(out, model{ID: m.ID, Name: firstNonEmpty(m.Name, m.ID), Custom: true, Disabled: off[m.ID]})
+		// Match the stored alias directly: a provider with no connections yet is
+		// not in the routing table, and its custom models still belong here.
+		if m.ProviderAlias != id || seen[m.ID] {
+			continue
 		}
+		seen[m.ID] = true
+		out = append(out, model{ID: m.ID, Name: firstNonEmpty(m.Name, m.ID), Custom: true, Disabled: off[m.ID]})
 	}
 	for _, m := range catalog.Models(id) {
 		if !seen[m.ID] {
@@ -1740,6 +1957,13 @@ func (s *Server) handleProviderModels(w http.ResponseWriter, r *http.Request) {
 			u := up[m.ID]
 			out = append(out, model{ID: m.ID, Name: m.Name, Upstream: u, Disabled: off[m.ID]})
 		}
+	}
+	for _, dm := range s.discoveredFor(id) {
+		if dm.Status == store.DiscoveredDead || seen[dm.Model] || discover.IsWireID(up, dm.Model) {
+			continue
+		}
+		seen[dm.Model] = true
+		out = append(out, model{ID: dm.Model, Name: dm.Model, Disabled: off[dm.Model], Discovered: true, Status: dm.Status})
 	}
 	if p, ok := st.Provider(id); ok && id == "cursor" { // the account's live model picker
 		for _, a := range p.Pool.Accounts() {

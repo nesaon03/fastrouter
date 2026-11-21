@@ -3,7 +3,32 @@
 A fast local AI gateway, written in Go, that runs your existing 9Router setup.
 One binary, SQLite storage, everything hot kept in memory.
 
-## Run
+## Install (npm)
+
+```sh
+npm i -g fastrouter          # downloads the binary for this platform
+fastrouter import ~/9router-backup.json
+fastrouter                   # serve on http://127.0.0.1:20128
+```
+
+Updates are the normal npm flow, and the dashboard sidebar shows the same
+command with a copy button:
+
+```sh
+npm i -g fastrouter@latest
+```
+
+The npm package is a small launcher: it downloads the matching release binary
+from GitHub, verifies its SHA-256 against the release `checksums.txt`, and runs
+it. Supported platforms: Windows x64, Linux x64/arm64, macOS x64/arm64.
+`FASTROUTER_SKIP_DOWNLOAD=1` skips the download, `FASTROUTER_DOWNLOAD_BASE`
+points at a mirror, and `FASTROUTER_STRICT_INSTALL=1` makes a failed download
+fail the install instead of warning.
+
+Source is MIT licensed (see `LICENSE`); releases and the npm package are
+published by the maintainer. Building from source is below.
+
+## Run from source
 
 ```sh
 go build -o fastrouter ./cmd/fastrouter
@@ -16,23 +41,113 @@ go build -o fastrouter ./cmd/fastrouter
   - OpenAI Responses: `/v1/responses`
   - Anthropic Messages: `/v1/messages`, plus `/v1/messages/count_tokens` (a local estimate)
   - Gemini: `/v1beta/models/{model}:generateContent` and `:streamGenerateContent` (key in `x-goog-api-key` or `?key=`)
+  - Decisions: `/v1/decisions` (TypeSafe Jev / OpenAI Decisions; accepts either engine's shape)
+  - Non-chat OpenAI routes: `/v1/embeddings`, `/v1/images/generations`, `/v1/audio/transcriptions`, `/v1/audio/speech`
   - Model lists: `/v1/models`, `/v1beta/models`
 - Usage: `/api/usage?period=today|24h|7d|30d|60d|all` (totals by provider, model, account and key, a time series, the last 20 requests and in-flight counts) and `/api/usage/requests?period=…&provider=…&limit=…&offset=…` (one row per attempt). Both need a dashboard session or the old dashboard auth; account emails are masked.
 - Dashboard: `http://127.0.0.1:20128/dashboard/`. Log in with your 9Router dashboard password. Laid out like 9Router's (orange theme, light/dark), it is embedded in the binary as prebuilt static files (Preact + htm, no Node at run time):
   - **Dashboard:** endpoint URLs with copy buttons, provider/account/combo counts, 24h traffic and import notes.
   - **Providers:** every provider FastRouter can route, configured or not (the 14 core ones plus 45 API-key providers generated from 9Router's registry, such as Groq, Cerebras, Mistral, Together and Fireworks), with search and an All / Configured / Not configured filter. Then sign-in providers, your custom endpoints, and the other 9Router providers that FastRouter doesn't support (greyed out). Add, edit, pause and delete accounts; drag to set account priority; add/edit/delete OpenAI- or Anthropic-compatible endpoints; Codex/GLM sign-in.
-  - **Combos & Vision:** create, edit and delete combos with four strategies (Fallback, Round-robin, Smart Router, Fusion) and the vision-fallback model list. Models are chosen in a searchable picker grouped by provider, with logos and friendly endpoint names; search supports `-exclude` and `/regex/`. The same picker is used for key allow-lists.
+  - **Combos & Vision:** create, edit and delete combos with six strategies (Fallback, Round-robin, Smart Router with a chat or decision router, Fusion, Swarm Agent, Cascade) and the vision-fallback model list. Models are chosen in a searchable picker grouped by provider, with logos and friendly endpoint names; search supports `-exclude` and `/regex/`. The same picker is used for key allow-lists.
   - **Usage:** Overview and Details tabs; Today / 24h / 7D / 30D / 60D / All; cards for requests, input, cached and output tokens and estimated cost; a provider topology graph (FastRouter in the middle, the last request's edge in orange, failures in red, in-flight edges animated, zoom and pan); recent requests; a tokens / requests / cost chart; and per-provider, model, account and key tables. Details is a paginated request log.
   - **Token Saver:** RTK, Caveman, Ponytail and Headroom.
   - **Console Log:** the server log live over SSE (`/api/admin/logs/stream`), coloured by level, with filter, pause and Clear. The last 1,000 lines are kept in memory, redacted (keys, tokens, emails) before they are stored.
   - **Quota Tracker** (FastRouter's own per-account counters; provider balances aren't fetched), **API Keys** (keys are generated in the browser and shown once), **CLI Tools** (copy-paste setup for Claude Code, Codex, OpenCode, Cline, Roo, Kilo, Continue, Droid, Cursor, cURL and the SDKs).
-  - **Settings:** per-provider thinking and account rotation, vision fallback, dashboard password.
+  - **Settings:** per-provider thinking and account rotation, vision fallback, decision cache/gate, dashboard password.
   - Every change goes through `/api/admin/*`, which needs a session cookie (HttpOnly, SameSite=Strict, 24h), an `X-CSRF-Token` header, a JSON body and a same-origin `Origin`. Inputs are validated, secrets are write-only (only `••••` plus the last four characters come back), and changes are saved to SQLite and applied live without a restart. Five wrong passwords lock an IP out for a minute. Token-saver fields set in the config file show as locked.
 - Health: `/health`.
 - Config: `~/.fastrouter/fastrouter.json` (created on first run). Use `--config` to pick another file, and `--host`/`--port` to override it. Listening on `0.0.0.0` is opt-in.
 - After re-importing, send `SIGHUP` to reload without restarting.
 
-Model names are `prefix/model`, for example `ds/deepseek-v4.1-flash`, or a combo name like `my-combo-team`.
+## Model names are `prefix/model`, for example `ds/deepseek-v4.1-flash`, or a combo name like `my-combo-team`.
+
+## Model discovery (new models without a new build)
+
+A model id is not validated on the request path: `ds/anything` routes as long as
+the prefix is a real provider, so a model released yesterday already works. The
+compiled catalog only decides what `/v1/models` and the dashboard picker
+advertise — which used to mean waiting for a new binary.
+
+FastRouter now also asks each provider what it serves:
+
+- Every six hours (`modelDiscovery.every`, `modelDiscovery.enabled` to opt out),
+  each provider with an active account is asked, in whatever way it answers:
+
+  | Kind | How | Providers |
+  |---|---|---|
+  | API key | `GET …/models` with the account's key | OpenAI, DeepSeek, xAI, Groq, OpenRouter, NVIDIA, custom endpoints, … |
+  | Sign-in | the vendor's own list, carrying the same headers the chat request uses | Claude Code, Kimi, Grok CLI, Copilot, Cline family |
+  | Private protocol | the vendor's own API call | Cursor (`GetUsableModels`), Antigravity / Gemini CLI (`:fetchAvailableModels`), Codex (`backend-api/models`) |
+
+  The header shape is tried one at a time: a gateway that routes on which
+  credential header it sees (NVIDIA returns an empty list if an Anthropic
+  version header is present) cannot be confused by extra ones.
+- Antigravity and Gemini CLI also report each model's capabilities, so
+  `supportsImages` feeds the vision fallback the moment a model is discovered.
+- Results go to a `discovered_models` table, not to the import: a re-import or a
+  dashboard edit never forgets them.
+- `fastrouter models [--refresh] [--provider id] [--json]` prints the overlay;
+  the provider page has **Refresh** (one provider, now) and
+  `POST /api/admin/providers/{id}/refresh-models`.
+- A provider that publishes nothing (OpenCode Free, Kiro, Qoder, Zed) keeps the
+  catalog as its only source.
+
+Two guards keep the overlay honest:
+
+- **The catalog's `Upstream` map always wins, both ways.** DeepSeek and
+  Antigravity list the *served* id (`deepseek-flash`,
+  `gemini-3.8-flash-low(low)`); the catalog maps a public id onto it. A served
+  id is mapped back to its public name rather than dropped, so those providers
+  yield usable models, and no model ever has two names with different pricing.
+  An id that is only an adapter suffix (`…(high)`) is not a name anyone can call,
+  so it is dropped.
+- **Non-chat ids are not stored.** A provider's list mixes in embeddings, speech
+  and image models; those are filtered by name (`LooksLikeChat`), so the picker
+  stays a chat picker. The count skipped is logged.
+
+A model listed twice in a row and then missing twice is marked `dead` and drops
+out of `/v1/models`; a 404 `model_not_found` for a discovered id marks it dead
+immediately. A dead id is never revived by the list alone — only a request that
+succeeds again does that. Catalog ids are never touched by any of this.
+
+## Adding a model by hand
+
+Discovery only finds what a provider lists. A preview, an alias or a private
+deployment needs the provider page's **Add Model**: type the id, test it with
+the account, mark Vision and Reasoning, and it is stored as a custom model, so
+it shows in the picker and routes like any other id. `POST /api/admin/models`
+and `DELETE /api/admin/models?provider=…&id=…` are the endpoints behind it.
+
+## Swarm Agent combos
+
+A swarm is a team of models producing one answer:
+
+1. **Round 1** — every agent (up to 4) answers the user on its own, like fusion's
+   panel.
+2. **Rounds 2-3** — each agent is shown its own previous answer and every peer's,
+   and told to revise: keep what is right, drop what it cannot defend, and adopt
+   a peer's point only if it can verify it. Rounds are **synchronized** — every
+   agent finishes a round before the next starts, so all of them argue from the
+   same state.
+3. **Judge** — reads the final answers and writes the reply the client receives,
+   streamed if the client asked for a stream.
+
+Fusion samples the panel once and averages it, so three wrong models outvote one
+right one. Swarm lets the right one argue for itself first.
+
+- `rounds`: 1 (independent answers only, no debate) to 3. Default 2.
+- Cost is `agents × rounds + 1`. Set `judgeModel` to something cheaper than the
+  agents if the answers are the expensive part.
+- Tools are stripped for the agents (they cannot call a tool mid-debate), the
+  whole swarm is capped at 150s, and one round at 45s.
+- An agent that fails a round keeps its previous answer and stays in the debate;
+  one that never answers at all drops out. One survivor is returned directly — a
+  debate needs two voices — and every agent failing is a 503.
+- Prompts tell the agents and the judge never to mention the swarm, so the user
+  sees one answer.
+
+`comboStrategies[name].rounds` stores the round count, beside the other combo
+options.
 
 ## How it works
 
@@ -144,3 +259,7 @@ go test -run '^$' -bench . -benchtime 3s ./internal/server/
 ## Credits
 
 Behaviour follows [9Router](https://github.com/decolua/9router) (MIT, Copyright (c) 2024-2026 decolua and contributors): provider endpoints and aliases, translator behaviour (used as a reference; the Go translators are written fresh), the bypass rules, vision name patterns and pricing lookup order. The default price table in `internal/pricing/pricing_9router.json` is 9Router's data; its MIT licence is kept in `internal/pricing/LICENSE-9router`.
+
+## License
+
+MIT — see [LICENSE](LICENSE). Releases and the npm package are published by the maintainer; the source is open, so you can also build and run your own binary.

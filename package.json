@@ -1,0 +1,49 @@
+{
+  "name": "fastrouter",
+  "version": "0.6.0",
+  "description": "Local AI gateway: one OpenAI/Anthropic/Gemini endpoint in front of every provider you already pay for, with model discovery, combos, decision engines and token savers.",
+  "license": "MIT",
+  "author": "ZENPO",
+  "homepage": "https://github.com/zenpo/fastrouter",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zenpo/fastrouter.git"
+  },
+  "bugs": {
+    "url": "https://github.com/zenpo/fastrouter/issues"
+  },
+  "bin": {
+    "fastrouter": "npm/fastrouter.js"
+  },
+  "files": [
+    "npm/fastrouter.js",
+    "npm/install.js",
+    "npm/lib/platform.js",
+    "npm/test.js",
+    "README.md",
+    "PACKAGING.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "postinstall": "node npm/install.js",
+    "test": "node --test npm/test.js"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "keywords": [
+    "ai",
+    "gateway",
+    "router",
+    "openai",
+    "anthropic",
+    "gemini",
+    "llm",
+    "proxy",
+    "codex",
+    "claude"
+  ],
+  "publishConfig": {
+    "access": "public"
+  }
+}
