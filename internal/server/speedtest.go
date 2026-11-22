@@ -15,8 +15,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/bench"
-	"github.com/zenpo/fastrouter/internal/store"
+	"github.com/nesaon03/fastrouter/internal/bench"
+	"github.com/nesaon03/fastrouter/internal/store"
 )
 
 // Speed Test tab: runs bench against this server's own /v1 endpoints over

@@ -7,7 +7,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/pricing"
+	"github.com/nesaon03/fastrouter/internal/pricing"
 )
 
 // The discovery pass prices models no compiled rate card covers, and a reload

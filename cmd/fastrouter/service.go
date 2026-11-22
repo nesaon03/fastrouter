@@ -9,7 +9,7 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/zenpo/fastrouter/internal/autostart"
+	"github.com/nesaon03/fastrouter/internal/autostart"
 )
 
 // serviceOS is overridable in tests.

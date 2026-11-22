@@ -3,7 +3,7 @@ package server
 import (
 	"net/http"
 
-	"github.com/zenpo/fastrouter/internal/update"
+	"github.com/nesaon03/fastrouter/internal/update"
 )
 
 // handleUpdate reports the npm release channel: the running version, the latest

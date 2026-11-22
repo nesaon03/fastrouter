@@ -2598,7 +2598,7 @@ function SkillsPage() {
       <div class="row" style="gap:8px;margin-bottom:8px"><span class="small muted grow">Paste this to your AI:</span>
         <${Seg} value=${src} onChange=${setS} options=${[["local", "This PC"], ["github", "GitHub"]]} /></div>
       <div class="paste-box"><span class="grow">Read this skill and use it:<br />${url("fastrouter")}</span><${CopyBtn} text=${entry} id="entry" copied=${copied} copy=${copy} /></div>
-      <p class="tiny muted" style="margin-top:8px">${src === "local" ? "Served by FastRouter itself, so agents on this PC can read it with no sign-in." : "nesaon03/fastrouter is a private repo: these links only work for agents that can read it."}</p></div>
+      <p class="tiny muted" style="margin-top:8px">${src === "local" ? "Served by FastRouter itself, so agents on this PC can read it with no sign-in." : "The GitHub source is public: any agent that can read it can fetch these links."}</p></div>
     ${SKILL_ORDER.map((id) => { const m = SKILL_META[id]; const entryCard = id === "fastrouter"; return html`<div class="card sm skill ${entryCard ? "entry" : ""}" key=${id}>
       <div class="skill-ic"><${Icon} n=${m.icon} /></div>
       <div class="grow" style="min-width:0">

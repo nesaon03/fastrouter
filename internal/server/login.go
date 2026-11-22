@@ -13,9 +13,9 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/login"
-	"github.com/zenpo/fastrouter/internal/oauth"
-	"github.com/zenpo/fastrouter/internal/store"
+	"github.com/nesaon03/fastrouter/internal/login"
+	"github.com/nesaon03/fastrouter/internal/oauth"
+	"github.com/nesaon03/fastrouter/internal/store"
 )
 
 // Sign-in flows started from the dashboard: Codex and GLM (internal/login)

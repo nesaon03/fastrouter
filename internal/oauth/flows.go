@@ -12,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/store"
+	"github.com/nesaon03/fastrouter/internal/store"
 )
 
 const deviceGrant = "urn:ietf:params:oauth:grant-type:device_code"

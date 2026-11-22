@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/secret"
+	"github.com/nesaon03/fastrouter/internal/secret"
 )
 
 // "Check API" for a custom endpoint form (9Router's /api/provider-nodes/validate):

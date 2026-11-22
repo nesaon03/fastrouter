@@ -11,9 +11,9 @@ import (
 	"sync"
 	"testing"
 
-	"github.com/zenpo/fastrouter/internal/login"
-	"github.com/zenpo/fastrouter/internal/store"
-	tr "github.com/zenpo/fastrouter/internal/translate"
+	"github.com/nesaon03/fastrouter/internal/login"
+	"github.com/nesaon03/fastrouter/internal/store"
+	tr "github.com/nesaon03/fastrouter/internal/translate"
 )
 
 func codexConn(id, status, token string) store.Connection {

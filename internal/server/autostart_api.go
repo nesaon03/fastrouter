@@ -15,7 +15,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/autostart"
+	"github.com/nesaon03/fastrouter/internal/autostart"
 )
 
 // autostartState is what the Settings page renders.

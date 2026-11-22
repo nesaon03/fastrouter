@@ -21,9 +21,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/router"
-	"github.com/zenpo/fastrouter/internal/store"
-	tr "github.com/zenpo/fastrouter/internal/translate"
+	"github.com/nesaon03/fastrouter/internal/router"
+	"github.com/nesaon03/fastrouter/internal/store"
+	tr "github.com/nesaon03/fastrouter/internal/translate"
 )
 
 const (

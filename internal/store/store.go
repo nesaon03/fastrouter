@@ -10,7 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/zenpo/fastrouter/internal/secret"
+	"github.com/nesaon03/fastrouter/internal/secret"
 	_ "modernc.org/sqlite"
 )
 

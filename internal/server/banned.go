@@ -7,10 +7,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/config"
-	"github.com/zenpo/fastrouter/internal/oauth"
-	"github.com/zenpo/fastrouter/internal/router"
-	"github.com/zenpo/fastrouter/internal/store"
+	"github.com/nesaon03/fastrouter/internal/config"
+	"github.com/nesaon03/fastrouter/internal/oauth"
+	"github.com/nesaon03/fastrouter/internal/router"
+	"github.com/nesaon03/fastrouter/internal/store"
 )
 
 // An account is only called banned when the provider says, in plain words, that

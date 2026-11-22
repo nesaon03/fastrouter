@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/config"
-	"github.com/zenpo/fastrouter/internal/store"
+	"github.com/nesaon03/fastrouter/internal/config"
+	"github.com/nesaon03/fastrouter/internal/store"
 )
 
 // KeyLimit is an optional per-key limit from the config file (off by default).

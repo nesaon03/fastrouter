@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zenpo/fastrouter/internal/store"
+	"github.com/nesaon03/fastrouter/internal/store"
 )
 
 // deepseekSnap is one active DeepSeek account with no catalog or custom models

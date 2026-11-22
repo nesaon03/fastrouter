@@ -20,12 +20,12 @@ import (
 
 	"golang.org/x/crypto/bcrypt"
 
-	"github.com/zenpo/fastrouter/internal/catalog"
-	"github.com/zenpo/fastrouter/internal/discover"
-	"github.com/zenpo/fastrouter/internal/login"
-	"github.com/zenpo/fastrouter/internal/oauth"
-	"github.com/zenpo/fastrouter/internal/router"
-	"github.com/zenpo/fastrouter/internal/store"
+	"github.com/nesaon03/fastrouter/internal/catalog"
+	"github.com/nesaon03/fastrouter/internal/discover"
+	"github.com/nesaon03/fastrouter/internal/login"
+	"github.com/nesaon03/fastrouter/internal/oauth"
+	"github.com/nesaon03/fastrouter/internal/router"
+	"github.com/nesaon03/fastrouter/internal/store"
 )
 
 // Dashboard admin API. Every write needs a session cookie (set by logging in

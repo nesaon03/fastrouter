@@ -6,8 +6,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/zenpo/fastrouter/internal/catalog"
-	"github.com/zenpo/fastrouter/internal/store"
+	"github.com/nesaon03/fastrouter/internal/catalog"
+	"github.com/nesaon03/fastrouter/internal/store"
 )
 
 // knownPrefixFixes are agreed renames for endpoints that 9Router left sharing

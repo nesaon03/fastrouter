@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/zenpo/fastrouter/internal/hrtime"
+	"github.com/nesaon03/fastrouter/internal/hrtime"
 )
 
 // Request timing for the Speed Test tab and `fastrouter bench`. A client that

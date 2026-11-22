@@ -8,8 +8,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/zenpo/fastrouter/internal/router"
-	tr "github.com/zenpo/fastrouter/internal/translate"
+	"github.com/nesaon03/fastrouter/internal/router"
+	tr "github.com/nesaon03/fastrouter/internal/translate"
 )
 
 // ---- Claude Code warmup bypass (after 9Router's bypassHandler.js, MIT) ----

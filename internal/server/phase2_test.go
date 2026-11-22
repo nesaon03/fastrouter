@@ -13,9 +13,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/config"
-	"github.com/zenpo/fastrouter/internal/store"
-	tr "github.com/zenpo/fastrouter/internal/translate"
+	"github.com/nesaon03/fastrouter/internal/config"
+	"github.com/nesaon03/fastrouter/internal/store"
+	tr "github.com/nesaon03/fastrouter/internal/translate"
 )
 
 func fixture(t *testing.T, name string) string {

@@ -29,7 +29,7 @@ ARG VERSION=0.0.0-docker
 ARG COMMIT=unknown
 ARG DATE=unknown
 RUN CGO_ENABLED=0 GOOS=$TARGETOS GOARCH=$TARGETARCH go build -trimpath \
-      -ldflags "-s -w -X github.com/zenpo/fastrouter/internal/server.Version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
+      -ldflags "-s -w -X github.com/nesaon03/fastrouter/internal/server.Version=${VERSION} -X main.commit=${COMMIT} -X main.date=${DATE}" \
       -o /out/fastrouter ./cmd/fastrouter \
  && mkdir -p /out/data
 

@@ -1,4 +1,4 @@
-module github.com/zenpo/fastrouter
+module github.com/nesaon03/fastrouter
 
 go 1.27.3
 

@@ -9,7 +9,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zenpo/fastrouter/internal/catalog"
+	"github.com/nesaon03/fastrouter/internal/catalog"
 )
 
 // The list URL is derived from the provider's own endpoints, because those are

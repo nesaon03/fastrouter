@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/oauth"
-	"github.com/zenpo/fastrouter/internal/store"
+	"github.com/nesaon03/fastrouter/internal/oauth"
+	"github.com/nesaon03/fastrouter/internal/store"
 )
 
 // callbackURI is FastRouter's own /callback on localhost (what 9Router

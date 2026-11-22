@@ -12,10 +12,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/catalog"
-	"github.com/zenpo/fastrouter/internal/router"
-	"github.com/zenpo/fastrouter/internal/secret"
-	tr "github.com/zenpo/fastrouter/internal/translate"
+	"github.com/nesaon03/fastrouter/internal/catalog"
+	"github.com/nesaon03/fastrouter/internal/router"
+	"github.com/nesaon03/fastrouter/internal/secret"
+	tr "github.com/nesaon03/fastrouter/internal/translate"
 )
 
 // Live provider test: one tiny chat request ("Say OK", max 5 tokens) per

@@ -8,7 +8,7 @@ releasing is one tag push (see below).
 `internal/server.Version` is the source of truth:
 
 ```go
-var Version = "0.6.0"
+var Version = "0.7.0"
 ```
 
 `package.json` must carry the same value — `TestPackageVersionMatchesServer`
@@ -59,7 +59,7 @@ node --test npm/test.js                              # npm wrapper (offline)
 `package.json` publishes the `fastrouter` package (MIT). It contains no binary:
 `npm/fastrouter.js` is a launcher, and `npm/install.js` runs as `postinstall` to
 download the matching raw release asset from
-`https://github.com/zenpo/fastrouter/releases/download/v<version>/` and verify it
+`https://github.com/nesaon03/fastrouter/releases/download/v<version>/` and verify it
 against `checksums.txt`.
 
 - Assets: `fastrouter_<version>_<os>_<arch>[.exe]` for windows/amd64,
@@ -91,8 +91,8 @@ npm i -g fastrouter@latest
 2. Commit, then tag and push:
 
    ```sh
-   git tag v0.6.0
-   git push origin v0.6.0
+   git tag v0.7.0
+   git push origin v0.7.0
    ```
 
 3. `.github/workflows/release.yml` runs the tests, verifies the tag against both
@@ -100,7 +100,7 @@ npm i -g fastrouter@latest
    the GitHub release, and publishes the npm package (`NPM_TOKEN` repository
    secret required).
 
-The repository name in `npm/install.js` and the workflow (`zenpo/fastrouter`) is
+The repository name in `npm/install.js` and the workflow (`nesaon03/fastrouter`) is
 the release channel: if the repo moves, update both constants.
 
 ## Docker

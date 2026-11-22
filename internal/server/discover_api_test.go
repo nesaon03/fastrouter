@@ -9,8 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/config"
-	"github.com/zenpo/fastrouter/internal/store"
+	"github.com/nesaon03/fastrouter/internal/config"
+	"github.com/nesaon03/fastrouter/internal/store"
 )
 
 // modelFeed is a fake provider whose published list can change between polls.

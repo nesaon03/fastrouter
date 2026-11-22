@@ -6,7 +6,7 @@ import (
 	"net/http"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/logring"
+	"github.com/nesaon03/fastrouter/internal/logring"
 )
 
 // handleLogStream sends the console log over SSE: one "init" event with the

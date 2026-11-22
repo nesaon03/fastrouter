@@ -14,10 +14,10 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/bench"
-	"github.com/zenpo/fastrouter/internal/config"
-	"github.com/zenpo/fastrouter/internal/server"
-	"github.com/zenpo/fastrouter/internal/store"
+	"github.com/nesaon03/fastrouter/internal/bench"
+	"github.com/nesaon03/fastrouter/internal/config"
+	"github.com/nesaon03/fastrouter/internal/server"
+	"github.com/nesaon03/fastrouter/internal/store"
 )
 
 // runBench measures an already running FastRouter over HTTP. It reads the

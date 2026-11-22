@@ -17,7 +17,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/catalog"
+	"github.com/nesaon03/fastrouter/internal/catalog"
 )
 
 // ErrNoEndpoint means this provider publishes no model list this package can

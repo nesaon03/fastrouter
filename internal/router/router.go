@@ -14,12 +14,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/catalog"
-	"github.com/zenpo/fastrouter/internal/discover"
-	"github.com/zenpo/fastrouter/internal/login"
-	"github.com/zenpo/fastrouter/internal/oauth"
-	"github.com/zenpo/fastrouter/internal/store"
-	"github.com/zenpo/fastrouter/internal/translate"
+	"github.com/nesaon03/fastrouter/internal/catalog"
+	"github.com/nesaon03/fastrouter/internal/discover"
+	"github.com/nesaon03/fastrouter/internal/login"
+	"github.com/nesaon03/fastrouter/internal/oauth"
+	"github.com/nesaon03/fastrouter/internal/store"
+	"github.com/nesaon03/fastrouter/internal/translate"
 )
 
 // Account is one provider credential with live health state.

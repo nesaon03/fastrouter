@@ -25,7 +25,7 @@ it. Supported platforms: Windows x64, Linux x64/arm64, macOS x64/arm64.
 points at a mirror, and `FASTROUTER_STRICT_INSTALL=1` makes a failed download
 fail the install instead of warning.
 
-Source is MIT licensed (see `LICENSE`); releases and the npm package are
+Source is MIT licensed (see `LICENSE`) at <https://github.com/nesaon03/fastrouter>; releases and the npm package are
 published by the maintainer. Building from source is below.
 
 ## Run from source

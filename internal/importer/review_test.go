@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/zenpo/fastrouter/internal/store"
+	"github.com/nesaon03/fastrouter/internal/store"
 )
 
 // M7/M8: proxy credentials and credential URLs in settings are sealed, and

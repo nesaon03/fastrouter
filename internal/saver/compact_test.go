@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	tr "github.com/zenpo/fastrouter/internal/translate"
+	tr "github.com/nesaon03/fastrouter/internal/translate"
 )
 
 func TestCompactKeepsLastToolResults(t *testing.T) {

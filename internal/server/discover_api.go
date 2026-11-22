@@ -11,12 +11,12 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/catalog"
-	"github.com/zenpo/fastrouter/internal/discover"
-	"github.com/zenpo/fastrouter/internal/oauth"
-	"github.com/zenpo/fastrouter/internal/router"
-	"github.com/zenpo/fastrouter/internal/secret"
-	"github.com/zenpo/fastrouter/internal/store"
+	"github.com/nesaon03/fastrouter/internal/catalog"
+	"github.com/nesaon03/fastrouter/internal/discover"
+	"github.com/nesaon03/fastrouter/internal/oauth"
+	"github.com/nesaon03/fastrouter/internal/router"
+	"github.com/nesaon03/fastrouter/internal/secret"
+	"github.com/nesaon03/fastrouter/internal/store"
 )
 
 // Model discovery: ask each configured provider what it serves, and store the

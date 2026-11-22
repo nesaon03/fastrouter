@@ -25,7 +25,7 @@ function binaryPath(version = pkg.version) {
 }
 
 function releaseBase(version = pkg.version) {
-  return `https://github.com/zenpo/fastrouter/releases/download/v${version}`;
+  return `https://github.com/nesaon03/fastrouter/releases/download/v${version}`;
 }
 
 async function download(url) {

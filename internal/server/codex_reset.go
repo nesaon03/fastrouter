@@ -18,8 +18,8 @@ import (
 	"time"
 	_ "time/tzdata" // schedule time zones on Windows
 
-	"github.com/zenpo/fastrouter/internal/login"
-	"github.com/zenpo/fastrouter/internal/store"
+	"github.com/nesaon03/fastrouter/internal/login"
+	"github.com/nesaon03/fastrouter/internal/store"
 )
 
 // Codex extras on the Quota Tracker, after 9Router's

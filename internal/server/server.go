@@ -14,24 +14,24 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/config"
-	"github.com/zenpo/fastrouter/internal/dashboard"
-	"github.com/zenpo/fastrouter/internal/login"
-	"github.com/zenpo/fastrouter/internal/oauth"
-	"github.com/zenpo/fastrouter/internal/pricing"
-	"github.com/zenpo/fastrouter/internal/router"
-	"github.com/zenpo/fastrouter/internal/saver"
-	"github.com/zenpo/fastrouter/internal/store"
-	tr "github.com/zenpo/fastrouter/internal/translate"
-	"github.com/zenpo/fastrouter/internal/tunnel"
-	"github.com/zenpo/fastrouter/internal/update"
+	"github.com/nesaon03/fastrouter/internal/config"
+	"github.com/nesaon03/fastrouter/internal/dashboard"
+	"github.com/nesaon03/fastrouter/internal/login"
+	"github.com/nesaon03/fastrouter/internal/oauth"
+	"github.com/nesaon03/fastrouter/internal/pricing"
+	"github.com/nesaon03/fastrouter/internal/router"
+	"github.com/nesaon03/fastrouter/internal/saver"
+	"github.com/nesaon03/fastrouter/internal/store"
+	tr "github.com/nesaon03/fastrouter/internal/translate"
+	"github.com/nesaon03/fastrouter/internal/tunnel"
+	"github.com/nesaon03/fastrouter/internal/update"
 	"golang.org/x/crypto/bcrypt"
 )
 
 // Version is the build's version. It defaults to the release the source is on;
 // -ldflags "-X .../server.Version=..." overrides it when the toolchain honours
 // it (main.commit and main.date come from the VCS stamps instead).
-var Version = "0.6.0"
+var Version = "0.7.0"
 
 // Server routes client requests to upstreams.
 type Server struct {

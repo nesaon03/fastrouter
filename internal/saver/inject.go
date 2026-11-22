@@ -4,7 +4,7 @@ import (
 	"bytes"
 	"sync"
 
-	tr "github.com/zenpo/fastrouter/internal/translate"
+	tr "github.com/nesaon03/fastrouter/internal/translate"
 )
 
 // sep joins injected prompts to existing system text (9Router's SEP).

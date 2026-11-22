@@ -5,7 +5,7 @@ import (
 	"net/http"
 	"path/filepath"
 
-	"github.com/zenpo/fastrouter/internal/clitools"
+	"github.com/nesaon03/fastrouter/internal/clitools"
 )
 
 // CLI Tools page: detect coding tools and point their config at FastRouter.

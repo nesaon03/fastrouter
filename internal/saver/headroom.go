@@ -17,7 +17,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	tr "github.com/zenpo/fastrouter/internal/translate"
+	tr "github.com/nesaon03/fastrouter/internal/translate"
 )
 
 const headroomMaxDepth = 8

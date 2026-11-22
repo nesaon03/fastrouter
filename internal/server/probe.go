@@ -8,10 +8,10 @@ import (
 	"sync"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/catalog"
-	"github.com/zenpo/fastrouter/internal/oauth"
-	"github.com/zenpo/fastrouter/internal/router"
-	tr "github.com/zenpo/fastrouter/internal/translate"
+	"github.com/nesaon03/fastrouter/internal/catalog"
+	"github.com/nesaon03/fastrouter/internal/oauth"
+	"github.com/nesaon03/fastrouter/internal/router"
+	tr "github.com/nesaon03/fastrouter/internal/translate"
 )
 
 // Provider "Test All" (9Router's /api/providers/test-batch): checks each active

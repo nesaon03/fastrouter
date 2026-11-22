@@ -22,12 +22,12 @@ import (
 	"text/tabwriter"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/bench"
-	"github.com/zenpo/fastrouter/internal/config"
-	"github.com/zenpo/fastrouter/internal/importer"
-	"github.com/zenpo/fastrouter/internal/logring"
-	"github.com/zenpo/fastrouter/internal/server"
-	"github.com/zenpo/fastrouter/internal/store"
+	"github.com/nesaon03/fastrouter/internal/bench"
+	"github.com/nesaon03/fastrouter/internal/config"
+	"github.com/nesaon03/fastrouter/internal/importer"
+	"github.com/nesaon03/fastrouter/internal/logring"
+	"github.com/nesaon03/fastrouter/internal/server"
+	"github.com/nesaon03/fastrouter/internal/store"
 )
 
 const usage = `fastrouter — local AI gateway

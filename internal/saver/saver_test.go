@@ -13,8 +13,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/config"
-	tr "github.com/zenpo/fastrouter/internal/translate"
+	"github.com/nesaon03/fastrouter/internal/config"
+	tr "github.com/nesaon03/fastrouter/internal/translate"
 )
 
 // vectors.json comes from running 9Router's own code (testdata/gen-vectors.mjs).

@@ -6,9 +6,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/zenpo/fastrouter/internal/pricing"
-	"github.com/zenpo/fastrouter/internal/store"
-	tr "github.com/zenpo/fastrouter/internal/translate"
+	"github.com/nesaon03/fastrouter/internal/pricing"
+	"github.com/nesaon03/fastrouter/internal/store"
+	tr "github.com/nesaon03/fastrouter/internal/translate"
 )
 
 // usageItem is a finished attempt plus what is needed to price it later.
