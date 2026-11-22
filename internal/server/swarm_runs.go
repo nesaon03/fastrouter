@@ -1,11 +1,13 @@
 package server
 
 // Live swarm telemetry for the dashboard: one record per swarm execution, with
-// per-round, per-agent states so the Combos page can draw the debate as it
-// happens. This is observability only - nothing here changes routing.
+// per-round, per-agent states and answer snippets so the Combos page can draw
+// the debate - including who each agent read - as it happens. This is
+// observability only - nothing here changes routing.
 
 import (
 	"net/http"
+	"strings"
 	"sync"
 	"time"
 )
@@ -43,6 +45,7 @@ type swarmRun struct {
 	ElapsedMS  int64      `json:"elapsedMs"`
 	States     [][]string `json:"states"` // [round][agent]
 	Millis     [][]int64  `json:"millis"` // [round][agent]
+	Texts      [][]string `json:"texts"`  // [round][agent] answer snippet, for the debate transcript
 	JudgeState string     `json:"judgeState"`
 	Error      string     `json:"error,omitempty"`
 }
@@ -69,11 +72,13 @@ func (t *swarmTracker) start(combo string, agents []string, judge string, rounds
 		Updated:    now,
 		States:     make([][]string, rounds),
 		Millis:     make([][]int64, rounds),
+		Texts:      make([][]string, rounds),
 		JudgeState: swarmWaiting,
 	}
 	for i := range r.States {
 		r.States[i] = make([]string, len(agents))
 		r.Millis[i] = make([]int64, len(agents))
+		r.Texts[i] = make([]string, len(agents))
 		for j := range r.States[i] {
 			r.States[i][j] = swarmWaiting
 		}
@@ -144,6 +149,31 @@ func (t *swarmTracker) agent(id string, round, agent int, state string, ms int64
 	})
 }
 
+// swarmTextChars is how much of each answer the transcript keeps. The polled
+// API ships up to four agents x three rounds, so this stays a snippet.
+const swarmTextChars = 420
+
+// swarmTextSnippet flattens whitespace and trims an answer for the dashboard.
+func swarmTextSnippet(s string) string {
+	s = strings.Join(strings.Fields(s), " ")
+	r := []rune(s)
+	if len(r) <= swarmTextChars {
+		return s
+	}
+	return string(r[:swarmTextChars]) + "…"
+}
+
+// text stores the answer snippet an agent produced in a round, so the board can
+// show what was said and the transcript can show who read whom.
+func (t *swarmTracker) text(id string, round, agent int, text string) {
+	t.update(id, func(r *swarmRun) {
+		if round < 1 || round > len(r.Texts) || agent < 0 || agent >= len(r.Texts[round-1]) {
+			return
+		}
+		r.Texts[round-1][agent] = swarmTextSnippet(text)
+	})
+}
+
 func (t *swarmTracker) judge(id, state string) {
 	t.update(id, func(r *swarmRun) { r.JudgeState = state })
 }
@@ -202,9 +232,11 @@ func (t *swarmTracker) snapshot() []swarmRun {
 		cp.Agents = append([]string{}, r.Agents...)
 		cp.States = make([][]string, len(r.States))
 		cp.Millis = make([][]int64, len(r.Millis))
+		cp.Texts = make([][]string, len(r.Texts))
 		for j := range r.States {
 			cp.States[j] = append([]string{}, r.States[j]...)
 			cp.Millis[j] = append([]int64{}, r.Millis[j]...)
+			cp.Texts[j] = append([]string{}, r.Texts[j]...)
 		}
 		if cp.Status == swarmRunning {
 			cp.ElapsedMS = now.Sub(cp.Started).Milliseconds()

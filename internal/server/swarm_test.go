@@ -466,6 +466,19 @@ func TestSwarmRunTelemetry(t *testing.T) {
 			}
 		}
 	}
+	texts, _ := run["texts"].([]any)
+	if len(texts) != 2 {
+		t.Fatalf("text rounds = %v", run["texts"])
+	}
+	for r, row := range texts {
+		cells, _ := row.([]any)
+		if len(cells) != 2 {
+			t.Fatalf("text round %d cells %v", r+1, cells)
+		}
+		if !strings.Contains(cells[0].(string), "answer from a") || !strings.Contains(cells[1].(string), "answer from b") {
+			t.Fatalf("text round %d = %v", r+1, cells)
+		}
+	}
 }
 
 // An early consensus is recorded with the round it stopped at; rounds that never

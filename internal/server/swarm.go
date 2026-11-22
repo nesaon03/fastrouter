@@ -332,6 +332,9 @@ func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *
 				default:
 					s.swarms.agent(runID, round+1, i, swarmOK, ms)
 				}
+				if text != "" {
+					s.swarms.text(runID, round+1, i, text)
+				}
 				done <- struct {
 					i     int
 					text  string

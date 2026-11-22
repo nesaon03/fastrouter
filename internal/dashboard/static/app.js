@@ -1547,12 +1547,71 @@ const SWARM_STATE = {
   timeout: "timeout",
   skipped: "skipped",
 };
-const SWARM_GLYPH = { ok: "✓", error: "✕", timeout: "!", empty: "–", skipped: "·", thinking: "•" };
 
-// SwarmDiagram is the debate board: one card per agent, one checkpoint per
-// round, the judge card spanning the rows. It is fed by /api/admin/swarm, which
-// the page polls while a swarm combo exists, so a running debate lights up live.
+// SwarmAgentNode is the logo + name card used by the board and the transcript.
+function SwarmAgentNode({ data, id, sm }) {
+  const info = modelInfo(data, id);
+  return html`<div class=${"swarm-agent-node" + (sm ? " sm" : "")} title=${id}>
+    ${info.p ? html`<${Logo} p=${info.p} xs />` : html`<span class="swarm-agent-fallback">${(info.label || id).slice(0, 2).toUpperCase()}</span>`}
+    <div class="swarm-agent-text"><span class="swarm-agent-name">${info.label || id}</span>
+      <span class="swarm-agent-prov">${info.p ? provMeta(info.p).name : id}</span></div></div>`;
+}
+
+const swarmPlaceholder = (st) => st === "thinking" ? "thinking…" : st === "waiting" ? "waiting"
+  : st === "skipped" ? "out of the debate" : st === "timeout" ? "no answer in time"
+  : st === "error" ? "failed" : st === "empty" ? "empty answer" : "answered";
+
+// SwarmTranscript is the readable version of the debate: every round, every
+// agent's message, and which peers that agent had just read. The board stays
+// compact; this is where the actual back-and-forth lives.
+function SwarmTranscript({ data, run, combo, onClose }) {
+  const agents = run.agents || combo.models || [];
+  const rounds = Math.max(1, run.rounds || combo.rounds || 2);
+  const textOf = (r, i) => (run.texts && run.texts[r] && run.texts[r][i]) || "";
+  const stateOf = (r, i) => (run.states && run.states[r] && run.states[r][i]) || "waiting";
+  const lastText = (i) => { for (let r = rounds - 1; r >= 0; r--) { const t = textOf(r, i); if (t) return t; } return ""; };
+  const judgeInputs = agents.filter((_, i) => lastText(i)).length;
+  return html`<${Modal} wide title="Swarm transcript" icon="forum" onClose=${onClose}
+    foot=${html`<button class="btn ghost" onClick=${onClose}>Close</button>`}>
+    <div class="swarm-tr-meta"><span class="strong">${combo.name}</span>
+      <span>${agents.length} agents · ${rounds} rounds · ${run.status === "error" ? "failed" : run.status === "running" ? "running" : "done"}</span></div>
+    ${Array.from({ length: rounds }, (_, r) => html`
+      <div class="swarm-tr-round" key=${"r" + r}>
+        <div class="swarm-tr-rhead"><span class="swarm-tr-rnum">R${r + 1}</span>
+          <span>${r === 0 ? "Independent answers — no agent has seen another yet" : "Each agent read the others' previous answers, then revised"}</span></div>
+        ${agents.map((a, i) => {
+          const st = stateOf(r, i), txt = textOf(r, i);
+          const read = r === 0 ? [] : agents.map((x, j) => ({ x, j })).filter((o) => o.j !== i && textOf(r - 1, o.j));
+          return html`<div class=${"swarm-tr-msg " + st} key=${"m" + r + i}>
+            <div class="swarm-tr-who"><${SwarmAgentNode} data=${data} id=${a} sm />
+              <span class=${"swarm-tr-state " + st}>${SWARM_STATE[st] || st}</span></div>
+            ${read.length > 0 && html`<div class="swarm-tr-read"><${Icon} n="visibility" /><span>read</span>
+              ${read.map((o) => html`<span class="swarm-tr-peer" key=${"p" + o.j}>${modelInfo(data, o.x).label || o.x}</span>`)}</div>`}
+            <div class="swarm-tr-text">${txt || html`<span class="muted">${swarmPlaceholder(st)}</span>`}</div>
+          </div>`;
+        })}
+      </div>`)}
+    <div class="swarm-tr-round judge">
+      <div class="swarm-tr-rhead"><span class="swarm-tr-rnum">J</span>
+        <span>${run.judgeState === "skipped" ? "Judge skipped — the agents already agreed"
+          : `Judge — read ${judgeInputs} final answer${judgeInputs === 1 ? "" : "s"} and wrote the reply sent to the client`}</span></div>
+      <div class="swarm-tr-judge"><div class="col" style="gap:5px;min-width:0">
+          <${SwarmAgentNode} data=${data} id=${run.judge || combo.judgeModel || agents[0]} sm />
+          ${judgeInputs > 0 && run.judgeState !== "skipped" && html`<div class="swarm-tr-read"><${Icon} n="visibility" /><span>read</span>
+            ${agents.map((a, i) => lastText(i) ? html`<span class="swarm-tr-peer" key=${"j" + i}>${modelInfo(data, a).label || a}</span>` : null)}</div>`}
+        </div>
+        <span class=${"swarm-tr-state " + (run.judgeState || "waiting")}>${SWARM_STATE[run.judgeState] || run.judgeState}</span></div>
+    </div>
+  </${Modal}>`;
+}
+
+// SwarmDiagram is the debate board: one card per agent, one speech card per
+// round, an exchange lane between rounds, and the judge card spanning the rows.
+// Each cell shows what that agent actually said; the transcript shows who read
+// whom. It is fed by /api/admin/swarm, which the page polls while a swarm combo
+// exists, so a running debate lights up live.
 function SwarmDiagram({ data, combo, run }) {
+  const [open, setOpen] = useState(false);
   const agents = (run && run.agents) || combo.models || [];
   const rounds = Math.max(1, (run && run.rounds) || combo.rounds || 2);
   const judge = (run && run.judge) || combo.judgeModel || agents[0] || "";
@@ -1560,17 +1619,13 @@ function SwarmDiagram({ data, combo, run }) {
   const judgeState = run ? run.judgeState : "waiting";
   const stateOf = (r, i) => (run && run.states[r] && run.states[r][i]) || "waiting";
   const msOf = (r, i) => (run && run.millis[r] && run.millis[r][i]) || 0;
+  const textOf = (r, i) => (run && run.texts && run.texts[r] && run.texts[r][i]) || "";
+  const lastText = (i) => { for (let r = rounds - 1; r >= 0; r--) { const t = textOf(r, i); if (t) return t; } return ""; };
+  const judgeInputs = agents.filter((_, i) => lastText(i)).length;
   const judgeInfo = judge ? modelInfo(data, judge) : null;
   const judgeRaw = judgeInfo ? judgeInfo.label || judge : judge;
   const judgeTag = (judgeRaw.match(/\[[^\]]+\]$/) || [""])[0];
   const judgeLabel = judgeTag ? judgeRaw.slice(0, -judgeTag.length) : judgeRaw;
-  const agentNode = (id, extra) => {
-    const info = modelInfo(data, id);
-    return html`<div class=${"swarm-agent-node " + (extra || "")} title=${id}>
-      ${info.p ? html`<${Logo} p=${info.p} xs />` : html`<span class="swarm-agent-fallback">${(info.label || id).slice(0, 2).toUpperCase()}</span>`}
-      <div class="swarm-agent-text"><span class="swarm-agent-name">${info.label || id}</span>
-        <span class="swarm-agent-prov">${info.p ? provMeta(info.p).name : id}</span></div></div>`;
-  };
   return html`<div class=${"swarm-box" + (running ? " is-live" : "")}>
     <div class="swarm-head">
       <div class="row" style="gap:8px;align-items:center;min-width:0">
@@ -1580,37 +1635,59 @@ function SwarmDiagram({ data, combo, run }) {
           : html`<span class="swarm-pill idle">idle</span>`}
         ${run && run.consensus && html`<span class="swarm-pill consensus"><${Icon} n="check" />consensus · R${run.round}</span>`}
       </div>
-      <span class="swarm-clock">${run ? fmtMs(run.elapsedMs) : `${rounds} round${rounds === 1 ? "" : "s"}`}</span>
+      <div class="row" style="gap:8px;align-items:center">
+        <span class="swarm-clock">${run ? fmtMs(run.elapsedMs) : `${rounds} round${rounds === 1 ? "" : "s"}`}</span>
+        ${run && html`<button class="btn ghost xs" onClick=${() => setOpen(true)}><${Icon} n="chat" />Transcript</button>`}
+      </div>
     </div>
-    <div class="swarm-board" style=${`grid-template-columns:minmax(140px,1.5fr) repeat(${rounds},42px) minmax(138px,1.15fr)`}>
+    <div class="swarm-board" style=${`grid-template-columns:minmax(168px,1.05fr) repeat(${rounds},minmax(150px,1fr) 40px) minmax(190px,1fr)`}>
       <div class="swarm-col-head"></div>
-      ${Array.from({ length: rounds }, (_, r) => html`<div class=${"swarm-col-head" + (running && run.round === r + 1 ? " on" : "")}>R${r + 1}</div>`)}
+      ${Array.from({ length: rounds }, (_, r) => html`
+        <div class=${"swarm-col-head" + (running && run.round === r + 1 ? " on" : "")}>R${r + 1}</div>
+        <div class="swarm-col-head exch" title=${r + 1 < rounds ? `Every agent reads every other agent's R${r + 1} answer` : "The judge reads every agent's final answer"}><${Icon} n=${r + 1 < rounds ? "swap_horiz" : "chevron_right"} /></div>`)}
       <div class="swarm-col-head judge">Judge</div>
       ${agents.map((a, i) => html`
-        ${agentNode(a)}
+        <${SwarmAgentNode} data=${data} id=${a} />
         ${Array.from({ length: rounds }, (_, r) => {
-          const st = stateOf(r, i);
-          const ms = msOf(r, i);
-          return html`<div class=${"swarm-track " + st} title=${`${a} · R${r + 1} · ${SWARM_STATE[st] || st}${ms ? ` · ${fmtMs(ms)}` : ""}`}>
-            <span class=${"swarm-node " + st}>${SWARM_GLYPH[st] || ""}</span></div>`;
+          const st = stateOf(r, i), ms = msOf(r, i), txt = textOf(r, i);
+          return html`<div class=${"swarm-msg " + st + (txt ? " has-text" : "")}
+              title=${`${a} · R${r + 1} · ${SWARM_STATE[st] || st}${ms ? " · " + fmtMs(ms) : ""}\n${txt || swarmPlaceholder(st)}`}
+              onClick=${() => setOpen(true)}>
+            <div class="swarm-msg-top"><i class=${"swarm-dot " + st}></i><span>${SWARM_STATE[st] || st}</span>${ms ? html`<em>${fmtMs(ms)}</em>` : null}</div>
+            <div class="swarm-msg-body">${txt || html`<span class="swarm-msg-wait">${swarmPlaceholder(st)}</span>`}</div>
+          </div>`;
         })}
-        ${i === 0 && html`<div class=${"swarm-judge-card " + judgeState}
-            style=${`grid-column:${rounds + 2};grid-row:2 / span ${agents.length}`}
-            title=${`${judge} · ${judgeState}`}>
-          <span class="swarm-judge-ic"><${Icon} n="gavel" /></span>
-          <div class="swarm-agent-text"><span class="swarm-agent-name">${judgeLabel}</span>
-            <span class="swarm-agent-prov">${judgeState === "skipped" ? "skipped"
-              : (judgeInfo && judgeInfo.p ? provMeta(judgeInfo.p).name : "judge") + (judgeTag ? " · " + judgeTag.slice(1, -1) : "") + (judgeState === "error" ? " · failed" : "")}</span></div>
-        </div>`}`)}
+        ${i === 0 && html`
+          ${Array.from({ length: rounds }, (_, r) => {
+            const toJudge = r + 1 >= rounds;
+            const on = running && (toJudge ? judgeState === "thinking" : run.round === r + 2);
+            return html`<div class=${"swarm-exchange" + (on ? " on" : "")}
+                style=${`grid-column:${3 + r * 2};grid-row:2 / span ${agents.length}`}
+                title=${toJudge ? "The judge reads every agent's final answer" : `Every agent reads every other agent's R${r + 1} answer before R${r + 2}`}>
+              <span class="swarm-exch-line"></span>
+              <${Icon} n=${toJudge ? "chevron_right" : "swap_horiz"} />
+              <span class="swarm-exch-label">${toJudge ? "final" : "peers"}</span>
+              <span class="swarm-exch-line"></span>
+            </div>`;
+          })}
+          <div class=${"swarm-judge-card " + judgeState}
+              style=${`grid-column:${rounds * 2 + 2};grid-row:2 / span ${agents.length}`}
+              title=${`${judge} · ${judgeState}`}>
+            <span class="swarm-judge-ic"><${Icon} n="gavel" /></span>
+            <div class="swarm-agent-text"><span class="swarm-agent-name">${judgeLabel}</span>
+              <span class="swarm-agent-prov">${judgeState === "skipped" ? "skipped"
+                : (judgeInfo && judgeInfo.p ? provMeta(judgeInfo.p).name : "judge") + (judgeTag ? " · " + judgeTag.slice(1, -1) : "") + (judgeState === "error" ? " · failed" : "")}</span>
+              ${judgeState !== "waiting" && judgeState !== "skipped" && judgeInputs > 0 && html`<span class="swarm-judge-read">reads ${judgeInputs} answer${judgeInputs === 1 ? "" : "s"}</span>`}</div>
+          </div>`}`)}
     </div>
     <div class="swarm-foot">
       ${["ok", "thinking", "waiting", "timeout", "error", "skipped"].map((k) => html`<span class="swarm-leg"><i class=${"swarm-dot " + k}></i>${SWARM_STATE[k]}</span>`)}
       ${run && run.error && html`<span class="swarm-err" title=${run.error}>${run.error}</span>`}
     </div>
     ${!run && html`<p class="small muted" style="margin:8px 0 0">Run this combo to watch each agent answer, debate, then hand off to the judge.</p>`}
+    ${open && run && html`<${SwarmTranscript} data=${data} run=${run} combo=${combo} onClose=${() => setOpen(false)} />`}
   </div>`;
 }
-
 function CombosPage({ data, reload }) {
   const [modal, setModal] = useState(null);
   const [vm, setVm] = useState(null);
@@ -1637,7 +1714,7 @@ function CombosPage({ data, reload }) {
     ${data.combos.length === 0 ? html`<div class="card empty"><div class="bubble"><${Icon} n="layers" /></div><p class="medium">No combos yet</p>
         <p class="small muted" style="margin:4px 0 14px">Chain models across providers so one failing never stops your agent.</p>
         <button class="btn primary" onClick=${() => setModal({ t: "new" })}><${Icon} n="add" />Create combo</button></div>`
-      : html`<div class="grid g2">${data.combos.map((c) => html`<div class="card" key=${c.id}>
+      : html`<div class="grid g2">${data.combos.map((c) => html`<div class=${"card" + (c.strategy === "swarm" ? " swarm-card" : "")} key=${c.id}>
           <div class="row between" style="margin-bottom:14px"><div class="row" style="gap:10px"><div class="saver-icon"><${Icon} n="layers" /></div>
             <div><div class="strong mono">${c.name}</div><div class="row" style="gap:6px;margin-top:3px">
               <${Badge} kind=${(STRATEGY[c.strategy] || STRATEGY.fallback).badge} icon=${(STRATEGY[c.strategy] || STRATEGY.fallback).icon}>${(STRATEGY[c.strategy] || STRATEGY.fallback).label}</${Badge}>
