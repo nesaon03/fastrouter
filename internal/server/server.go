@@ -31,7 +31,7 @@ import (
 // Version is the build's version. It defaults to the release the source is on;
 // -ldflags "-X .../server.Version=..." overrides it when the toolchain honours
 // it (main.commit and main.date come from the VCS stamps instead).
-var Version = "0.7.0"
+var Version = "0.7.1"
 
 // Server routes client requests to upstreams.
 type Server struct {

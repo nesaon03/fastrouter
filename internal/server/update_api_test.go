@@ -24,7 +24,7 @@ func TestUpdateEndpoint(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("%d %s", rec.Code, rec.Body.String())
 	}
-	if got["latest"] != "9.9.9" || got["updateAvailable"] != true || got["command"] != "npm i -g fastrouter@latest" {
+	if got["latest"] != "9.9.9" || got["updateAvailable"] != true || got["command"] != "npm i -g @zenpo/fastrouter@latest" {
 		t.Fatalf("%v", got)
 	}
 	// A second read is served from the checker's cache.

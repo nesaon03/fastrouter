@@ -37,7 +37,7 @@ func TestCheckFetchesOnceAndCaches(t *testing.T) {
 		if r.Header.Get("Accept") != "application/json" {
 			t.Errorf("accept header %q", r.Header.Get("Accept"))
 		}
-		_, _ = w.Write([]byte(`{"name":"fastrouter","version":"0.7.0"}`))
+		_, _ = w.Write([]byte(`{"name":"@zenpo/fastrouter","version":"0.7.0"}`))
 	}))
 	defer srv.Close()
 

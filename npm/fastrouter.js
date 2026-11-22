@@ -17,7 +17,7 @@ async function main() {
       bin = await install();
     } catch (e) {
       console.error(`fastrouter: download failed: ${e.message}`);
-      console.error("fastrouter: reinstall online with `npm i -g fastrouter@latest`, or set FASTROUTER_DOWNLOAD_BASE.");
+      console.error("fastrouter: reinstall online with `npm i -g @zenpo/fastrouter@latest`, or set FASTROUTER_DOWNLOAD_BASE.");
       process.exit(1);
     }
   }

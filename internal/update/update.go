@@ -2,7 +2,7 @@
 // running binary.
 //
 // The npm registry is the release channel: the maintainer publishes
-// `fastrouter@x.y.z`, users run `npm i -g fastrouter@latest`, and the dashboard
+// `@zenpo/fastrouter@x.y.z`, users run `npm i -g @zenpo/fastrouter@latest`, and the dashboard
 // shows the command. This package only reads the public `latest` document; it
 // never installs anything.
 package update
@@ -19,10 +19,10 @@ import (
 )
 
 // DefaultURL is the npm registry's latest-version document.
-const DefaultURL = "https://registry.npmjs.org/fastrouter/latest"
+const DefaultURL = "https://registry.npmjs.org/@zenpo%2Ffastrouter/latest"
 
 // Command is what the dashboard shows and copies.
-const Command = "npm i -g fastrouter@latest"
+const Command = "npm i -g @zenpo/fastrouter@latest"
 
 // Info is one check result, ready for JSON.
 type Info struct {

@@ -56,7 +56,7 @@ node --test npm/test.js                              # npm wrapper (offline)
 
 ## npm package
 
-`package.json` publishes the `fastrouter` package (MIT). It contains no binary:
+`package.json` publishes the `@zenpo/fastrouter` package (MIT). It contains no binary:
 `npm/fastrouter.js` is a launcher, and `npm/install.js` runs as `postinstall` to
 download the matching raw release asset from
 `https://github.com/nesaon03/fastrouter/releases/download/v<version>/` and verify it
@@ -74,7 +74,7 @@ Check the package without publishing:
 
 ```sh
 npm pack --dry-run     # list the files that would ship
-npm pack               # fastrouter-<version>.tgz
+npm pack               # zenpo-fastrouter-<version>.tgz
 node --test npm/test.js
 ```
 
@@ -82,7 +82,7 @@ Update flow for users is plain npm, and the dashboard sidebar shows the command
 with a copy button:
 
 ```sh
-npm i -g fastrouter@latest
+npm i -g @zenpo/fastrouter@latest
 ```
 
 ## Release

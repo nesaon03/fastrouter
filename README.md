@@ -6,7 +6,7 @@ One binary, SQLite storage, everything hot kept in memory.
 ## Install (npm)
 
 ```sh
-npm i -g fastrouter          # downloads the binary for this platform
+npm i -g @zenpo/fastrouter    # downloads the binary for this platform
 fastrouter import ~/9router-backup.json
 fastrouter                   # serve on http://127.0.0.1:20128
 ```
@@ -15,7 +15,7 @@ Updates are the normal npm flow, and the dashboard sidebar shows the same
 command with a copy button:
 
 ```sh
-npm i -g fastrouter@latest
+npm i -g @zenpo/fastrouter@latest
 ```
 
 The npm package is a small launcher: it downloads the matching release binary
