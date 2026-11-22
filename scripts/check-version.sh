@@ -8,8 +8,8 @@
 set -eu
 cd "$(dirname "$0")/.."
 
-SRC=$(sed -n 's/^var Version = "\([^"]*\)"/\1/p' internal/server/server.go)
-PKG=$(sed -n 's/^  "version": "\([^"]*\)",$/\1/p' package.json | head -n 1)
+SRC=$(sed -n 's/^var Version = "\([^"]*\)".*/\1/p' internal/server/server.go | tr -d '\r')
+PKG=$(sed -n 's/^  "version": "\([^"]*\)".*/\1/p' package.json | tr -d '\r' | head -n 1)
 
 [ -n "$SRC" ] || { echo "no version found in internal/server/server.go" >&2; exit 1; }
 [ -n "$PKG" ] || { echo "no version found in package.json" >&2; exit 1; }
