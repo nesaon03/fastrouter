@@ -1946,7 +1946,7 @@ function UsageDetails({ data, period }) {
 /* --------------------------------------------------------------- quota */
 // Quota Tracker, after 9Router's ProviderLimits: per-account cards with each
 // quota window's remaining share and reset countdown, read from the provider's
-// own usage API (Codex, GLM, DeepSeek, OpenCode Go, OpenRouter).
+// own usage API (Codex, GLM, DeepSeek, OpenCode Go, OpenRouter, Antigravity).
 const qColor = (pct) => (pct < 30 ? "red" : pct < 70 ? "yellow" : "green");
 function countdown(iso, now) {
   if (!iso) return "";

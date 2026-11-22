@@ -1,6 +1,7 @@
 package server
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -8,6 +9,7 @@ import (
 	"math"
 	"net/http"
 	"os"
+	"runtime"
 	"sort"
 	"strconv"
 	"strings"
@@ -16,6 +18,7 @@ import (
 
 	"github.com/zenpo/fastrouter/internal/catalog"
 	"github.com/zenpo/fastrouter/internal/login"
+	"github.com/zenpo/fastrouter/internal/oauth"
 	"github.com/zenpo/fastrouter/internal/store"
 )
 
@@ -52,10 +55,20 @@ type quotaAccount struct {
 	quotaResult
 }
 
-type quotaCred struct{ provider, key, accountID string }
+type quotaCred struct{ provider, key, accountID, project string }
 
 // quotaSupported lists providers with a usage API FastRouter reads.
-var quotaSupported = map[string]bool{"codex": true, "glm": true, "glm-cn": true, "deepseek": true, "opencode-go": true, "openrouter": true}
+var quotaSupported = map[string]bool{"codex": true, "glm": true, "glm-cn": true, "deepseek": true, "opencode-go": true, "openrouter": true, "antigravity": true}
+
+// Antigravity quota endpoints (9Router's transport.usage for the provider).
+// Variables so tests can point them at a local server.
+var (
+	agLoadAssistURL   = "https://cloudcode-pa.googleapis.com/v1internal:loadCodeAssist"
+	agQuotaSummaryURL = oauth.AntigravityBase + "/v1internal:retrieveUserQuotaSummary"
+	agModelsURL       = oauth.AntigravityBase + "/v1internal:fetchAvailableModels"
+)
+
+const antigravityClientVersion = "2.24.0"
 
 type quotaCache struct {
 	mu sync.Mutex
@@ -85,12 +98,16 @@ var quotas quotaCache
 
 func credFor(c store.Connection) quotaCred {
 	q := quotaCred{provider: c.Provider}
-	if login.Handles(c.Provider) {
+	switch {
+	case login.Handles(c.Provider):
 		q.key = login.AccessKey(c)
 		if c.Provider == login.Codex {
 			q.accountID = login.CodexAccountID(c)
 		}
-	} else {
+	case oauth.Handles(c.Provider):
+		q.key = oauth.AccessKey(c)
+		q.project = oauth.Meta(c, "projectId")
+	default:
 		q.key = c.Secrets["apiKey"]
 	}
 	return q
@@ -164,6 +181,33 @@ func (s *Server) quotaGET(ctx context.Context, url, key string, extra map[string
 	}
 	req.Header.Set("Authorization", "Bearer "+key)
 	req.Header.Set("Accept", "application/json")
+	req.Header.Set("User-Agent", "fastrouter/"+Version)
+	for k, x := range extra {
+		req.Header.Set(k, x)
+	}
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return 0, fmt.Errorf("network error: %s", shortNetErr(err))
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode >= 300 {
+		return resp.StatusCode, nil
+	}
+	return resp.StatusCode, json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(v)
+}
+
+func (s *Server) quotaPOST(ctx context.Context, url, key string, extra map[string]string, body, v any) (int, error) {
+	b, err := json.Marshal(body)
+	if err != nil {
+		return 0, err
+	}
+	req, err := http.NewRequestWithContext(ctx, "POST", url, bytes.NewReader(b))
+	if err != nil {
+		return 0, err
+	}
+	req.Header.Set("Authorization", "Bearer "+key)
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("User-Agent", "fastrouter/"+Version)
 	for k, x := range extra {
 		req.Header.Set(k, x)
@@ -318,6 +362,8 @@ func (s *Server) fetchQuota(ctx context.Context, c quotaCred) (res quotaResult) 
 			row.RemainingPct = clamp(100*(*d.Data.Limit-d.Data.Usage) / *d.Data.Limit, 0, 100)
 		}
 		res.Quotas = append(res.Quotas, row)
+	case "antigravity":
+		s.fetchAntigravityQuota(ctx, c, &res)
 	default:
 		res.Error = "No usage API for this provider."
 	}
@@ -325,6 +371,230 @@ func (s *Server) fetchQuota(ctx context.Context, c quotaCred) (res quotaResult) 
 		res.Error = "The usage API returned no quota data."
 	}
 	return res
+}
+
+// fetchAntigravityQuota reads Google Code Assist usage for an Antigravity
+// account. The IDE merges two APIs: retrieveUserQuotaSummary gives the rolling
+// 5h and weekly windows per model family, and fetchAvailableModels gives
+// per-model fractions (the fallback when the summary is empty).
+func (s *Server) fetchAntigravityQuota(ctx context.Context, c quotaCred, res *quotaResult) {
+	hdr := map[string]string{
+		"User-Agent":       oauth.AntigravityUserAgent,
+		"X-Client-Name":    "antigravity",
+		"X-Client-Version": antigravityClientVersion,
+	}
+	project := c.project
+	var assist struct {
+		Project     any `json:"cloudaicompanionProject"`
+		CurrentTier struct {
+			Name string `json:"name"`
+		} `json:"currentTier"`
+	}
+	meta := map[string]any{"ideType": 9, "platform": antigravityPlatform(), "pluginType": 2}
+	code, err := s.quotaPOST(ctx, agLoadAssistURL, c.key, map[string]string{"User-Agent": oauth.AntigravityUserAgent, "x-request-source": "local"}, map[string]any{"metadata": meta, "mode": 1}, &assist)
+	if err == nil && code < 300 {
+		if project == "" {
+			project = quotaString(assist.Project)
+		}
+		res.Plan = assist.CurrentTier.Name
+	}
+	body := map[string]any{}
+	if project != "" {
+		body["project"] = project
+	}
+	var sum agSummary
+	code, err = s.quotaPOST(ctx, agQuotaSummaryURL, c.key, hdr, body, &sum)
+	switch {
+	case code == http.StatusForbidden:
+		res.Error = "Antigravity quota API access forbidden. Chat may still work."
+		return
+	case code == http.StatusUnauthorized:
+		res.Error = "Antigravity quota API authentication expired. Chat may still work."
+		return
+	case err != nil:
+		res.Error = "Antigravity: " + err.Error()
+		return
+	}
+	groups := sum.Groups
+	if len(groups) == 0 {
+		groups = sum.QuotaSummary.Groups
+	}
+	res.Quotas = antigravitySummaryRows(groups)
+	if len(res.Quotas) > 0 {
+		return
+	}
+	// No summary (some accounts return an empty groups list): fall back to the
+	// per-model quotaInfo that the model picker uses.
+	var models agModels
+	if code, err := s.quotaPOST(ctx, agModelsURL, c.key, hdr, body, &models); err == nil && code < 300 {
+		res.Quotas = antigravityModelRows(models.Models)
+	}
+}
+
+func quotaString(v any) string {
+	switch x := v.(type) {
+	case string:
+		return strings.TrimSpace(x)
+	case map[string]any:
+		if s, _ := x["id"].(string); s != "" {
+			return strings.TrimSpace(s)
+		}
+	}
+	return ""
+}
+
+// antigravityPlatform is Code Assist's platform enum (9Router's metadata).
+func antigravityPlatform() int {
+	switch runtime.GOOS + "/" + runtime.GOARCH {
+	case "darwin/arm64":
+		return 2
+	case "darwin/amd64":
+		return 1
+	case "linux/arm64":
+		return 4
+	case "linux/amd64":
+		return 3
+	}
+	return 5
+}
+
+type agBucket struct {
+	Window      string   `json:"window"`
+	BucketID    string   `json:"bucketId"`
+	DisplayName string   `json:"displayName"`
+	Remaining   *float64 `json:"remainingFraction"`
+	ResetTime   any      `json:"resetTime"`
+	Disabled    bool     `json:"disabled"`
+}
+
+type agGroup struct {
+	DisplayName string     `json:"displayName"`
+	Buckets     []agBucket `json:"buckets"`
+}
+
+type agSummary struct {
+	Groups       []agGroup `json:"groups"`
+	QuotaSummary struct {
+		Groups []agGroup `json:"groups"`
+	} `json:"quotaSummary"`
+}
+
+type agModel struct {
+	DisplayName string `json:"displayName"`
+	IsInternal  bool   `json:"isInternal"`
+	QuotaInfo   *struct {
+		Remaining *float64 `json:"remainingFraction"`
+		ResetTime any      `json:"resetTime"`
+	} `json:"quotaInfo"`
+}
+
+type agModels struct {
+	Models map[string]agModel `json:"models"`
+}
+
+func antigravityFamily(s string) string {
+	n := strings.ToLower(s)
+	switch {
+	case strings.Contains(n, "argon"):
+		return "argon"
+	case strings.Contains(n, "claude"), strings.Contains(n, "gpt"):
+		return "claude"
+	case strings.Contains(n, "gemini"):
+		return "gemini"
+	}
+	return ""
+}
+
+func antigravityWindow(b agBucket) string {
+	w := strings.ToLower(b.Window)
+	n := strings.ToLower(b.BucketID + " " + b.DisplayName)
+	switch {
+	case w == "weekly" || strings.Contains(n, "weekly"):
+		return "weekly"
+	case w == "5h" || w == "daily" || strings.Contains(n, "five hour") || strings.Contains(n, "5h") || strings.Contains(n, "daily"):
+		return "session"
+	}
+	return ""
+}
+
+// antigravitySummaryRows turns quota groups into the same family windows the
+// Antigravity IDE shows. A disabled weekly bucket means "no weekly limit".
+func antigravitySummaryRows(groups []agGroup) []quotaRow {
+	found := map[string]quotaRow{}
+	for _, g := range groups {
+		for _, b := range g.Buckets {
+			fam := antigravityFamily(g.DisplayName + " " + b.BucketID + " " + b.DisplayName)
+			win := antigravityWindow(b)
+			if fam == "" || win == "" || (b.Disabled && win == "weekly") {
+				continue
+			}
+			id := fam + "|" + win
+			if _, ok := found[id]; ok {
+				continue
+			}
+			rem := 0.0
+			if b.Remaining != nil {
+				rem = clamp(*b.Remaining, 0, 1)
+			}
+			if b.Disabled {
+				rem = 0
+			}
+			label, suffix := "Gemini", "(5h)"
+			switch fam {
+			case "argon":
+				label = "Gemini 4 Argon"
+			case "claude":
+				label = "Claude & GPT"
+			}
+			if win == "weekly" {
+				suffix = "(Weekly)"
+			}
+			used := clamp(100*(1-rem), 0, 100)
+			found[id] = quotaRow{Name: label + " " + suffix, Used: used, Limit: 100, Unit: "%", RemainingPct: 100 * rem, ResetAt: resetTime(b.ResetTime)}
+		}
+	}
+	out := make([]quotaRow, 0, len(found))
+	for _, k := range []string{"argon|session", "argon|weekly", "gemini|session", "gemini|weekly", "claude|session", "claude|weekly"} {
+		if r, ok := found[k]; ok {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+// antigravityModelRows aggregates per-model fractions into one row per family,
+// using the lowest fraction (the model most likely to be exhausted).
+func antigravityModelRows(models map[string]agModel) []quotaRow {
+	type low struct {
+		rem   float64
+		reset string
+	}
+	best := map[string]low{}
+	for id, m := range models {
+		if m.IsInternal || m.QuotaInfo == nil || m.QuotaInfo.Remaining == nil {
+			continue
+		}
+		name := strings.ToLower(id + " " + m.DisplayName)
+		if strings.Contains(name, "image") {
+			continue
+		}
+		fam := antigravityFamily(name)
+		if fam == "" {
+			continue
+		}
+		rem := clamp(*m.QuotaInfo.Remaining, 0, 1)
+		if cur, ok := best[fam]; !ok || rem < cur.rem {
+			best[fam] = low{rem: rem, reset: resetTime(m.QuotaInfo.ResetTime)}
+		}
+	}
+	out := []quotaRow{}
+	for _, f := range []struct{ key, name string }{{"argon", "Gemini 4 Argon"}, {"gemini", "Gemini"}, {"claude", "Claude & GPT"}} {
+		if b, ok := best[f.key]; ok {
+			used := clamp(100*(1-b.rem), 0, 100)
+			out = append(out, quotaRow{Name: f.name + " models", Used: used, Limit: 100, Unit: "%", RemainingPct: 100 * b.rem, ResetAt: b.reset})
+		}
+	}
+	return out
 }
 
 func num(v any) float64 {
