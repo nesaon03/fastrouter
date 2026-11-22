@@ -40,10 +40,21 @@ const (
 	swarmMaxRounds = 3
 	// swarmHardLimit bounds the whole swarm, judge included.
 	swarmHardLimit = 150 * time.Second
-	// swarmAnswerChars caps each answer carried into the next round and into the
-	// judge, so a verbose agent cannot crowd out the others.
+	// swarmAnswerChars caps each answer carried into the judge, so a verbose
+	// agent cannot crowd out the others.
 	swarmAnswerChars = 6000
+	// swarmPeerChars caps an answer carried into the next debate round. Round 2
+	// multiplies this by the number of agents, so a smaller cap is the main
+	// lever on debate input cost.
+	swarmPeerChars = 2500
+	// swarmAgentMaxTokens caps a debate answer. Only the judge writes the final
+	// answer, so agents do not need the client's full budget.
+	swarmAgentMaxTokens = 1200
 )
+
+// swarmGraceAfter is how long a round waits for stragglers once a quorum has
+// answered. A variable so tests can shorten it.
+var swarmGraceAfter = 8 * time.Second
 
 // swarmRoundWait bounds one round. It is a variable so tests can shorten it.
 var swarmRoundWait = 45 * time.Second
@@ -159,13 +170,41 @@ func jaccardTokens(a, b map[string]bool) float64 {
 	return float64(inter) / float64(union)
 }
 
-// clipAnswer keeps one answer from dominating the next round's prompt.
-func clipAnswer(s string) string {
+// clipAnswer keeps one answer from dominating the judge prompt.
+func clipAnswer(s string) string { return clipAnswerN(s, swarmAnswerChars) }
+
+// clipAnswerN trims s to n bytes with a marker. Debate rounds use the smaller
+// swarmPeerChars cap.
+func clipAnswerN(s string, n int) string {
 	s = strings.TrimSpace(s)
-	if len(s) <= swarmAnswerChars {
+	if len(s) <= n {
 		return s
 	}
-	return s[:swarmAnswerChars] + "\n[truncated]"
+	return s[:n] + "\n[truncated]"
+}
+
+// swarmSameText reports whether every answer normalizes to the same text.
+// Used to skip the judge when the team already produced one answer.
+func swarmSameText(answers []string) bool {
+	first := ""
+	seen := false
+	for _, a := range answers {
+		if strings.TrimSpace(a) == "" {
+			continue
+		}
+		norm, _ := normalizeSwarmText(a)
+		if norm == "" {
+			continue
+		}
+		if !seen {
+			first, seen = norm, true
+			continue
+		}
+		if norm != first {
+			return false
+		}
+	}
+	return seen
 }
 
 // swarmRoundPrompt is the message each agent gets at the start of a debate
@@ -175,10 +214,10 @@ func swarmRoundPrompt(round, rounds int, self string, own string, peers []string
 	fmt.Fprintf(&b, "=== SWARM ROUND %d of %d ===\n", round+1, rounds)
 	b.WriteString("You are one of several agents answering the user's request. Below are the latest answers.\n\n")
 	if own = strings.TrimSpace(own); own != "" {
-		b.WriteString("[Your previous answer]\n" + clipAnswer(own) + "\n\n")
+		b.WriteString("[Your previous answer]\n" + clipAnswerN(own, swarmPeerChars) + "\n\n")
 	}
 	for i, p := range peers {
-		fmt.Fprintf(&b, "[Peer %d]\n%s\n\n", i+1, clipAnswer(p))
+		fmt.Fprintf(&b, "[Peer %d]\n%s\n\n", i+1, clipAnswerN(p, swarmPeerChars))
 	}
 	b.WriteString("Revise your answer now. Keep what is correct, fix what is wrong, and adopt a peer's point only if you can verify it — agreement is not evidence. Drop anything you cannot support.\n")
 	b.WriteString("Reply with your complete final answer to the user's original request, in your own words. Never mention the swarm, the peers, or this message.")
@@ -229,6 +268,7 @@ func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *
 
 	// answers[i] is agent i's latest answer; "" means it has not produced one.
 	answers := make([]string, len(agents))
+	usage := make([]tr.Usage, len(agents))
 	live := make([]bool, len(agents))
 	for i := range live {
 		live[i] = true
@@ -238,9 +278,10 @@ func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *
 		s.swarms.round(runID, round+1)
 		next := make([]string, len(agents))
 		done := make(chan struct {
-			i    int
-			text string
-			err  error
+			i     int
+			text  string
+			usage tr.Usage
+			err   error
 		}, len(agents))
 		waiting := 0
 		for i, model := range agents {
@@ -249,6 +290,11 @@ func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *
 				continue
 			}
 			q := base
+			// Debate answers only need to be good enough to argue with; the judge
+			// writes the final reply with the client's full budget.
+			if q.MaxTokens <= 0 || q.MaxTokens > swarmAgentMaxTokens {
+				q.MaxTokens = swarmAgentMaxTokens
+			}
 			if round == 0 && c.Roles {
 				if lens := swarmRoleLens(i); lens != "" {
 					q.System = append(append([]tr.Part{}, base.System...), tr.Part{Type: tr.PartText, Text: lens})
@@ -269,9 +315,12 @@ func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *
 				started := time.Now()
 				resp, err := s.internalCall(ctx, p.r, &q, model)
 				text := ""
+				var used tr.Usage
 				if err == nil {
 					if text = strings.TrimSpace(partsText(resp.Parts)); text == "" {
 						err = fmt.Errorf("%s: empty answer", model)
+					} else {
+						used = resp.Usage
 					}
 				}
 				ms := time.Since(started).Milliseconds()
@@ -284,15 +333,21 @@ func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *
 					s.swarms.agent(runID, round+1, i, swarmOK, ms)
 				}
 				done <- struct {
-					i    int
-					text string
-					err  error
-				}{i, text, err}
+					i     int
+					text  string
+					usage tr.Usage
+					err   error
+				}{i, text, used, err}
 			}(i, model)
 		}
 
 		// The barrier: nobody starts the next round until this one resolves.
+		// Once a quorum has answered, stragglers get swarmGraceAfter instead of
+		// holding the whole swarm for the full round deadline.
 		deadline := time.NewTimer(swarmRoundWait)
+		quorum := min(2, waiting)
+		answered := 0
+		var grace <-chan time.Time
 		got := 0
 		for got < waiting {
 			select {
@@ -303,6 +358,14 @@ func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *
 					continue
 				}
 				next[r.i] = r.text
+				usage[r.i] = r.usage
+				answered++
+				if answered == quorum && got < waiting && grace == nil {
+					grace = time.After(swarmGraceAfter)
+				}
+			case <-grace:
+				log.Printf("SWARM %s round %d: quorum answered; not waiting for the rest", c.Name, round+1)
+				got = waiting
 			case <-deadline.C:
 				log.Printf("SWARM %s round %d: %d of %d agents answered in time", c.Name, round+1, got, waiting)
 				got = waiting
@@ -344,6 +407,33 @@ func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *
 		log.Printf("SWARM %s: only %s answered; replying with it directly", c.Name, from[0])
 		s.swarms.finish(runID, swarmDone, consensus, "")
 		s.routeModel(w, p, st, from[0])
+		return
+	}
+
+	// The team already produced one answer: the judge would only rephrase it.
+	// Return the longest copy so the most complete wording survives.
+	if swarmSameText(texts) {
+		best := texts[0]
+		for _, t := range texts[1:] {
+			if len(t) > len(best) {
+				best = t
+			}
+		}
+		var sum tr.Usage
+		for i, a := range answers {
+			if a != "" {
+				sum.Input += usage[i].Input
+				sum.Output += usage[i].Output
+				sum.CacheRead += usage[i].CacheRead
+				sum.CacheWrite += usage[i].CacheWrite
+				sum.Reasoning += usage[i].Reasoning
+			}
+		}
+		log.Printf("SWARM %s: %d agents agree exactly; skipping the judge", c.Name, len(texts))
+		s.swarms.judge(runID, swarmSkipped)
+		s.swarms.finish(runID, swarmDone, true, "")
+		writeBufferedAnswer(w, p, from[0], &tr.Response{Model: from[0],
+			Parts: []tr.Part{{Type: tr.PartText, Text: best}}, Finish: tr.FinishStop, Usage: sum})
 		return
 	}
 

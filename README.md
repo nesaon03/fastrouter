@@ -138,8 +138,14 @@ right one. Swarm lets the right one argue for itself first.
 - `rounds`: 1 (independent answers only, no debate) to 3. Default 2.
 - Cost is `agents × rounds + 1`. Set `judgeModel` to something cheaper than the
   agents if the answers are the expensive part.
-- Tools are stripped for the agents (they cannot call a tool mid-debate), the
-  whole swarm is capped at 150s, and one round at 45s.
+- Debate answers are capped at 1,200 tokens (a smaller client `max_tokens` still
+  wins) and peer answers carried into round 2 are clipped to 2,500 characters, so
+  the debate stays cheap; only the judge uses the full budget.
+- Once a quorum (2 agents) answers a round, stragglers get 8 seconds instead of
+  holding the round for the full 45s deadline. The whole swarm is capped at 150s.
+- If every agent agrees exactly (same normalized text), the judge is skipped and
+  the longest copy is returned, saving one call and its latency.
+- Tools are stripped for the agents (they cannot call a tool mid-debate).
 - An agent that fails a round keeps its previous answer and stays in the debate;
   one that never answers at all drops out. One survivor is returned directly — a
   debate needs two voices — and every agent failing is a 503.

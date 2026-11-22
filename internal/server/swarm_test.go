@@ -130,12 +130,13 @@ func TestSwarmSingleRoundSkipsDebate(t *testing.T) {
 	sc, up := newScripted(t)
 	var calls atomic.Int32
 	for _, k := range []string{"a", "b"} {
+		k := k
 		sc.reply["key-"+k] = func(w http.ResponseWriter, r *http.Request) {
 			calls.Add(1)
 			if strings.Contains(promptOf(sc.last().Body), "SWARM ROUND") {
 				t.Error("rounds=1 must not produce a debate prompt")
 			}
-			oaText("independent")(w, r)
+			oaText("independent from "+k)(w, r)
 		}
 	}
 	sc.reply["key-r"] = oaText("judged")
@@ -515,5 +516,139 @@ func TestSwarmRunTelemetryFailure(t *testing.T) {
 	run, _ := runs[0].(map[string]any)
 	if run["status"] != swarmError || run["error"] == "" {
 		t.Fatalf("failed run %v", run)
+	}
+}
+
+// Once a quorum answered, a straggler gets the short grace, not the full round.
+func TestSwarmQuorumGrace(t *testing.T) {
+	oldWait, oldGrace := swarmRoundWait, swarmGraceAfter
+	swarmRoundWait = 5 * time.Second
+	swarmGraceAfter = 150 * time.Millisecond
+	defer func() { swarmRoundWait, swarmGraceAfter = oldWait, oldGrace }()
+
+	sc, up := newScripted(t)
+	sc.reply["key-a"] = oaText("answer a")
+	sc.reply["key-b"] = oaText("answer b")
+	sc.reply["key-c"] = func(w http.ResponseWriter, r *http.Request) {
+		select {
+		case <-r.Context().Done():
+			return
+		case <-time.After(3 * time.Second):
+		}
+		oaText("late c")(w, r)
+	}
+	sc.reply["key-r"] = oaText("judged after quorum")
+	_, hs := newTestServer(t, swarmSnap(up.URL, "swarm", []string{"a/m1", "b/m2", "c/m3"},
+		`{"rounds":1,"judgeModel":"r/judge"}`))
+	start := time.Now()
+	resp, out := post(t, hs.URL, `{"model":"team","messages":[{"role":"user","content":"q"}]}`)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(out, "judged after quorum") {
+		t.Fatalf("%d %s", resp.StatusCode, out)
+	}
+	if d := time.Since(start); d > 2*time.Second {
+		t.Fatalf("quorum grace did not bound the round: %v", d)
+	}
+}
+
+// Debate answers use the smaller agent budget; the judge keeps the client's.
+func TestSwarmCapsAgentTokens(t *testing.T) {
+	sc, up := newScripted(t)
+	maxOf := func() int {
+		v, _ := sc.last().Body["max_tokens"].(float64)
+		return int(v)
+	}
+	var mu sync.Mutex
+	got := map[string]int{}
+	sc.reply["key-a"] = func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		got["a"] = maxOf()
+		mu.Unlock()
+		oaText("answer a")(w, r)
+	}
+	sc.reply["key-b"] = func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		got["b"] = maxOf()
+		mu.Unlock()
+		oaText("answer b")(w, r)
+	}
+	sc.reply["key-r"] = func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		got["judge"] = maxOf()
+		mu.Unlock()
+		oaText("judged")(w, r)
+	}
+	_, hs := newTestServer(t, swarmSnap(up.URL, "swarm", []string{"a/m1", "b/m2"},
+		`{"rounds":1,"judgeModel":"r/judge"}`))
+	post(t, hs.URL, `{"model":"team","max_tokens":4096,"messages":[{"role":"user","content":"q"}]}`)
+	mu.Lock()
+	defer mu.Unlock()
+	if got["a"] != swarmAgentMaxTokens || got["b"] != swarmAgentMaxTokens {
+		t.Fatalf("agent budgets = %v, want %d", got, swarmAgentMaxTokens)
+	}
+	if got["judge"] != 4096 {
+		t.Fatalf("judge budget = %d, want 4096", got["judge"])
+	}
+}
+
+// Round 2 carries a clipped peer answer, not the full 6k one.
+func TestSwarmClipsPeerAnswers(t *testing.T) {
+	sc, up := newScripted(t)
+	var mu sync.Mutex
+	round2 := ""
+	long := func(prefix string) string { return prefix + strings.Repeat("x", 3000) }
+	for _, k := range []string{"a", "b", "c"} {
+		k := k
+		sc.reply["key-"+k] = func(w http.ResponseWriter, r *http.Request) {
+			p := promptOf(sc.last().Body)
+			if k == "a" && strings.Contains(p, "SWARM ROUND 2") {
+				mu.Lock()
+				round2 = p
+				mu.Unlock()
+			}
+			oaText(long("answer "+k+" "))(w, r)
+		}
+	}
+	sc.reply["key-r"] = oaText("judged")
+	_, hs := newTestServer(t, swarmSnap(up.URL, "swarm", []string{"a/m1", "b/m2", "c/m3"},
+		`{"rounds":2,"judgeModel":"r/judge"}`))
+	post(t, hs.URL, `{"model":"team","messages":[{"role":"user","content":"q"}]}`)
+	mu.Lock()
+	defer mu.Unlock()
+	if round2 == "" {
+		t.Fatal("round 2 did not run")
+	}
+	if !strings.Contains(round2, "[truncated]") {
+		t.Fatalf("peer answers were not clipped: %d bytes", len(round2))
+	}
+	if len(round2) > 9000 {
+		t.Fatalf("round 2 prompt is %d bytes; clipping did not bound it", len(round2))
+	}
+}
+
+// Identical answers skip the judge entirely and return the agreed text.
+func TestSwarmSkipsJudgeOnExactConsensus(t *testing.T) {
+	sc, up := newScripted(t)
+	for _, k := range []string{"a", "b", "c"} {
+		sc.reply["key-"+k] = oaText("The same final answer.")
+	}
+	var judgeCalls atomic.Int32
+	sc.reply["key-r"] = func(w http.ResponseWriter, r *http.Request) {
+		judgeCalls.Add(1)
+		oaText("the judge should not run")(w, r)
+	}
+	s, hs := newTestServer(t, swarmSnap(up.URL, "swarm", []string{"a/m1", "b/m2", "c/m3"},
+		`{"rounds":2,"judgeModel":"r/judge"}`))
+	resp, out := post(t, hs.URL, `{"model":"team","messages":[{"role":"user","content":"q"}]}`)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(out, "The same final answer.") {
+		t.Fatalf("%d %s", resp.StatusCode, out)
+	}
+	if strings.Contains(out, "judge should not run") || judgeCalls.Load() != 0 {
+		t.Fatalf("judge ran on exact consensus: %d", judgeCalls.Load())
+	}
+	_, got := adminCall(t, s, http.MethodGet, "/api/admin/swarm", nil)
+	runs, _ := got["runs"].([]any)
+	run, _ := runs[0].(map[string]any)
+	if run["judgeState"] != swarmSkipped {
+		t.Fatalf("judge state %v", run["judgeState"])
 	}
 }

@@ -1577,7 +1577,7 @@ function SwarmDiagram({ data, combo, run }) {
             title=${`${a} · round ${r + 1} · ${SWARM_STATE[st] || st}${ms ? ` · ${ms} ms` : ""}`}></span></div>`;
         })}
         ${i === 0 && html`<div class="swarm-judge" style=${`grid-column:${rounds + 2};grid-row:2 / span ${agents.length}`}>
-          <div class=${"swarm-jnode " + (run ? run.judgeState : "waiting")} title=${judge}>
+          <div class=${"swarm-jnode " + (run ? run.judgeState : "waiting")} title=${`${judge} · ${run ? run.judgeState : "waiting"}`}>
             <${Icon} n="gavel" /><span class="mono truncate">${judge}</span></div></div>`}`)}
     </div>
     <div class="swarm-legend">

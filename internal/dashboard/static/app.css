@@ -93,6 +93,7 @@ h1,h2,h3,p { margin:0; }
 .swarm-jnode.thinking { border-color:var(--warning); }
 .swarm-jnode.ok { border-color:var(--success); }
 .swarm-jnode.error { border-color:var(--danger); }
+.swarm-jnode.skipped { opacity:.45; }
 .swarm-legend { display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; font-size:10.5px; color:var(--muted); align-items:center; }
 .swarm-legend span { display:inline-flex; align-items:center; gap:5px; }
 .swarm-legend .swarm-dot { width:10px; height:10px; border-width:1px; }
