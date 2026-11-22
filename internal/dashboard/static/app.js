@@ -614,18 +614,17 @@ function useTheme() {
 function Sidebar({ page, data, upd }) {
   const usable = data ? data.providers.reduce((n, p) => n + p.usable, 0) : 0;
   const [copied, copy] = useCopy();
-  const cmd = (upd && upd.command) || "npm i -g fastrouter@latest";
   const link = (it) => html`<a href=${"#/" + it.id} class=${page === it.id ? "active" : ""}><${Icon} n=${it.icon} /><span>${it.label}</span></a>`;
   return html`<aside class="sidebar">
     <div class="lights"><i style="background:#FF5F56"></i><i style="background:#FFBD2E"></i><i style="background:#27C93F"></i></div>
     <a class="brand" href="#/endpoint"><div class="brand-tile"><${Icon} n="bolt" fill /></div>
       <div><h1>FastRouter</h1><small>v${data ? data.version : ""}</small></div></a>
-    <div class="side-update">
-      <button class="upd-cmd" title="Copy the update command" onClick=${() => copy(cmd, "upd")}>
-        <span class="mono">${cmd}</span><${Icon} n=${copied === "upd" ? "check" : "content_copy"} />
+    ${upd && upd.updateAvailable && html`<div class="side-update">
+      <button class="upd-cmd" title="Copy the update command" onClick=${() => copy(upd.command, "upd")}>
+        <span class="mono">${upd.command}</span><${Icon} n=${copied === "upd" ? "check" : "content_copy"} />
       </button>
-      ${upd && upd.updateAvailable && html`<span class="chip ok" title=${`npm reports v${upd.latest}`}>v${upd.latest} available</span>`}
-    </div>
+      <span class="chip ok" title=${`npm reports v${upd.latest}`}>v${upd.latest} available</span>
+    </div>`}
     <nav class="nav">${NAV.map(link)}<div class="nav-label">System</div>${SYSTEM.map(link)}</nav>
     <div class="side-foot"><div class="health"><span class="pulse"></span>Router online · ${usable} usable accounts</div></div>
   </aside>`;
