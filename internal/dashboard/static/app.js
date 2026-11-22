@@ -126,6 +126,7 @@ function CopyBtn({ text, id, copied, copy, title = "Copy" }) {
   return html`<button class="icon-btn" title=${title} onClick=${() => copy(text, id)}><${Icon} n=${copied === id ? "check" : "content_copy"} /></button>`;
 }
 const fmt = (n) => (n >= 1e6 ? (n / 1e6).toFixed(1) + "M" : n >= 1e3 ? (n / 1e3).toFixed(1) + "k" : String(n || 0));
+const fmtMs = (ms) => (!ms ? "" : ms >= 1000 ? (ms / 1000).toFixed(1) + "s" : ms + "ms");
 const money = (n) => "$" + (n || 0).toFixed(n >= 10 ? 2 : 4);
 // costCell never reports an unknown price as $0.00: when a request used tokens
 // but no rate card covers the model, it says so instead. Discovery harvests
@@ -1546,42 +1547,64 @@ const SWARM_STATE = {
   timeout: "timeout",
   skipped: "skipped",
 };
+const SWARM_GLYPH = { ok: "✓", error: "✕", timeout: "!", empty: "–", skipped: "·", thinking: "•" };
 
-// SwarmDiagram draws the debate as a matrix: one row per agent, one column per
-// round, the judge spanning the rows. It is fed by /api/admin/swarm, which the
-// page polls while a swarm combo exists, so a running debate lights up live.
+// SwarmDiagram is the debate board: one card per agent, one checkpoint per
+// round, the judge card spanning the rows. It is fed by /api/admin/swarm, which
+// the page polls while a swarm combo exists, so a running debate lights up live.
 function SwarmDiagram({ data, combo, run }) {
   const agents = (run && run.agents) || combo.models || [];
   const rounds = Math.max(1, (run && run.rounds) || combo.rounds || 2);
   const judge = (run && run.judge) || combo.judgeModel || agents[0] || "";
   const running = run && run.status === "running";
+  const judgeState = run ? run.judgeState : "waiting";
   const stateOf = (r, i) => (run && run.states[r] && run.states[r][i]) || "waiting";
   const msOf = (r, i) => (run && run.millis[r] && run.millis[r][i]) || 0;
-  return html`<div class="swarm-box">
-    <div class="row between" style="gap:8px;margin-top:12px">
-      <div class="row" style="gap:8px"><span class="swarm-title"><${Icon} n="forum" />Swarm flow</span>
-        ${running ? html`<span class="chip ok"><span class="pulse"></span>live</span>`
-          : run ? html`<span class="chip">last run</span>` : html`<span class="chip">idle</span>`}</div>
-      <span class="small muted">${run ? `${fmt(run.elapsedMs)} ms${run.consensus ? " · consensus" : ""}` : `${rounds} round${rounds === 1 ? "" : "s"}`}</span>
+  const judgeInfo = judge ? modelInfo(data, judge) : null;
+  const judgeRaw = judgeInfo ? judgeInfo.label || judge : judge;
+  const judgeTag = (judgeRaw.match(/\[[^\]]+\]$/) || [""])[0];
+  const judgeLabel = judgeTag ? judgeRaw.slice(0, -judgeTag.length) : judgeRaw;
+  const agentNode = (id, extra) => {
+    const info = modelInfo(data, id);
+    return html`<div class=${"swarm-agent-node " + (extra || "")} title=${id}>
+      ${info.p ? html`<${Logo} p=${info.p} xs />` : html`<span class="swarm-agent-fallback">${(info.label || id).slice(0, 2).toUpperCase()}</span>`}
+      <div class="swarm-agent-text"><span class="swarm-agent-name">${info.label || id}</span>
+        <span class="swarm-agent-prov">${info.p ? provMeta(info.p).name : id}</span></div></div>`;
+  };
+  return html`<div class=${"swarm-box" + (running ? " is-live" : "")}>
+    <div class="swarm-head">
+      <div class="row" style="gap:8px;align-items:center;min-width:0">
+        <span class="swarm-title"><${Icon} n="forum" />Swarm flow</span>
+        ${running ? html`<span class="swarm-pill live"><i></i>live</span>`
+          : run ? html`<span class=${"swarm-pill " + (run.status === "error" ? "bad" : "done")}>${run.status === "error" ? "failed" : "last run"}</span>`
+          : html`<span class="swarm-pill idle">idle</span>`}
+        ${run && run.consensus && html`<span class="swarm-pill consensus"><${Icon} n="check" />consensus · R${run.round}</span>`}
+      </div>
+      <span class="swarm-clock">${run ? fmtMs(run.elapsedMs) : `${rounds} round${rounds === 1 ? "" : "s"}`}</span>
     </div>
-    <div class="swarm-flow" style=${`grid-template-columns:minmax(92px,1.3fr) repeat(${rounds},minmax(38px,.6fr)) minmax(84px,1fr)`}>
-      <div></div>
-      ${Array.from({ length: rounds }, (_, r) => html`<div class=${"shead" + (running && run.round === r + 1 ? " on" : "")}>R${r + 1}</div>`)}
-      <div class="shead">Judge</div>
+    <div class="swarm-board" style=${`grid-template-columns:minmax(140px,1.5fr) repeat(${rounds},42px) minmax(138px,1.15fr)`}>
+      <div class="swarm-col-head"></div>
+      ${Array.from({ length: rounds }, (_, r) => html`<div class=${"swarm-col-head" + (running && run.round === r + 1 ? " on" : "")}>R${r + 1}</div>`)}
+      <div class="swarm-col-head judge">Judge</div>
       ${agents.map((a, i) => html`
-        <div class="swarm-agent" title=${a}><span class="mono truncate">${a}</span></div>
+        ${agentNode(a)}
         ${Array.from({ length: rounds }, (_, r) => {
           const st = stateOf(r, i);
           const ms = msOf(r, i);
-          return html`<div class="swarm-cell"><span class=${"swarm-dot " + st}
-            title=${`${a} · round ${r + 1} · ${SWARM_STATE[st] || st}${ms ? ` · ${ms} ms` : ""}`}></span></div>`;
+          return html`<div class=${"swarm-track " + st} title=${`${a} · R${r + 1} · ${SWARM_STATE[st] || st}${ms ? ` · ${fmtMs(ms)}` : ""}`}>
+            <span class=${"swarm-node " + st}>${SWARM_GLYPH[st] || ""}</span></div>`;
         })}
-        ${i === 0 && html`<div class="swarm-judge" style=${`grid-column:${rounds + 2};grid-row:2 / span ${agents.length}`}>
-          <div class=${"swarm-jnode " + (run ? run.judgeState : "waiting")} title=${`${judge} · ${run ? run.judgeState : "waiting"}`}>
-            <${Icon} n="gavel" /><span class="mono truncate">${judge}</span></div></div>`}`)}
+        ${i === 0 && html`<div class=${"swarm-judge-card " + judgeState}
+            style=${`grid-column:${rounds + 2};grid-row:2 / span ${agents.length}`}
+            title=${`${judge} · ${judgeState}`}>
+          <span class="swarm-judge-ic"><${Icon} n="gavel" /></span>
+          <div class="swarm-agent-text"><span class="swarm-agent-name">${judgeLabel}</span>
+            <span class="swarm-agent-prov">${judgeState === "skipped" ? "skipped"
+              : (judgeInfo && judgeInfo.p ? provMeta(judgeInfo.p).name : "judge") + (judgeTag ? " · " + judgeTag.slice(1, -1) : "") + (judgeState === "error" ? " · failed" : "")}</span></div>
+        </div>`}`)}
     </div>
-    <div class="swarm-legend">
-      ${["ok", "thinking", "waiting", "timeout", "error", "skipped"].map((k) => html`<span><i class=${"swarm-dot " + k}></i>${SWARM_STATE[k]}</span>`)}
+    <div class="swarm-foot">
+      ${["ok", "thinking", "waiting", "timeout", "error", "skipped"].map((k) => html`<span class="swarm-leg"><i class=${"swarm-dot " + k}></i>${SWARM_STATE[k]}</span>`)}
       ${run && run.error && html`<span class="swarm-err" title=${run.error}>${run.error}</span>`}
     </div>
     ${!run && html`<p class="small muted" style="margin:8px 0 0">Run this combo to watch each agent answer, debate, then hand off to the judge.</p>`}
@@ -1622,7 +1645,7 @@ function CombosPage({ data, reload }) {
               ${c.kind && html`<${Badge}>${c.kind}</${Badge}>`}<span class="small muted">${c.models.length} model${c.models.length === 1 ? "" : "s"}</span></div></div></div>
             <div class="row" style="gap:2px"><button class="icon-btn" title="Edit" onClick=${() => setModal({ t: "edit", c })}><${Icon} n="edit" /></button>
               <button class="icon-btn danger" title="Delete" onClick=${() => setModal({ t: "del", c })}><${Icon} n="delete" /></button></div></div>
-          <${ModelChain} data=${data} models=${c.models} sep=${c.strategy === "fusion" ? "add" : "chevron_right"} empty="Empty — add models to use it." />
+          ${c.strategy !== "swarm" && html`<${ModelChain} data=${data} models=${c.models} sep=${c.strategy === "fusion" ? "add" : "chevron_right"} empty="Empty — add models to use it." />`}
           ${c.strategy === "fusion" && html`<div class="small muted" style="margin-top:10px"><${Icon} n="gavel" style="font-size:14px;vertical-align:-2px" /> Judge: ${c.judgeModel ? html`<${ModelTag} data=${data} id=${c.judgeModel} />` : "model 1"}</div>`}
           ${c.strategy === "smart" && html`<div class="small muted" style="margin-top:10px"><${Icon} n="alt_route" style="font-size:14px;vertical-align:-2px" /> Router: ${c.routerEngine === "decision" ? html`<span class="mono">${c.decisionModel || "decision engine"}</span>` : c.routerModel ? html`<${ModelTag} data=${data} id=${c.routerModel} />` : "model 1"}</div>`}
           ${c.strategy === "cascade" && html`<div class="small muted" style="margin-top:10px"><${Icon} n="arrow_downward" style="font-size:14px;vertical-align:-2px" /> Decision: <span class="mono">${c.decisionModel || "auto"}</span></div>`}
