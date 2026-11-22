@@ -1782,14 +1782,15 @@ function UsagePage({ data }) {
 }
 function UsageCards({ u }) {
   const rows = (u && u.providers) || [];
-  const t = rows.reduce((a, r) => ({ req: a.req + r.requests, fail: a.fail + r.failures, inp: a.inp + r.input_tokens, out: a.out + r.output_tokens, cache: a.cache + r.cache_read_tokens, cost: a.cost + r.cost_usd }), { req: 0, fail: 0, inp: 0, out: 0, cache: 0, cost: 0 });
+  const t = rows.reduce((a, r) => ({ req: a.req + r.requests, fail: a.fail + r.failures, inp: a.inp + r.input_tokens, out: a.out + r.output_tokens, cache: a.cache + r.cache_read_tokens, cost: a.cost + r.cost_usd, saved: a.saved + (r.saved_input_tokens || 0), savedCost: a.savedCost + (r.saved_cost_usd || 0) }), { req: 0, fail: 0, inp: 0, out: 0, cache: 0, cost: 0, saved: 0, savedCost: 0 });
   const cards = [["speed", "Total requests", fmt(t.req), t.fail ? `${fmt(t.fail)} failed` : "all succeeded", ""],
     ["input", "Total input tokens", fmt(t.inp), "prompt side", "orange"],
     ["cached", "Cached tokens", fmt(t.cache), t.inp ? `${Math.round((100 * t.cache) / t.inp)}% of input` : "prompt cache hits", "blue"],
     ["output", "Output tokens", fmt(t.out), "including reasoning", "green"],
     ["payments", "Est. cost", money(t.cost), "Estimated, not actual billing", "yellow"]];
   return html`<div class="grid g5">${cards.map(([ic, l, v, sub, c]) => html`<div class="card sm stat ${c}">
-    <span class="label"><${Icon} n=${ic} />${l}</span><span class="value">${u ? v : "…"}</span><span class="sub">${sub}</span></div>`)}</div>`;
+    <span class="label"><${Icon} n=${ic} />${l}</span><span class="value">${u ? v : "…"}</span><span class="sub">${sub}</span></div>`)}</div>
+    ${(t.saved || t.savedCost) && html`<p class="small muted" style="margin:-8px 0 18px"><${Icon} n="savings" style="font-size:14px;vertical-align:-2px" /> Token Saver saved ${fmt(t.saved)} input tokens in this window${t.savedCost ? ` (≈${money(t.savedCost)})` : ""}.</p>`}`;
 }
 function UsageOverview({ data, u, onDetails }) {
   const [chart, setChart] = useState("tokens");
@@ -2005,13 +2006,14 @@ function UsageDetails({ data, period }) {
       <select class="input" style="width:240px" value=${prov} onChange=${(e) => setProv(e.target.value)}><option value="">All providers</option>
         ${provs.map((p) => html`<option value=${p.id}>${provMeta(p).name}</option>`)}</select></div>
     ${!r ? html`<div class="skeleton" style="margin:0 18px 18px"></div>` : r.error ? html`<div class="notice err" style="margin:0 18px 18px">${r.error}</div>` : r.requests.length === 0 ? html`<p class="small muted" style="padding:0 18px 18px">No requests in this period.</p>`
-      : html`<table class="table"><thead><tr><th>Time</th><th>Provider</th><th>Model</th><th>Account</th><th>Status</th><th class="num">In ↑</th><th class="num">Out ↓</th><th class="num">Cached</th><th class="num">Latency</th><th class="num">Cost</th></tr></thead>
+      : html`<table class="table"><thead><tr><th>Time</th><th>Provider</th><th>Model</th><th>Account</th><th>Status</th><th class="num">In ↑</th><th class="num">Out ↓</th><th class="num">Cached</th><th class="num">Saved</th><th class="num">Latency</th><th class="num">Cost</th></tr></thead>
         <tbody>${r.requests.map((x, i) => { const p = data.providers.find((y) => y.id === x.provider); return html`<tr key=${i}>
           <td class="small nowrap" title=${x.at}>${new Date(x.at).toLocaleString([], { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", second: "2-digit" })}</td>
           <td><div class="row" style="gap:8px">${p && html`<${Logo} p=${p} xs />`}<span class="small">${p ? provMeta(p).name : x.provider}</span></div></td>
           <td class="mono small">${x.model}</td><td class="small muted">${x.account}</td>
           <td>${x.status >= 200 && x.status < 300 ? html`<${Badge} kind="success">${x.status}</${Badge}>` : html`<${Badge} kind="error">${x.status || "net"}</${Badge}>`}</td>
           <td class="num small tok-in">${fmt(x.input_tokens)}</td><td class="num small tok-out">${fmt(x.output_tokens)}</td><td class="num small muted">${fmt(x.cache_read_tokens)}</td>
+          <td class="num small" title=${x.saver_tag || ""}>${x.saved_input_tokens ? html`<span style="color:var(--green-fg)">+${fmt(x.saved_input_tokens)}</span>` : "-"}</td>
           <td class="num small">${x.latency_ms} ms</td><td class="num small">${costCell(x.cost_usd, x.input_tokens + x.output_tokens)}</td></tr>`; })}</tbody></table>`}
     ${total > size && html`<div class="row between" style="padding:12px 18px;border-top:1px solid var(--border-subtle)"><span class="small muted">${page * size + 1}–${Math.min(total, (page + 1) * size)} of ${fmt(total)}</span>
       <div class="row" style="gap:6px"><button class="btn outline sm" disabled=${page === 0} onClick=${() => setPage(page - 1)}><${Icon} n="chevron_left" />Prev</button>
@@ -2449,6 +2451,19 @@ function TokenSaverPage({ data, reload }) {
   const [setup, setSetup] = useState(false);
   const [pending, setPending] = useState([]);
   const [prompt, setPrompt] = useState(s.customPrompt || "");
+  const [pvOpen, setPvOpen] = useState(false);
+  const [pvText, setPvText] = useState("");
+  const [pvRes, setPvRes] = useState(null);
+  const [pvBusy, setPvBusy] = useState(false);
+  const sav = data.savings || {};
+  const runPv = async () => {
+    if (!pvText.trim()) return;
+    setPvBusy(true);
+    try { setPvRes(await api("POST", "/api/admin/savers/preview", { text: pvText })); }
+    catch (e) { toast(e.message, "error"); }
+    setPvBusy(false);
+  };
+  const promptNote = (n) => n > 0 && html`<span class=${"ts-note" + (sav.avgOutputTokens > 0 && n > sav.avgOutputTokens ? " warn" : "")}>+~${fmt(n)} input tokens/request${sav.avgOutputTokens > 0 && n > sav.avgOutputTokens ? ` · average answer is ${fmt(sav.avgOutputTokens)} tokens, so this may cost more than it saves` : ""}</span>`;
   const refresh = useCallback(async (fresh) => { try { setHr(await api("GET", "/api/admin/headroom" + (fresh ? "?fresh=1" : ""))); } catch (e) {} }, []);
   useEffect(() => { refresh(false); }, []);
   useEffect(() => { if (!hr || !hr.busy) return; const t = setTimeout(() => refresh(true), 1500); return () => clearTimeout(t); }, [hr]);
@@ -2489,10 +2504,28 @@ function TokenSaverPage({ data, reload }) {
   const link = (href, t) => html`<a class="ts-link" href=${href} target="_blank" rel="noreferrer">(${t})</a>`;
   return html`<div class="card ts-card">
     <h2 class="ts-title"><${Icon} n="bolt" />Token Saver</h2>
+    <div class="ts-save">
+      <div class="ts-save-head"><${Icon} n="savings" />Savings · last 30 days</div>
+      <div class="ts-save-grid">
+        ${[["Input saved", fmt(sav.savedTokens || 0), "tokens"],
+           ["Prompt cost", "+" + fmt(sav.addedTokens || 0), "tokens"],
+           ["Estimated saved", costCell(sav.savedCost || 0, sav.savedTokens || 0), "at model rates"],
+           ["Average answer", fmt(sav.avgOutputTokens || 0), "tokens"]].map(([l, v, sub]) => html`<div>
+          <span class="label">${l}</span><span class="value">${v}</span><span class="sub">${sub}</span></div>`)}
+      </div>
+      ${(sav.requests || 0) > 0 && html`<p class="ts-save-note">${fmt(sav.requests)} successful requests in this window. Net after prompt cost: ${fmt((sav.savedTokens || 0) - (sav.addedTokens || 0))} tokens. Savings are estimated from request bytes (4 bytes ≈ 1 token).</p>`}
+    </div>
     <div class="ts-row">
-      <div class="grow"><div class="ts-t">Compress tool output ${link("https://github.com/rtk-ai/rtk", "RTK")}<${StateChip} k="rtk" enabled=${s.rtkEnabled} /><${Lock} k="rtkEnabled" /></div>
+      <div class="grow"><div class="ts-t">Compress tool output ${link("https://github.com/rtk-ai/rtk", "RTK")}<${StateChip} k="rtk" enabled=${s.rtkEnabled} /><${Lock} k="rtkEnabled" />
+          <button class="ts-link" style="background:none;border:0;padding:0;cursor:pointer" onClick=${() => setPvOpen(!pvOpen)}>${pvOpen ? "Hide preview" : "Preview"}</button></div>
         <div class="ts-d">git/grep/ls/tree/logs → 60-90% fewer input tokens</div></div>
       <${Toggle} on=${s.rtkEnabled} disabled=${locked("rtkEnabled")} onChange=${(v) => save({ rtkEnabled: v }, v ? "RTK on" : "RTK off")} /></div>
+    ${pvOpen && html`<div class="ts-preview" style="margin:0 0 14px">
+      <textarea class="input" rows="4" placeholder="Paste git status, grep, ls, tree or build output..." value=${pvText} onInput=${(e) => setPvText(e.target.value)}></textarea>
+      <div class="row" style="gap:8px"><button class="btn primary sm" disabled=${!pvText.trim() || pvBusy} onClick=${runPv}><${Icon} n="compress" />${pvBusy ? "Compressing…" : "Preview"}</button>
+        ${pvRes && html`<span class="ts-preview-stats">${pvRes.changed ? html`<b>${pvRes.filter}</b> · ${fmt(pvRes.bytesIn)} → <b>${fmt(pvRes.bytesOut)}</b> bytes` : "No RTK filter matched this text"}</span>`}</div>
+      ${pvRes && pvRes.changed && html`<pre class="code-box">${pvRes.compressed}</pre>`}
+    </div>`}
     <div class="ts-row">
       <div class="grow"><div class="ts-t">Compress context ${link("https://github.com/chopratejas/headroom", "Headroom")}
           <span class="chip ${hrState.cls}">${hrLabel}</span>
@@ -2511,17 +2544,28 @@ function TokenSaverPage({ data, reload }) {
       <${Toggle} on=${s.headroomEnabled} disabled=${locked("headroomEnabled")} onChange=${(v) => save({ headroomEnabled: v }, v ? "Headroom on" : "Headroom off")} /></div>
     <div class="ts-row">
       <div class="grow"><div class="ts-t">Compress LLM output ${link("https://github.com/JuliusBrussee/caveman", "Caveman")}<${StateChip} k="caveman" enabled=${s.cavemanEnabled} /><${Lock} k="caveman" /></div>
-        <div class="ts-d">Terse-style system prompt → ~65% fewer output tokens (up to 87%)</div></div>
+        <div class="ts-d">Terse-style system prompt → ~65% fewer output tokens (up to 87%)</div>${promptNote(sav.promptCaveman)}</div>
       <${SegLv} value=${s.cavemanLevel} levels=${CAVEMAN_LV} disabled=${locked("caveman")} onChange=${(v) => save({ cavemanLevel: v })} />
       <${Toggle} on=${s.cavemanEnabled} disabled=${locked("caveman")} onChange=${(v) => save({ cavemanEnabled: v }, v ? "Caveman on" : "Caveman off")} /></div>
     <div class="ts-row">
       <div class="grow"><div class="ts-t">Lazy senior dev ${link("https://github.com/DietrichGebert/ponytail", "Ponytail")}<${StateChip} k="ponytail" enabled=${s.ponytailEnabled} /><${Lock} k="ponytail" /></div>
-        <div class="ts-d">Bias the model toward minimal code: YAGNI, reuse stdlib, deletion over addition</div></div>
+        <div class="ts-d">Bias the model toward minimal code: YAGNI, reuse stdlib, deletion over addition</div>${promptNote(sav.promptPonytail)}</div>
       <${SegLv} value=${s.ponytailLevel} levels=${PONYTAIL_LV} disabled=${locked("ponytail")} onChange=${(v) => save({ ponytailLevel: v })} />
       <${Toggle} on=${s.ponytailEnabled} disabled=${locked("ponytail")} onChange=${(v) => save({ ponytailEnabled: v }, v ? "Ponytail on" : "Ponytail off")} /></div>
+    <div class="ts-row">
+      <div class="grow"><div class="ts-t">Trim old tool output<${Lock} k="compactEnabled" /></div>
+        <div class="ts-d">Keep the last N tool results; older ones become a short marker</div></div>
+      <select class="input" style="width:118px" value=${s.compactKeepToolResults} disabled=${!s.compactEnabled || locked("compactEnabled")} onChange=${(e) => save({ compactKeepToolResults: +e.target.value })}>
+        ${[2, 4, 6, 8, 12, 20].map((n) => html`<option value=${n}>${n} results</option>`)}
+      </select>
+      <${Toggle} on=${s.compactEnabled} disabled=${locked("compactEnabled")} onChange=${(v) => save({ compactEnabled: v }, v ? "Tool-output trimming on" : "Tool-output trimming off")} /></div>
+    <div class="ts-row">
+      <div class="grow"><div class="ts-t">Dedupe repeated tool output<${Lock} k="dedupeEnabled" /></div>
+        <div class="ts-d">Replace a repeated identical tool result with a short reference</div></div>
+      <${Toggle} on=${s.dedupeEnabled} disabled=${locked("dedupeEnabled")} onChange=${(v) => save({ dedupeEnabled: v }, v ? "Dedupe on" : "Dedupe off")} /></div>
     <div class="ts-row last">
       <div class="grow"><div class="ts-t">Custom system prompt</div>
-        <div class="ts-d">Appends your own instruction to every request, independently of the savers above</div>
+        <div class="ts-d">Appends your own instruction to every request, independently of the savers above</div>${promptNote(sav.promptCustom)}
         ${s.customPromptEnabled && html`<div class="col" style="gap:8px;margin-top:10px">
           <textarea class="input" rows="4" maxlength="8000" placeholder="e.g. Always answer in British English." value=${prompt} onInput=${(e) => setPrompt(e.target.value)}></textarea>
           <div class="row" style="gap:8px"><span class="small muted grow">${prompt.trim().length} characters</span>

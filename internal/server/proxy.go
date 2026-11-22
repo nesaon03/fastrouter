@@ -175,9 +175,9 @@ func (s *Server) route(w http.ResponseWriter, p *proxyReq, targets []router.Targ
 			writeError(w, p.cf, http.StatusBadRequest, "invalid_request_error", "could not read request: "+err.Error())
 			return
 		}
-		var saverTag string
+		var saverStats saver.Stats
 		if sv := s.saver.Load(); sv.Enabled() && !saver.OptedOut(p.r.Header) {
-			upBody, saverTag = sv.Apply(p.r.Context(), upBody, uf, t.Model)
+			upBody, saverStats = sv.Apply(p.r.Context(), upBody, uf, t.Model)
 		}
 		var codex *login.CodexRequest
 		if t.Provider.Login == login.Codex && uf == tr.Responses {
@@ -228,7 +228,7 @@ func (s *Server) route(w http.ResponseWriter, p *proxyReq, targets []router.Targ
 					u += "/" + gemModel + ":generateContent"
 				}
 			}
-			a := attempt{p: p, t: t, acct: acct, uf: uf, url: u, body: body, codex: codex, ad: ad, saverTag: saverTag,
+			a := attempt{p: p, t: t, acct: acct, uf: uf, url: u, body: body, codex: codex, ad: ad, saverStats: saverStats,
 				canRetry: i < len(order)-1 || anyUsable(targets[ti+1:])}
 			live := s.inflightFor(t.Provider.ID)
 			live.Add(1)
@@ -337,16 +337,16 @@ func (s *Server) upstreamBody(p *proxyReq, t router.Target, uf tr.Format) ([]byt
 
 // attempt is one upstream call.
 type attempt struct {
-	p        *proxyReq
-	t        router.Target
-	acct     *router.Account
-	uf       tr.Format
-	url      string
-	body     []byte
-	codex    *login.CodexRequest // shaped Codex request (Codex targets only)
-	ad       *oauth.Adapter      // OAuth provider adapter (nil otherwise)
-	saverTag string              // token savers that ran on this target's body
-	canRetry bool                // another account or target is left to fail over to
+	p          *proxyReq
+	t          router.Target
+	acct       *router.Account
+	uf         tr.Format
+	url        string
+	body       []byte
+	codex      *login.CodexRequest // shaped Codex request (Codex targets only)
+	ad         *oauth.Adapter      // OAuth provider adapter (nil otherwise)
+	saverStats saver.Stats         // what the token savers changed on this body
+	canRetry   bool                // another account or target is left to fail over to
 }
 
 var (
@@ -383,8 +383,8 @@ func (s *Server) attempt(w http.ResponseWriter, a *attempt) (bool, *upstreamErr)
 	// Token saver activity is counted as soon as an upstream call is actually
 	// sent (even if the upstream fails in a test/demo environment), while the
 	// response header is only attached on the winning response in setResponseHeaders.
-	if a.saverTag != "" {
-		s.noteSaverTag(a.saverTag)
+	if a.saverStats.Tag != "" {
+		s.noteSaverTag(a.saverStats.Tag)
 	}
 	var resp *http.Response
 	p.tm.send()
@@ -778,8 +778,8 @@ func setResponseHeaders(h http.Header, resp *http.Response, a *attempt, ct strin
 	if a.uf != a.p.cf {
 		h.Set("X-FastRouter-Translated", a.uf.String()+"->"+a.p.cf.String())
 	}
-	if a.saverTag != "" {
-		h.Set(saver.TagHeader, a.saverTag)
+	if a.saverStats.Tag != "" {
+		h.Set(saver.TagHeader, a.saverStats.Tag)
 	} else {
 		h.Del(saver.TagHeader)
 	}

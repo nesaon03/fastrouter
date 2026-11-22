@@ -247,6 +247,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("PATCH /api/admin/keys/{id}", s.adminWrite(s.handleKeyUpdate))
 	mux.Handle("DELETE /api/admin/keys/{id}", s.adminWrite(s.handleKeyDelete))
 	mux.Handle("PATCH /api/admin/settings", s.adminWrite(s.handleSettingsUpdate))
+	mux.Handle("POST /api/admin/savers/preview", s.adminWrite(s.handleSaverPreview))
 	mux.Handle("GET /api/admin/logs/stream", s.adminRead(s.handleLogStream))
 	mux.Handle("DELETE /api/admin/logs", s.adminWrite(s.handleLogClear))
 	mux.Handle("POST /api/admin/providers/test", s.adminWrite(s.handleProviderTest))

@@ -6,9 +6,12 @@ package server
 // rather than echoing a switch back at the user.
 
 import (
+	"net/http"
 	"strings"
 	"sync/atomic"
 	"time"
+
+	"github.com/zenpo/fastrouter/internal/saver"
 )
 
 // saverNames are the four savers, in the order the page shows them.
@@ -100,4 +103,56 @@ func (s *Server) saverRunsView() map[string]any {
 		out[name] = entry
 	}
 	return out
+}
+
+// savingsView is the Token Saver page's scoreboard: net tokens saved, prompt
+// tokens added, and the average answer size for the break-even hint.
+type savingsView struct {
+	Window         string  `json:"window"`
+	SavedTokens    int64   `json:"savedTokens"`
+	AddedTokens    int64   `json:"addedTokens"`
+	SavedCost      float64 `json:"savedCost"`
+	Requests       int64   `json:"requests"`
+	AvgOutput      int64   `json:"avgOutputTokens"`
+	PromptCaveman  int64   `json:"promptCaveman"`
+	PromptPonytail int64   `json:"promptPonytail"`
+	PromptCustom   int64   `json:"promptCustom"`
+}
+
+func (s *Server) saverSavingsView() savingsView {
+	v := savingsView{Window: "30d"}
+	if s.st != nil {
+		if t, err := s.st.SaverTotals(time.Now().Add(-30 * 24 * time.Hour)); err == nil {
+			v.SavedTokens, v.AddedTokens, v.SavedCost = t.SavedInput, t.AddedInput, t.SavedCost
+			v.Requests = t.OK
+			if t.OK > 0 {
+				v.AvgOutput = t.Output / t.OK
+			}
+		}
+	}
+	if sv := s.saver.Load(); sv != nil {
+		pc := sv.PromptCost()
+		v.PromptCaveman, v.PromptPonytail, v.PromptCustom = pc.Caveman, pc.Ponytail, pc.Custom
+	}
+	return v
+}
+
+// handleSaverPreview runs RTK's detector on pasted text, so the dashboard can
+// show what compression would do without sending a request.
+func (s *Server) handleSaverPreview(w http.ResponseWriter, r *http.Request) {
+	var in struct {
+		Text string `json:"text"`
+	}
+	if !decodeStrict(w, r, &in) {
+		return
+	}
+	if len(in.Text) > 500<<10 {
+		adminErr(w, http.StatusBadRequest, "text is too large (max 500 KB)")
+		return
+	}
+	out, filter, ok := saver.PreviewRTK(in.Text)
+	adminJSON(w, http.StatusOK, map[string]any{
+		"compressed": out, "filter": filter, "changed": ok,
+		"bytesIn": len(in.Text), "bytesOut": len(out),
+	})
 }

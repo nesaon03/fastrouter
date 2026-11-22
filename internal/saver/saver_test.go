@@ -166,9 +166,9 @@ func TestApplyOrderAndTag(t *testing.T) {
 	body, _ := json.Marshal(map[string]any{"model": "up-model", "messages": []any{
 		map[string]any{"role": "user", "content": "a long user message"},
 		map[string]any{"role": "tool", "tool_call_id": "1", "content": grep}}})
-	out, tag := s.Apply(context.Background(), body, tr.OpenAI, "up-model")
-	if tag != "RTK:1,HEADROOM,CAVEMAN:ultra,PONYTAIL:ultra" {
-		t.Fatalf("tag %q", tag)
+	out, st := s.Apply(context.Background(), body, tr.OpenAI, "up-model")
+	if st.Tag != "RTK:1,HEADROOM,CAVEMAN:ultra,PONYTAIL:ultra" {
+		t.Fatalf("tag %q", st.Tag)
 	}
 	var got struct {
 		Messages []struct{ Role, Content string }
@@ -301,9 +301,9 @@ func TestHeadroomArgs(t *testing.T) {
 func TestCustomPrompt(t *testing.T) {
 	set := map[string]json.RawMessage{"rtkEnabled": json.RawMessage(`false`), "customPromptEnabled": json.RawMessage(`true`), "customPrompt": json.RawMessage(`"  Answer in French.  "`)}
 	s := New(set, config.TokenSavers{})
-	out, tag := s.Apply(context.Background(), []byte(`{"model":"m","messages":[{"role":"user","content":"hi"}]}`), tr.OpenAI, "m")
-	if tag != "CUSTOMPROMPT:17c" || !strings.Contains(string(out), "Answer in French.") {
-		t.Fatalf("tag %q body %s", tag, out)
+	out, st := s.Apply(context.Background(), []byte(`{"model":"m","messages":[{"role":"user","content":"hi"}]}`), tr.OpenAI, "m")
+	if st.Tag != "CUSTOMPROMPT:17c" || !strings.Contains(string(out), "Answer in French.") {
+		t.Fatalf("tag %q body %s", st.Tag, out)
 	}
 	set["customPromptEnabled"] = json.RawMessage(`false`)
 	if New(set, config.TokenSavers{}).Enabled() {

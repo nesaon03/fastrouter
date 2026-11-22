@@ -15,6 +15,9 @@ import (
 type usageItem struct {
 	ev            store.UsageEvent
 	model, prefix string // upstream model and provider alias, for pricing
+	savedBytes    int    // gross input bytes removed by the savers
+	addedBytes    int    // prompt bytes injected by the savers
+	tag           string
 }
 
 // recorder prices and writes usage events in the background, off the request path.
@@ -49,10 +52,18 @@ func newRecorder(st *store.Store) *recorder {
 					return
 				}
 				e := it.ev
-				if t := r.prices.Load(); t != nil && (e.Input > 0 || e.Output > 0) {
-					e.Cost = t.Lookup(it.model, e.Provider, it.prefix).Cost(pricing.Tokens{
-						Input: e.Input, Output: e.Output, CacheRead: e.CacheRead, CacheWrite: e.CacheWrite, Reasoning: e.Reasoning})
+				if t := r.prices.Load(); t != nil {
+					if e.Input > 0 || e.Output > 0 {
+						e.Cost = t.Lookup(it.model, e.Provider, it.prefix).Cost(pricing.Tokens{
+							Input: e.Input, Output: e.Output, CacheRead: e.CacheRead, CacheWrite: e.CacheWrite, Reasoning: e.Reasoning})
+					}
+					if saved := estimateTokens(it.savedBytes); saved > 0 {
+						e.SavedInput = saved
+						e.SavedCost = t.Lookup(it.model, e.Provider, it.prefix).Cost(pricing.Tokens{Input: saved})
+					}
+					e.AddedInput = estimateTokens(it.addedBytes)
 				}
+				e.SaverTag = it.tag
 				batch = append(batch, e)
 				if len(batch) >= 256 {
 					flush()
@@ -91,6 +102,14 @@ func (r *recorder) close() {
 	<-r.done
 }
 
+// estimateTokens approximates tokens from bytes (4 bytes per token, rounded up).
+func estimateTokens(n int) int64 {
+	if n <= 0 {
+		return 0
+	}
+	return int64((n + 3) / 4)
+}
+
 // record queues one attempt's outcome and token usage.
 func (s *Server) record(a *attempt, start time.Time, status int, u tr.Usage) {
 	keyID := ""
@@ -102,5 +121,6 @@ func (s *Server) record(a *attempt, start time.Time, status int, u tr.Usage) {
 			Status: status, Latency: time.Since(start), Input: int64(u.Input), Output: int64(u.Output),
 			CacheRead: int64(u.CacheRead), CacheWrite: int64(u.CacheWrite), Reasoning: int64(u.Reasoning)},
 		model: a.t.Model, prefix: a.t.Provider.Prefix,
+		savedBytes: a.saverStats.SavedBytes(), addedBytes: a.saverStats.PromptAdded, tag: a.saverStats.Tag,
 	})
 }

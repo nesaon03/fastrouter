@@ -17,6 +17,10 @@ var migrations = []string{
 	`ALTER TABLE usage ADD COLUMN cache_write INTEGER DEFAULT 0`,
 	`ALTER TABLE usage ADD COLUMN reasoning INTEGER DEFAULT 0`,
 	`ALTER TABLE usage ADD COLUMN cost REAL DEFAULT 0`,
+	`ALTER TABLE usage ADD COLUMN saved_input INTEGER DEFAULT 0`,
+	`ALTER TABLE usage ADD COLUMN added_input INTEGER DEFAULT 0`,
+	`ALTER TABLE usage ADD COLUMN saved_cost REAL DEFAULT 0`,
+	`ALTER TABLE usage ADD COLUMN saver_tag TEXT DEFAULT ''`,
 	`ALTER TABLE connections ADD COLUMN tokens_in INTEGER DEFAULT 0`,
 	`ALTER TABLE connections ADD COLUMN tokens_out INTEGER DEFAULT 0`,
 	`ALTER TABLE connections ADD COLUMN cost REAL DEFAULT 0`,
@@ -57,6 +61,9 @@ type UsageEvent struct {
 
 	Input, Output, CacheRead, CacheWrite, Reasoning int64   // tokens, from the usage fields
 	Cost                                            float64 // USD, from the pricing table
+	SavedInput, AddedInput                          int64   // estimated tokens, from the token savers
+	SavedCost                                       float64 // USD, from the pricing table
+	SaverTag                                        string
 }
 
 // WriteUsage records a batch of events in one transaction.
@@ -67,7 +74,8 @@ func (s *Store) WriteUsage(events []UsageEvent) error {
 	}
 	defer tx.Rollback()
 	ins, err := tx.Prepare(`INSERT INTO usage (ts, connection_id, model, status, latency_ms, provider, key_id,
-		input, output, cache_read, cache_write, reasoning, cost) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)`)
+		input, output, cache_read, cache_write, reasoning, cost, saved_input, added_input, saved_cost, saver_tag)
+		VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`)
 	if err != nil {
 		return err
 	}
@@ -83,7 +91,8 @@ func (s *Store) WriteUsage(events []UsageEvent) error {
 			fail = 1
 		}
 		if _, err := ins.Exec(ts, e.ConnectionID, e.Model, e.Status, e.Latency.Milliseconds(), e.Provider, e.KeyID,
-			e.Input, e.Output, e.CacheRead, e.CacheWrite, e.Reasoning, e.Cost); err != nil {
+			e.Input, e.Output, e.CacheRead, e.CacheWrite, e.Reasoning, e.Cost,
+			e.SavedInput, e.AddedInput, e.SavedCost, e.SaverTag); err != nil {
 			return err
 		}
 		if e.ConnectionID != "" {
@@ -108,6 +117,9 @@ type UsageRow struct {
 	CacheWrite int64   `json:"cache_write_tokens"`
 	Reasoning  int64   `json:"reasoning_tokens"`
 	Cost       float64 `json:"cost_usd"`
+	SavedInput int64   `json:"saved_input_tokens"`
+	AddedInput int64   `json:"added_input_tokens"`
+	SavedCost  float64 `json:"saved_cost_usd"`
 	AvgLatency int64   `json:"avg_latency_ms"`
 }
 
@@ -119,7 +131,8 @@ func (s *Store) UsageReport(since time.Time, by string) ([]UsageRow, error) {
 	}
 	q := `SELECT ` + col + `, COALESCE(MAX(c.name),''), COALESCE(MAX(u.provider),''), COUNT(*),
 		SUM(CASE WHEN u.status BETWEEN 200 AND 299 THEN 0 ELSE 1 END),
-		SUM(u.input), SUM(u.output), SUM(u.cache_read), SUM(u.cache_write), SUM(u.reasoning), SUM(u.cost), CAST(AVG(u.latency_ms) AS INTEGER)
+		SUM(u.input), SUM(u.output), SUM(u.cache_read), SUM(u.cache_write), SUM(u.reasoning), SUM(u.cost),
+		SUM(u.saved_input), SUM(u.added_input), SUM(u.saved_cost), CAST(AVG(u.latency_ms) AS INTEGER)
 		FROM usage u LEFT JOIN connections c ON c.id = u.connection_id
 		WHERE u.ts >= ? GROUP BY 1 ORDER BY 4 DESC`
 	rows, err := s.db.Query(q, since.UTC().Format(time.RFC3339Nano))
@@ -131,7 +144,8 @@ func (s *Store) UsageReport(since time.Time, by string) ([]UsageRow, error) {
 	for rows.Next() {
 		var r UsageRow
 		if err := rows.Scan(&r.Key, &r.Name, &r.Provider, &r.Requests, &r.Failures, &r.Input, &r.Output,
-			&r.CacheRead, &r.CacheWrite, &r.Reasoning, &r.Cost, &r.AvgLatency); err != nil {
+			&r.CacheRead, &r.CacheWrite, &r.Reasoning, &r.Cost,
+			&r.SavedInput, &r.AddedInput, &r.SavedCost, &r.AvgLatency); err != nil {
 			return nil, err
 		}
 		if by != "account" {
@@ -147,17 +161,21 @@ func (s *Store) UsageReport(since time.Time, by string) ([]UsageRow, error) {
 
 // UsageEntry is one recorded attempt, for the recent-requests list.
 type UsageEntry struct {
-	At        string  `json:"at"`
-	Provider  string  `json:"provider"`
-	Model     string  `json:"model"`
-	Account   string  `json:"account,omitempty"`
-	KeyID     string  `json:"keyId,omitempty"`
-	Status    int     `json:"status"`
-	LatencyMs int64   `json:"latency_ms"`
-	Input     int64   `json:"input_tokens"`
-	Output    int64   `json:"output_tokens"`
-	CacheRead int64   `json:"cache_read_tokens"`
-	Cost      float64 `json:"cost_usd"`
+	At         string  `json:"at"`
+	Provider   string  `json:"provider"`
+	Model      string  `json:"model"`
+	Account    string  `json:"account,omitempty"`
+	KeyID      string  `json:"keyId,omitempty"`
+	Status     int     `json:"status"`
+	LatencyMs  int64   `json:"latency_ms"`
+	Input      int64   `json:"input_tokens"`
+	Output     int64   `json:"output_tokens"`
+	CacheRead  int64   `json:"cache_read_tokens"`
+	Cost       float64 `json:"cost_usd"`
+	SavedInput int64   `json:"saved_input_tokens"`
+	AddedInput int64   `json:"added_input_tokens"`
+	SavedCost  float64 `json:"saved_cost_usd"`
+	SaverTag   string  `json:"saver_tag,omitempty"`
 }
 
 // UsageEntries lists attempts newest first. provider filters when not "".
@@ -173,7 +191,8 @@ func (s *Store) UsageEntries(since time.Time, provider string, limit, offset int
 		return nil, 0, err
 	}
 	rows, err := s.db.Query(`SELECT u.ts, COALESCE(u.provider,''), u.model, COALESCE(c.name,''), COALESCE(u.key_id,''), u.status, u.latency_ms,
-		u.input, u.output, u.cache_read, u.cost FROM usage u LEFT JOIN connections c ON c.id = u.connection_id
+		u.input, u.output, u.cache_read, u.cost, u.saved_input, u.added_input, u.saved_cost, COALESCE(u.saver_tag,'')
+		FROM usage u LEFT JOIN connections c ON c.id = u.connection_id
 		WHERE `+where+` ORDER BY u.ts DESC LIMIT ? OFFSET ?`, append(args, limit, offset)...)
 	if err != nil {
 		return nil, 0, err
@@ -182,12 +201,33 @@ func (s *Store) UsageEntries(since time.Time, provider string, limit, offset int
 	out := []UsageEntry{}
 	for rows.Next() {
 		var e UsageEntry
-		if err := rows.Scan(&e.At, &e.Provider, &e.Model, &e.Account, &e.KeyID, &e.Status, &e.LatencyMs, &e.Input, &e.Output, &e.CacheRead, &e.Cost); err != nil {
+		if err := rows.Scan(&e.At, &e.Provider, &e.Model, &e.Account, &e.KeyID, &e.Status, &e.LatencyMs, &e.Input, &e.Output, &e.CacheRead, &e.Cost,
+			&e.SavedInput, &e.AddedInput, &e.SavedCost, &e.SaverTag); err != nil {
 			return nil, 0, err
 		}
 		out = append(out, e)
 	}
 	return out, total, rows.Err()
+}
+
+// SaverTotals aggregates the token-saver columns for a window.
+type SaverTotals struct {
+	Requests   int64
+	OK         int64
+	Output     int64
+	SavedInput int64
+	AddedInput int64
+	SavedCost  float64
+}
+
+// SaverTotals sums token-saver savings and output volume since a time.
+func (s *Store) SaverTotals(since time.Time) (SaverTotals, error) {
+	var t SaverTotals
+	err := s.db.QueryRow(`SELECT COUNT(*), COALESCE(SUM(CASE WHEN status BETWEEN 200 AND 299 THEN 1 ELSE 0 END),0),
+		COALESCE(SUM(output),0), COALESCE(SUM(saved_input),0), COALESCE(SUM(added_input),0), COALESCE(SUM(saved_cost),0)
+		FROM usage WHERE ts >= ?`, since.UTC().Format(time.RFC3339Nano)).
+		Scan(&t.Requests, &t.OK, &t.Output, &t.SavedInput, &t.AddedInput, &t.SavedCost)
+	return t, err
 }
 
 // UsageBucket is one hour of traffic (UTC hour start).

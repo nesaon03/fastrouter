@@ -623,6 +623,23 @@ textarea.input { height:auto; padding:8px 12px; resize:vertical; }
 .ts-t { font-weight:500; font-size:14px; display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
 .ts-d { font-size:13px; color:var(--muted); margin-top:3px; }
 .ts-link { font-size:12px; font-weight:400; color:var(--primary); text-decoration:underline; }
+.ts-save { margin:8px 0 4px; padding:14px 16px; border:1px solid var(--border-subtle); border-radius:12px;
+  background:linear-gradient(135deg, rgba(229,106,74,.08), var(--surface-2)); }
+.ts-save-head { display:flex; align-items:center; gap:7px; font-size:11px; font-weight:600;
+  letter-spacing:.06em; text-transform:uppercase; color:var(--muted); }
+.ts-save-head .ms { font-size:15px; color:var(--primary); }
+.ts-save-grid { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-top:10px; }
+.ts-save-grid .label { display:block; font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); }
+.ts-save-grid .value { display:block; font-size:19px; font-weight:600; font-variant-numeric:tabular-nums; margin-top:2px; }
+.ts-save-grid .sub { display:block; font-size:10px; color:var(--muted); }
+.ts-save-note { font-size:11px; color:var(--muted); margin:10px 0 0; }
+.ts-note { display:block; font-size:11px; color:var(--muted); margin-top:5px; }
+.ts-note.warn { color:var(--amber-fg); }
+.ts-preview { margin-top:12px; padding-left:12px; border-left:2px solid var(--border); display:flex; flex-direction:column; gap:8px; }
+.ts-preview textarea { min-height:88px; }
+.ts-preview-stats { display:flex; flex-wrap:wrap; gap:10px; align-items:center; font-size:11px; color:var(--muted); }
+.ts-preview-stats b { color:var(--text); font-variant-numeric:tabular-nums; }
+.ts-preview .code-box { max-height:220px; overflow:auto; }
 .chip.ok, .chip.warn, .chip.off, .chip.bad { height:auto; font-family:inherit; font-size:11.5px; padding:2px 8px; border-radius:5px; font-weight:500; border:0; }
 .chip.ok { background:rgba(34,197,94,.14); color:var(--green-fg); } .chip.warn { background:rgba(245,158,11,.16); color:var(--amber-fg); }
 /* off is neutral, not a warning: a saver you turned off is not a problem. */

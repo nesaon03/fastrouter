@@ -783,6 +783,7 @@ func (s *Server) handleAdminState(w http.ResponseWriter, r *http.Request) {
 		"settings":    s.settingsView(sn),
 		"warnings":    maskWarnings(sn.Warnings),
 		"savers":      s.saverRunsView(),
+		"savings":     s.saverSavingsView(),
 		"autostart":   s.autostartState(),
 	})
 }
@@ -859,25 +860,33 @@ func (s *Server) settingsView(sn *store.Snapshot) map[string]any {
 	if ds.Gates != nil {
 		dec["gates"] = ds.Gates
 	}
+	compactKeep := 6
+	get("compactKeepToolResults", &compactKeep)
+	if compactKeep <= 0 {
+		compactKeep = 6
+	}
 	return map[string]any{
-		"rtkEnabled":            b("rtkEnabled", true),
-		"cavemanEnabled":        b("cavemanEnabled", false),
-		"cavemanLevel":          str("cavemanLevel", "full"),
-		"ponytailEnabled":       b("ponytailEnabled", false),
-		"ponytailLevel":         str("ponytailLevel", "full"),
-		"headroomEnabled":       b("headroomEnabled", false),
-		"headroomUrl":           str("headroomUrl", "http://localhost:8787"),
-		"headroomCodeAware":     b("headroomCodeAware", false),
-		"headroomKompress":      b("headroomKompress", true),
-		"customPromptEnabled":   b("customPromptEnabled", false),
-		"customPrompt":          str("customPrompt", ""),
-		"providerThinking":      thinking,
-		"providerStrategies":    strategies,
-		"disabledModels":        disabledModels(sn),
-		"stickyRoundRobinLimit": sticky,
-		"vision":                vis,
-		"decision":              dec,
-		"lockedByConfig":        locked,
+		"rtkEnabled":             b("rtkEnabled", true),
+		"cavemanEnabled":         b("cavemanEnabled", false),
+		"cavemanLevel":           str("cavemanLevel", "full"),
+		"ponytailEnabled":        b("ponytailEnabled", false),
+		"ponytailLevel":          str("ponytailLevel", "full"),
+		"compactEnabled":         b("compactEnabled", false),
+		"compactKeepToolResults": compactKeep,
+		"dedupeEnabled":          b("dedupeEnabled", false),
+		"headroomEnabled":        b("headroomEnabled", false),
+		"headroomUrl":            str("headroomUrl", "http://localhost:8787"),
+		"headroomCodeAware":      b("headroomCodeAware", false),
+		"headroomKompress":       b("headroomKompress", true),
+		"customPromptEnabled":    b("customPromptEnabled", false),
+		"customPrompt":           str("customPrompt", ""),
+		"providerThinking":       thinking,
+		"providerStrategies":     strategies,
+		"disabledModels":         disabledModels(sn),
+		"stickyRoundRobinLimit":  sticky,
+		"vision":                 vis,
+		"decision":               dec,
+		"lockedByConfig":         locked,
 	}
 }
 
@@ -1600,23 +1609,26 @@ func (s *Server) handleKeyDelete(w http.ResponseWriter, r *http.Request) {
 // ---- settings ----
 
 type settingsIn struct {
-	RTKEnabled            *bool                   `json:"rtkEnabled"`
-	CavemanEnabled        *bool                   `json:"cavemanEnabled"`
-	CavemanLevel          *string                 `json:"cavemanLevel"`
-	PonytailEnabled       *bool                   `json:"ponytailEnabled"`
-	PonytailLevel         *string                 `json:"ponytailLevel"`
-	HeadroomEnabled       *bool                   `json:"headroomEnabled"`
-	HeadroomURL           *string                 `json:"headroomUrl"`
-	HeadroomCodeAware     *bool                   `json:"headroomCodeAware"`
-	HeadroomKompress      *bool                   `json:"headroomKompress"`
-	CustomPromptEnabled   *bool                   `json:"customPromptEnabled"`
-	CustomPrompt          *string                 `json:"customPrompt"`
-	ProviderThinking      map[string]string       `json:"providerThinking"`
-	ProviderStrategies    map[string]strategyView `json:"providerStrategies"`
-	DisabledModels        map[string][]string     `json:"disabledModels"`
-	StickyRoundRobinLimit *int                    `json:"stickyRoundRobinLimit"`
-	Vision                *visionView             `json:"vision"`
-	Decision              *decisionSettingsIn     `json:"decision"`
+	RTKEnabled             *bool                   `json:"rtkEnabled"`
+	CavemanEnabled         *bool                   `json:"cavemanEnabled"`
+	CavemanLevel           *string                 `json:"cavemanLevel"`
+	PonytailEnabled        *bool                   `json:"ponytailEnabled"`
+	PonytailLevel          *string                 `json:"ponytailLevel"`
+	CompactEnabled         *bool                   `json:"compactEnabled"`
+	CompactKeepToolResults *int                    `json:"compactKeepToolResults"`
+	DedupeEnabled          *bool                   `json:"dedupeEnabled"`
+	HeadroomEnabled        *bool                   `json:"headroomEnabled"`
+	HeadroomURL            *string                 `json:"headroomUrl"`
+	HeadroomCodeAware      *bool                   `json:"headroomCodeAware"`
+	HeadroomKompress       *bool                   `json:"headroomKompress"`
+	CustomPromptEnabled    *bool                   `json:"customPromptEnabled"`
+	CustomPrompt           *string                 `json:"customPrompt"`
+	ProviderThinking       map[string]string       `json:"providerThinking"`
+	ProviderStrategies     map[string]strategyView `json:"providerStrategies"`
+	DisabledModels         map[string][]string     `json:"disabledModels"`
+	StickyRoundRobinLimit  *int                    `json:"stickyRoundRobinLimit"`
+	Vision                 *visionView             `json:"vision"`
+	Decision               *decisionSettingsIn     `json:"decision"`
 }
 
 // decisionSettingsIn is a partial update: a nil field is left as it is.
@@ -1643,11 +1655,18 @@ func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 			sn.Settings[k] = b
 		}
 		for k, v := range map[string]*bool{"rtkEnabled": in.RTKEnabled, "cavemanEnabled": in.CavemanEnabled, "ponytailEnabled": in.PonytailEnabled,
+			"compactEnabled": in.CompactEnabled, "dedupeEnabled": in.DedupeEnabled,
 			"headroomEnabled": in.HeadroomEnabled, "headroomCodeAware": in.HeadroomCodeAware, "headroomKompress": in.HeadroomKompress,
 			"customPromptEnabled": in.CustomPromptEnabled} {
 			if v != nil {
 				set(k, *v)
 			}
+		}
+		if in.CompactKeepToolResults != nil {
+			if *in.CompactKeepToolResults < 1 || *in.CompactKeepToolResults > 50 {
+				return bad("keep tool results must be 1 to 50")
+			}
+			set("compactKeepToolResults", *in.CompactKeepToolResults)
 		}
 		for k, v := range map[string]*string{"cavemanLevel": in.CavemanLevel, "ponytailLevel": in.PonytailLevel} {
 			if v != nil {
