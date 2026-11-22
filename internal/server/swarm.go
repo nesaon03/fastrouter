@@ -221,6 +221,12 @@ func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *
 	ctx, cancel := context.WithTimeout(p.r.Context(), swarmHardLimit)
 	defer cancel()
 
+	runID := s.swarms.start(c.Name, agents, judge, rounds)
+	consensus := false
+	// Safety net: a path that returns without an explicit finish still ends the
+	// run instead of leaving a spinner in the dashboard forever.
+	defer func() { s.swarms.finish(runID, swarmError, consensus, "interrupted") }()
+
 	// answers[i] is agent i's latest answer; "" means it has not produced one.
 	answers := make([]string, len(agents))
 	live := make([]bool, len(agents))
@@ -229,6 +235,7 @@ func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *
 	}
 
 	for round := 0; round < rounds && ctx.Err() == nil; round++ {
+		s.swarms.round(runID, round+1)
 		next := make([]string, len(agents))
 		done := make(chan struct {
 			i    int
@@ -238,6 +245,7 @@ func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *
 		waiting := 0
 		for i, model := range agents {
 			if !live[i] {
+				s.swarms.agent(runID, round+1, i, swarmSkipped, 0)
 				continue
 			}
 			q := base
@@ -256,13 +264,24 @@ func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *
 					tr.Message{Role: "user", Parts: []tr.Part{{Type: tr.PartText, Text: swarmRoundPrompt(round, rounds, model, answers[i], peers)}}})
 			}
 			waiting++
+			s.swarms.agent(runID, round+1, i, swarmThinking, 0)
 			go func(i int, model string) {
+				started := time.Now()
 				resp, err := s.internalCall(ctx, p.r, &q, model)
 				text := ""
 				if err == nil {
 					if text = strings.TrimSpace(partsText(resp.Parts)); text == "" {
 						err = fmt.Errorf("%s: empty answer", model)
 					}
+				}
+				ms := time.Since(started).Milliseconds()
+				switch {
+				case err != nil:
+					s.swarms.agent(runID, round+1, i, swarmError, ms)
+				case text == "":
+					s.swarms.agent(runID, round+1, i, swarmEmpty, ms)
+				default:
+					s.swarms.agent(runID, round+1, i, swarmOK, ms)
 				}
 				done <- struct {
 					i    int
@@ -292,6 +311,7 @@ func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *
 			}
 		}
 		deadline.Stop()
+		s.swarms.settleRound(runID, round+1)
 		// An agent that missed a round keeps its previous answer and stays in the
 		// debate; one that never answered at all is out.
 		for i := range agents {
@@ -302,6 +322,7 @@ func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *
 		}
 		if round+1 < rounds && swarmConsensus(answers) {
 			log.Printf("SWARM %s: consensus reached after round %d; skipping remaining debate rounds", c.Name, round+1)
+			consensus = true
 			rounds = round + 1
 			break
 		}
@@ -315,11 +336,13 @@ func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *
 	}
 	switch len(texts) {
 	case 0:
+		s.swarms.finish(runID, swarmError, consensus, "every swarm agent failed")
 		writeError(w, p.cf, http.StatusServiceUnavailable, "api_error", "every swarm agent failed")
 		return
 	case 1:
 		// A debate needs at least two voices; one answer is just the answer.
 		log.Printf("SWARM %s: only %s answered; replying with it directly", c.Name, from[0])
+		s.swarms.finish(runID, swarmDone, consensus, "")
 		s.routeModel(w, p, st, from[0])
 		return
 	}
@@ -329,14 +352,24 @@ func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *
 		tr.Message{Role: "user", Parts: []tr.Part{{Type: tr.PartText, Text: swarmJudgePrompt(rounds, texts)}}})
 	body, err := tr.EmitRequest(p.cf, &j, tr.EmitOptions{Model: judge})
 	if err != nil {
+		s.swarms.finish(runID, swarmError, consensus, "could not build the judge request")
 		writeError(w, p.cf, http.StatusInternalServerError, "api_error", "could not build the judge request: "+err.Error())
 		return
 	}
 	p2 := &proxyReq{r: p.r, cf: p.cf, body: body, model: judge, stream: p.stream}
 	if err := scanHead(body, &p2.head); err != nil {
+		s.swarms.finish(runID, swarmError, consensus, err.Error())
 		writeError(w, p.cf, http.StatusInternalServerError, "api_error", err.Error())
 		return
 	}
 	log.Printf("SWARM %s: judging %d answers after %d rounds with %s", c.Name, len(texts), rounds, judge)
-	s.routeModel(w, p2, st, judge)
+	s.swarms.judge(runID, swarmThinking)
+	sw := &swarmStatusWriter{ResponseWriter: w}
+	s.routeModel(sw, p2, st, judge)
+	if sw.status == 0 || sw.status >= 400 {
+		s.swarms.judge(runID, swarmError)
+	} else {
+		s.swarms.judge(runID, swarmOK)
+	}
+	s.swarms.finish(runID, swarmDone, consensus, "")
 }

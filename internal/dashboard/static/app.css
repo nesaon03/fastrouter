@@ -68,6 +68,36 @@ h1,h2,h3,p { margin:0; }
 .upd-cmd .ms { font-size:14px; }
 .upd-cmd:hover { color:var(--text); border-color:var(--border); }
 .side-update .chip { align-self:flex-start; }
+
+/* ---------- swarm flow diagram ---------- */
+.swarm-box { border-top:1px dashed var(--border-subtle); margin-top:12px; padding-top:2px; }
+.swarm-title { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:600; color:var(--muted);
+  text-transform:uppercase; letter-spacing:.05em; }
+.swarm-title .ms { font-size:15px; }
+.swarm-flow { display:grid; gap:6px 8px; align-items:center; margin-top:10px; }
+.swarm-flow .shead { font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); text-align:center; }
+.swarm-flow .shead.on { color:var(--primary); font-weight:700; }
+.swarm-agent { min-width:0; font-size:11.5px; color:var(--text); }
+.swarm-cell { display:flex; justify-content:center; }
+.swarm-dot { width:14px; height:14px; border-radius:50%; border:1.5px solid var(--border); background:var(--surface-2); display:inline-block; }
+.swarm-dot.ok { background:var(--success); border-color:var(--success); }
+.swarm-dot.thinking { border-color:var(--warning); background:rgba(245,158,11,.25); animation:swarmpulse 1.1s ease-in-out infinite; }
+.swarm-dot.timeout { border-color:var(--warning); }
+.swarm-dot.empty { border-color:var(--warning); background:rgba(245,158,11,.15); }
+.swarm-dot.error { background:var(--danger); border-color:var(--danger); }
+.swarm-dot.skipped { opacity:.3; }
+@keyframes swarmpulse { 0%,100% { transform:scale(.8); opacity:.6 } 50% { transform:scale(1.15); opacity:1 } }
+.swarm-jnode { display:flex; align-items:center; gap:6px; padding:6px 8px; border:1px solid var(--border-subtle); border-radius:9px;
+  background:var(--surface-2); min-width:0; }
+.swarm-jnode .ms { font-size:15px; color:var(--muted); }
+.swarm-jnode .mono { font-size:10.5px; }
+.swarm-jnode.thinking { border-color:var(--warning); }
+.swarm-jnode.ok { border-color:var(--success); }
+.swarm-jnode.error { border-color:var(--danger); }
+.swarm-legend { display:flex; flex-wrap:wrap; gap:10px; margin-top:10px; font-size:10.5px; color:var(--muted); align-items:center; }
+.swarm-legend span { display:inline-flex; align-items:center; gap:5px; }
+.swarm-legend .swarm-dot { width:10px; height:10px; border-width:1px; }
+.swarm-err { color:var(--red-fg); max-width:100%; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .nav { flex:1; padding:8px 16px; overflow-y:auto; display:flex; flex-direction:column; gap:2px; }
 .nav a { display:flex; align-items:center; gap:12px; padding:5px 12px; border-radius:8px; color:var(--muted);
   font-size:13px; font-weight:500; transition:background .15s,color .15s; }

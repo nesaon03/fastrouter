@@ -80,6 +80,9 @@ type Server struct {
 	// so one plan gap costs one failed request per model, not one per call.
 	blocks modelBlock
 
+	// swarms keeps live/recent swarm runs for the Combos page diagram.
+	swarms swarmTracker
+
 	// decCache serves repeated decision judgments without a second engine call.
 	decMu    sync.Mutex
 	decCache map[[32]byte]decisionCacheEntry
@@ -226,6 +229,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/auth/logout", s.adminWrite(s.handleLogout))
 	mux.Handle("POST /api/auth/password", s.adminWrite(s.handleSetPassword))
 	mux.Handle("GET /api/admin/state", s.adminRead(s.handleAdminState))
+	mux.Handle("GET /api/admin/swarm", s.adminRead(http.HandlerFunc(s.handleSwarmRuns)))
 	mux.Handle("GET /api/update", s.dashAuth(http.HandlerFunc(s.handleUpdate)))
 	mux.Handle("POST /api/admin/accounts", s.adminWrite(s.handleAccountCreate))
 	mux.Handle("POST /api/admin/accounts/reorder", s.adminWrite(s.handleAccountReorder))

@@ -397,7 +397,7 @@ func TestSwarmRolesInjectDistinctLenses(t *testing.T) {
 				}
 			}
 			mu.Unlock()
-			oaText("distinct answer from " + k + " with unique details " + strings.Repeat(k, 10))(w, r)
+			oaText("distinct answer from "+k+" with unique details "+strings.Repeat(k, 10))(w, r)
 		}
 	}
 	sc.reply["key-r"] = oaText("judged")
@@ -411,5 +411,109 @@ func TestSwarmRolesInjectDistinctLenses(t *testing.T) {
 	defer mu.Unlock()
 	if sysSaw["a"] == "" || sysSaw["b"] == "" || sysSaw["a"] == sysSaw["b"] {
 		t.Fatalf("expected distinct role system prompts, got a=%q b=%q", sysSaw["a"], sysSaw["b"])
+	}
+}
+
+// The dashboard can read the live/recent swarm run: per-agent per-round states,
+// judge state and the consensus flag.
+func TestSwarmRunTelemetry(t *testing.T) {
+	sc, up := newScripted(t)
+	for _, k := range []string{"a", "b"} {
+		k := k
+		sc.reply["key-"+k] = func(w http.ResponseWriter, r *http.Request) {
+			oaText("answer from "+k+" with enough distinct detail to avoid consensus "+strings.Repeat(k, 20))(w, r)
+		}
+	}
+	sc.reply["key-r"] = oaText("judged answer")
+	s, hs := newTestServer(t, swarmSnap(up.URL, "swarm", []string{"a/m1", "b/m2"},
+		`{"judgeModel":"r/judge","rounds":2}`))
+	resp, out := post(t, hs.URL, `{"model":"team","messages":[{"role":"user","content":"explain X"}]}`)
+	if resp.StatusCode != http.StatusOK || !strings.Contains(out, "judged answer") {
+		t.Fatalf("%d %s", resp.StatusCode, out)
+	}
+
+	rec, got := adminCall(t, s, http.MethodGet, "/api/admin/swarm", nil)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("telemetry: %d %s", rec.Code, rec.Body.String())
+	}
+	runs, _ := got["runs"].([]any)
+	if len(runs) != 1 {
+		t.Fatalf("runs = %v", got["runs"])
+	}
+	run, _ := runs[0].(map[string]any)
+	if run["combo"] != "team" || run["status"] != swarmDone || run["judgeState"] != swarmOK {
+		t.Fatalf("run %v", run)
+	}
+	if run["consensus"] == true {
+		t.Fatal("distinct answers reported as consensus")
+	}
+	if n := len(run["agents"].([]any)); n != 2 {
+		t.Fatalf("agents = %d", n)
+	}
+	states, _ := run["states"].([]any)
+	if len(states) != 2 {
+		t.Fatalf("rounds = %d", len(states))
+	}
+	for r, row := range states {
+		cells, _ := row.([]any)
+		if len(cells) != 2 {
+			t.Fatalf("round %d cells %v", r+1, cells)
+		}
+		for i, c := range cells {
+			if c != swarmOK {
+				t.Fatalf("round %d agent %d = %v, want ok", r+1, i, c)
+			}
+		}
+	}
+}
+
+// An early consensus is recorded with the round it stopped at; rounds that never
+// started are marked skipped, not timed out.
+func TestSwarmRunTelemetryConsensus(t *testing.T) {
+	sc, up := newScripted(t)
+	for _, k := range []string{"a", "b", "c"} {
+		sc.reply["key-"+k] = oaText("The capital of France is Paris.")
+	}
+	sc.reply["key-r"] = oaText("Paris")
+	s, hs := newTestServer(t, swarmSnap(up.URL, "swarm", []string{"a/m1", "b/m2", "c/m3"},
+		`{"judgeModel":"r/judge","rounds":3}`))
+	if resp, out := post(t, hs.URL, `{"model":"team","messages":[{"role":"user","content":"capital?"}]}`); resp.StatusCode != http.StatusOK {
+		t.Fatalf("%d %s", resp.StatusCode, out)
+	}
+	_, got := adminCall(t, s, http.MethodGet, "/api/admin/swarm", nil)
+	runs, _ := got["runs"].([]any)
+	run, _ := runs[0].(map[string]any)
+	if run["consensus"] != true || run["round"] != float64(1) {
+		t.Fatalf("consensus run %v", run)
+	}
+	states, _ := run["states"].([]any)
+	if len(states) != 3 {
+		t.Fatalf("states %v", states)
+	}
+	round2, _ := states[1].([]any)
+	for _, c := range round2 {
+		if c != swarmSkipped {
+			t.Fatalf("unstarted round not skipped: %v", round2)
+		}
+	}
+}
+
+// A failed swarm still leaves a readable run instead of a spinner.
+func TestSwarmRunTelemetryFailure(t *testing.T) {
+	sc, up := newScripted(t)
+	for _, k := range []string{"a", "b"} {
+		sc.reply["key-"+k] = func(w http.ResponseWriter, r *http.Request) {
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}
+	s, hs := newTestServer(t, swarmSnap(up.URL, "swarm", []string{"a/m1", "b/m2"}, `{"rounds":1}`))
+	if resp, _ := post(t, hs.URL, `{"model":"team","messages":[{"role":"user","content":"hi"}]}`); resp.StatusCode != http.StatusServiceUnavailable {
+		t.Fatalf("status %d", resp.StatusCode)
+	}
+	_, got := adminCall(t, s, http.MethodGet, "/api/admin/swarm", nil)
+	runs, _ := got["runs"].([]any)
+	run, _ := runs[0].(map[string]any)
+	if run["status"] != swarmError || run["error"] == "" {
+		t.Fatalf("failed run %v", run)
 	}
 }
