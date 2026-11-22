@@ -71,8 +71,7 @@ h1,h2,h3,p { margin:0; }
 
 /* ---------- swarm flow diagram ---------- */
 .swarm-box { border-top:1px dashed var(--border-subtle); margin-top:12px; padding-top:2px; }
-.swarm-title { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:600; color:var(--muted);
-  text-transform:uppercase; letter-spacing:.05em; }
+.swarm-title { display:inline-flex; align-items:center; gap:6px; font-size:11.5px; font-weight:600; color:var(--muted); }
 .swarm-title .ms { font-size:15px; }
 .swarm-flow { display:grid; gap:6px 8px; align-items:center; margin-top:10px; }
 .swarm-flow .shead { font-size:10px; letter-spacing:.05em; text-transform:uppercase; color:var(--muted); text-align:center; }
