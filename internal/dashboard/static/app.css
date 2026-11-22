@@ -152,6 +152,12 @@ h1,h2,h3,p { margin:0; }
   border:1px solid var(--border-subtle); font-size:9px; }
 .swarm-tr-text { font-size:12px; line-height:1.5; white-space:pre-wrap; color:var(--text);
   background:var(--surface-2); border-radius:8px; padding:8px 10px; }
+.swarm-tr-final { border-left:2px solid var(--primary); }
+.swarm-hist { display:flex; flex-direction:column; gap:8px; }
+.swarm-hist-row { display:flex; align-items:center; gap:10px; width:100%; padding:10px 12px;
+  border:1px solid var(--border-subtle); border-radius:10px; background:var(--surface-2);
+  color:var(--text); text-align:left; cursor:pointer; }
+.swarm-hist-row:hover { border-color:var(--primary); background:var(--surface-3); }
 .swarm-tr-judge { display:flex; align-items:center; justify-content:space-between; gap:8px; }
 .swarm-judge-card { position:relative; display:flex; align-items:center; gap:8px; min-width:0; padding:8px 10px;
   border:1px solid var(--border-subtle); border-radius:12px; background:linear-gradient(135deg, var(--surface-2), var(--surface)); z-index:2; }

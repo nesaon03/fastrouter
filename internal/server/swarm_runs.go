@@ -6,6 +6,9 @@ package server
 // observability only - nothing here changes routing.
 
 import (
+	"bytes"
+	"encoding/json"
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -43,17 +46,20 @@ type swarmRun struct {
 	Started    time.Time  `json:"started"`
 	Updated    time.Time  `json:"updated"`
 	ElapsedMS  int64      `json:"elapsedMs"`
-	States     [][]string `json:"states"` // [round][agent]
-	Millis     [][]int64  `json:"millis"` // [round][agent]
-	Texts      [][]string `json:"texts"`  // [round][agent] answer snippet, for the debate transcript
+	States     [][]string `json:"states"`              // [round][agent]
+	Millis     [][]int64  `json:"millis"`              // [round][agent]
+	Texts      [][]string `json:"texts"`               // [round][agent] answer snippet, for the debate transcript
+	FullTexts  [][]string `json:"fullTexts,omitempty"` // [round][agent] full answer, persisted only
+	JudgeText  string     `json:"judgeText,omitempty"` // final answer written by the judge
 	JudgeState string     `json:"judgeState"`
 	Error      string     `json:"error,omitempty"`
 }
 
 type swarmTracker struct {
-	mu    sync.Mutex
-	runs  map[string]*swarmRun
-	order []string // newest last
+	mu       sync.Mutex
+	runs     map[string]*swarmRun
+	order    []string // newest last
+	onFinish func(*swarmRun)
 }
 
 func (t *swarmTracker) start(combo string, agents []string, judge string, rounds int) string {
@@ -73,12 +79,14 @@ func (t *swarmTracker) start(combo string, agents []string, judge string, rounds
 		States:     make([][]string, rounds),
 		Millis:     make([][]int64, rounds),
 		Texts:      make([][]string, rounds),
+		FullTexts:  make([][]string, rounds),
 		JudgeState: swarmWaiting,
 	}
 	for i := range r.States {
 		r.States[i] = make([]string, len(agents))
 		r.Millis[i] = make([]int64, len(agents))
 		r.Texts[i] = make([]string, len(agents))
+		r.FullTexts[i] = make([]string, len(agents))
 		for j := range r.States[i] {
 			r.States[i][j] = swarmWaiting
 		}
@@ -163,15 +171,34 @@ func swarmTextSnippet(s string) string {
 	return string(r[:swarmTextChars]) + "…"
 }
 
-// text stores the answer snippet an agent produced in a round, so the board can
-// show what was said and the transcript can show who read whom.
+// swarmFullTextChars bounds the persisted transcript. Agents are capped at
+// 1200 tokens, so 6000 characters covers a normal answer without letting one
+// agent bloat the database.
+const swarmFullTextChars = 6000
+
+func swarmFullText(s string) string {
+	r := []rune(s)
+	if len(r) <= swarmFullTextChars {
+		return s
+	}
+	return string(r[:swarmFullTextChars]) + "…"
+}
+
+// text stores an agent's answer: a snippet for the live board, the full text
+// for the persisted transcript.
 func (t *swarmTracker) text(id string, round, agent int, text string) {
 	t.update(id, func(r *swarmRun) {
 		if round < 1 || round > len(r.Texts) || agent < 0 || agent >= len(r.Texts[round-1]) {
 			return
 		}
 		r.Texts[round-1][agent] = swarmTextSnippet(text)
+		r.FullTexts[round-1][agent] = swarmFullText(text)
 	})
+}
+
+// judgeText stores the final answer the judge (or consensus shortcut) wrote.
+func (t *swarmTracker) judgeText(id, text string) {
+	t.update(id, func(r *swarmRun) { r.JudgeText = swarmFullText(text) })
 }
 
 func (t *swarmTracker) judge(id, state string) {
@@ -192,7 +219,27 @@ func (t *swarmTracker) settleRound(id string, round int) {
 	})
 }
 
+// copyRun deep-copies a run so the persistence callback never reads a live
+// map entry while the request path is still mutating it.
+func copyRun(r *swarmRun) *swarmRun {
+	cp := *r
+	cp.Agents = append([]string{}, r.Agents...)
+	cp.States = make([][]string, len(r.States))
+	cp.Millis = make([][]int64, len(r.Millis))
+	cp.Texts = make([][]string, len(r.Texts))
+	cp.FullTexts = make([][]string, len(r.FullTexts))
+	for j := range r.States {
+		cp.States[j] = append([]string{}, r.States[j]...)
+		cp.Millis[j] = append([]int64{}, r.Millis[j]...)
+		cp.Texts[j] = append([]string{}, r.Texts[j]...)
+		cp.FullTexts[j] = append([]string{}, r.FullTexts[j]...)
+	}
+	return &cp
+}
+
+// finish marks a run as done and persists its full transcript exactly once.
 func (t *swarmTracker) finish(id, status string, consensus bool, errMsg string) {
+	var done *swarmRun
 	t.update(id, func(r *swarmRun) {
 		if r.Status != swarmRunning {
 			return
@@ -213,11 +260,16 @@ func (t *swarmTracker) finish(id, status string, consensus bool, errMsg string) 
 				}
 			}
 		}
+		done = copyRun(r)
 	})
+	if done != nil && t.onFinish != nil {
+		t.onFinish(done)
+	}
 }
 
-// snapshot returns newest first, deep-copied so the JSON encoder never reads a
-// map entry that a live run is mutating.
+// snapshot returns newest first for the live board. Full texts and the judge
+// answer are deliberately dropped: the transcript endpoint serves those on
+// demand, so polling stays small.
 func (t *swarmTracker) snapshot() []swarmRun {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -228,29 +280,42 @@ func (t *swarmTracker) snapshot() []swarmRun {
 		if r == nil || now.Sub(r.Started) > swarmRunTTL {
 			continue
 		}
-		cp := *r
-		cp.Agents = append([]string{}, r.Agents...)
-		cp.States = make([][]string, len(r.States))
-		cp.Millis = make([][]int64, len(r.Millis))
-		cp.Texts = make([][]string, len(r.Texts))
-		for j := range r.States {
-			cp.States[j] = append([]string{}, r.States[j]...)
-			cp.Millis[j] = append([]int64{}, r.Millis[j]...)
-			cp.Texts[j] = append([]string{}, r.Texts[j]...)
-		}
+		cp := copyRun(r)
+		cp.FullTexts = nil
+		cp.JudgeText = ""
 		if cp.Status == swarmRunning {
 			cp.ElapsedMS = now.Sub(cp.Started).Milliseconds()
 		}
-		out = append(out, cp)
+		out = append(out, *cp)
 	}
 	return out
 }
 
-// swarmStatusWriter records the status of a streamed judge reply so the run can
-// show whether the judge actually answered.
+// Swarm transcript persistence. The live board polls small snapshots; finished
+// debates are stored in SQLite with full answers and the judge's final reply.
+func (s *Server) persistSwarmRun(r *swarmRun) {
+	if s.st == nil {
+		return
+	}
+	doc, err := json.Marshal(r)
+	if err != nil {
+		log.Printf("swarm transcript encode failed: %v", err)
+		return
+	}
+	if err := s.st.SaveSwarmRun(r.ID, r.Combo, r.Started, r.Status, r.Consensus, doc); err != nil {
+		log.Printf("swarm transcript save failed: %v", err)
+	}
+}
+
+const swarmJudgeCaptureBytes = 64 << 10
+
+// swarmStatusWriter records the status and a bounded copy of the judge reply so
+// the transcript can show the final answer, for both streamed and buffered
+// responses.
 type swarmStatusWriter struct {
 	http.ResponseWriter
 	status int
+	body   []byte
 }
 
 func (w *swarmStatusWriter) WriteHeader(code int) {
@@ -264,6 +329,12 @@ func (w *swarmStatusWriter) Write(p []byte) (int, error) {
 	if w.status == 0 {
 		w.status = http.StatusOK
 	}
+	if n := swarmJudgeCaptureBytes - len(w.body); n > 0 {
+		if n > len(p) {
+			n = len(p)
+		}
+		w.body = append(w.body, p[:n]...)
+	}
 	return w.ResponseWriter.Write(p)
 }
 
@@ -275,7 +346,121 @@ func (w *swarmStatusWriter) Flush() {
 
 func (w *swarmStatusWriter) Unwrap() http.ResponseWriter { return w.ResponseWriter }
 
-// handleSwarmRuns returns recent swarm executions for the Combos page diagram.
+// judgeText extracts the assistant text from the captured client-format body.
+// It understands OpenAI, Anthropic and Gemini shapes, JSON or SSE.
+func (w *swarmStatusWriter) judgeText() string {
+	var b strings.Builder
+	body := strings.TrimSpace(string(w.body))
+	if strings.HasPrefix(body, "data:") || bytes.Contains(w.body, []byte("\ndata:")) {
+		for _, line := range strings.Split(body, "\n") {
+			line = strings.TrimSpace(line)
+			if !strings.HasPrefix(line, "data:") {
+				continue
+			}
+			d := strings.TrimSpace(strings.TrimPrefix(line, "data:"))
+			if d == "" || d == "[DONE]" {
+				continue
+			}
+			var v any
+			if json.Unmarshal([]byte(d), &v) != nil {
+				continue
+			}
+			b.WriteString(swarmExtractText(v))
+		}
+	} else {
+		var v any
+		if json.Unmarshal(w.body, &v) == nil {
+			b.WriteString(swarmExtractText(v))
+		}
+	}
+	return strings.TrimSpace(b.String())
+}
+
+func swarmExtractText(v any) string {
+	m, ok := v.(map[string]any)
+	if !ok {
+		return ""
+	}
+	if ch, ok := m["choices"].([]any); ok && len(ch) > 0 {
+		if c, ok := ch[0].(map[string]any); ok {
+			for _, key := range []string{"delta", "message"} {
+				if d, ok := c[key].(map[string]any); ok {
+					if t, ok := d["content"].(string); ok {
+						return t
+					}
+					if parts, ok := d["content"].([]any); ok {
+						return swarmPartsText(parts)
+					}
+				}
+			}
+			if t, ok := c["text"].(string); ok {
+				return t
+			}
+		}
+	}
+	if d, ok := m["delta"].(map[string]any); ok {
+		if t, ok := d["text"].(string); ok {
+			return t
+		}
+	}
+	if t, ok := m["text"].(string); ok {
+		return t
+	}
+	if c, ok := m["content"].(string); ok {
+		return c
+	}
+	if c, ok := m["content"].([]any); ok {
+		return swarmPartsText(c)
+	}
+	if cands, ok := m["candidates"].([]any); ok && len(cands) > 0 {
+		if c, ok := cands[0].(map[string]any); ok {
+			if cont, ok := c["content"].(map[string]any); ok {
+				if parts, ok := cont["parts"].([]any); ok {
+					return swarmPartsText(parts)
+				}
+			}
+		}
+	}
+	return ""
+}
+
+func swarmPartsText(parts []any) string {
+	var b strings.Builder
+	for _, p := range parts {
+		if m, ok := p.(map[string]any); ok {
+			if t, ok := m["text"].(string); ok {
+				b.WriteString(t)
+			}
+		}
+	}
+	return b.String()
+}
+
+// handleSwarmRuns returns live/recent runs plus persisted debate metadata.
 func (s *Server) handleSwarmRuns(w http.ResponseWriter, r *http.Request) {
-	adminJSON(w, http.StatusOK, map[string]any{"runs": s.swarms.snapshot()})
+	out := map[string]any{"runs": s.swarms.snapshot()}
+	if s.st != nil {
+		rows, err := s.st.SwarmRuns(20)
+		if err != nil {
+			log.Printf("swarm history failed: %v", err)
+		} else {
+			out["history"] = rows
+		}
+	}
+	adminJSON(w, http.StatusOK, out)
+}
+
+// handleSwarmRun returns one persisted debate's full transcript.
+func (s *Server) handleSwarmRun(w http.ResponseWriter, r *http.Request) {
+	if s.st == nil {
+		adminErr(w, http.StatusServiceUnavailable, "no database")
+		return
+	}
+	doc, err := s.st.SwarmRun(r.PathValue("id"))
+	if err != nil {
+		adminErr(w, http.StatusNotFound, "debate not found")
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_, _ = w.Write(doc)
 }

@@ -1,6 +1,6 @@
 {
   "name": "@zenpo/fastrouter",
-  "version": "0.7.1",
+  "version": "0.7.2",
   "description": "Local AI gateway: one OpenAI/Anthropic/Gemini endpoint in front of every provider you already pay for, with model discovery, combos, decision engines and token savers.",
   "license": "MIT",
   "author": "ZENPO",

@@ -66,13 +66,18 @@ jobs:
   npm:
     needs: release
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write # trusted publishing (OIDC), no long-lived npm token
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           registry-url: https://registry.npmjs.org
-      - name: Publish fastrouter to npm
-        run: npm publish --access public
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+      # Configure the trusted publisher on npmjs.com for @zenpo/fastrouter
+      # (owner nesaon03, repo fastrouter, workflow release.yml). npm 11.15+
+      # exchanges the GitHub OIDC token automatically; NODE_AUTH_TOKEN must be
+      # unset, otherwise it takes precedence and OIDC is skipped.
+      - name: Publish @zenpo/fastrouter to npm
+        run: npm publish --provenance --access public

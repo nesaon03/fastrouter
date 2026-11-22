@@ -408,8 +408,15 @@ func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *
 	case 1:
 		// A debate needs at least two voices; one answer is just the answer.
 		log.Printf("SWARM %s: only %s answered; replying with it directly", c.Name, from[0])
+		sw := &swarmStatusWriter{ResponseWriter: w}
+		s.routeModel(sw, p, st, from[0])
+		s.swarms.judgeText(runID, sw.judgeText())
+		if sw.status >= 400 {
+			s.swarms.judge(runID, swarmError)
+		} else {
+			s.swarms.judge(runID, swarmOK)
+		}
 		s.swarms.finish(runID, swarmDone, consensus, "")
-		s.routeModel(w, p, st, from[0])
 		return
 	}
 
@@ -434,6 +441,7 @@ func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *
 		}
 		log.Printf("SWARM %s: %d agents agree exactly; skipping the judge", c.Name, len(texts))
 		s.swarms.judge(runID, swarmSkipped)
+		s.swarms.judgeText(runID, best)
 		s.swarms.finish(runID, swarmDone, true, "")
 		writeBufferedAnswer(w, p, from[0], &tr.Response{Model: from[0],
 			Parts: []tr.Part{{Type: tr.PartText, Text: best}}, Finish: tr.FinishStop, Usage: sum})
@@ -459,6 +467,7 @@ func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *
 	s.swarms.judge(runID, swarmThinking)
 	sw := &swarmStatusWriter{ResponseWriter: w}
 	s.routeModel(sw, p2, st, judge)
+	s.swarms.judgeText(runID, sw.judgeText())
 	if sw.status == 0 || sw.status >= 400 {
 		s.swarms.judge(runID, swarmError)
 	} else {

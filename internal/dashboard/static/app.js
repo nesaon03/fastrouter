@@ -1569,13 +1569,14 @@ const swarmPlaceholder = (st) => st === "thinking" ? "thinking…" : st === "wai
 function SwarmTranscript({ data, run, combo, onClose }) {
   const agents = run.agents || combo.models || [];
   const rounds = Math.max(1, run.rounds || combo.rounds || 2);
-  const textOf = (r, i) => (run.texts && run.texts[r] && run.texts[r][i]) || "";
+  const texts = run.fullTexts || run.texts;
+  const textOf = (r, i) => (texts && texts[r] && texts[r][i]) || "";
   const stateOf = (r, i) => (run.states && run.states[r] && run.states[r][i]) || "waiting";
   const lastText = (i) => { for (let r = rounds - 1; r >= 0; r--) { const t = textOf(r, i); if (t) return t; } return ""; };
   const judgeInputs = agents.filter((_, i) => lastText(i)).length;
   return html`<${Modal} wide title="Swarm transcript" icon="forum" onClose=${onClose}
     foot=${html`<button class="btn ghost" onClick=${onClose}>Close</button>`}>
-    <div class="swarm-tr-meta"><span class="strong">${combo.name}</span>
+    <div class="swarm-tr-meta"><span class="strong">${run.combo || combo.name}</span>
       <span>${agents.length} agents · ${rounds} rounds · ${run.status === "error" ? "failed" : run.status === "running" ? "running" : "done"}</span></div>
     ${Array.from({ length: rounds }, (_, r) => html`
       <div class="swarm-tr-round" key=${"r" + r}>
@@ -1603,6 +1604,8 @@ function SwarmTranscript({ data, run, combo, onClose }) {
             ${agents.map((a, i) => lastText(i) ? html`<span class="swarm-tr-peer" key=${"j" + i}>${modelInfo(data, a).label || a}</span>` : null)}</div>`}
         </div>
         <span class=${"swarm-tr-state " + (run.judgeState || "waiting")}>${SWARM_STATE[run.judgeState] || run.judgeState}</span></div>
+      ${run.judgeText && html`<div class="swarm-tr-text swarm-tr-final" style="margin-top:10px">${run.judgeText}</div>`}
+      ${!run.judgeText && run.judgeState !== "skipped" && html`<p class="small muted" style="margin:8px 0 0">The final answer is streamed to the client and is not stored in this transcript.</p>`}
     </div>
   </${Modal}>`;
 }
@@ -1612,8 +1615,19 @@ function SwarmTranscript({ data, run, combo, onClose }) {
 // Each cell shows what that agent actually said; the transcript shows who read
 // whom. It is fed by /api/admin/swarm, which the page polls while a swarm combo
 // exists, so a running debate lights up live.
-function SwarmDiagram({ data, combo, run }) {
-  const [open, setOpen] = useState(false);
+function SwarmDiagram({ data, combo, run, history }) {
+  const [tr, setTr] = useState(null);
+  const [histOpen, setHistOpen] = useState(false);
+  const openRun = async (r) => {
+    if (!r) return;
+    try { setTr(await api("GET", "/api/admin/swarm/" + encodeURIComponent(r.id)) || r); }
+    catch (e) { setTr(r); } // a live run is not persisted yet; snippets are enough
+  };
+  const openHistory = async (id) => {
+    try { setTr(await api("GET", "/api/admin/swarm/" + encodeURIComponent(id))); setHistOpen(false); }
+    catch (e) { toast(e.message, "error"); }
+  };
+  const myHistory = (history || []).filter((h) => h.combo === combo.name);
   const agents = (run && run.agents) || combo.models || [];
   const rounds = Math.max(1, (run && run.rounds) || combo.rounds || 2);
   const judge = (run && run.judge) || combo.judgeModel || agents[0] || "";
@@ -1639,7 +1653,8 @@ function SwarmDiagram({ data, combo, run }) {
       </div>
       <div class="row" style="gap:8px;align-items:center">
         <span class="swarm-clock">${run ? fmtMs(run.elapsedMs) : `${rounds} round${rounds === 1 ? "" : "s"}`}</span>
-        ${run && html`<button class="btn ghost xs" onClick=${() => setOpen(true)}><${Icon} n="chat" />Transcript</button>`}
+        ${myHistory.length > 0 && html`<button class="btn ghost xs" onClick=${() => setHistOpen(true)}><${Icon} n="history" />History</button>`}
+        ${run && html`<button class="btn ghost xs" onClick=${() => openRun(run)}><${Icon} n="chat" />Transcript</button>`}
       </div>
     </div>
     <div class="swarm-board" style=${`grid-template-columns:minmax(168px,1.05fr) repeat(${rounds},minmax(150px,1fr) 40px) minmax(190px,1fr)`}>
@@ -1654,7 +1669,7 @@ function SwarmDiagram({ data, combo, run }) {
           const st = stateOf(r, i), ms = msOf(r, i), txt = textOf(r, i);
           return html`<div class=${"swarm-msg " + st + (txt ? " has-text" : "")}
               title=${`${a} · R${r + 1} · ${SWARM_STATE[st] || st}${ms ? " · " + fmtMs(ms) : ""}\n${txt || swarmPlaceholder(st)}`}
-              onClick=${() => setOpen(true)}>
+              onClick=${() => openRun(run)}>
             <div class="swarm-msg-top"><i class=${"swarm-dot " + st}></i><span>${SWARM_STATE[st] || st}</span>${ms ? html`<em>${fmtMs(ms)}</em>` : null}</div>
             <div class="swarm-msg-body">${txt || html`<span class="swarm-msg-wait">${swarmPlaceholder(st)}</span>`}</div>
           </div>`;
@@ -1687,13 +1702,29 @@ function SwarmDiagram({ data, combo, run }) {
       ${run && run.error && html`<span class="swarm-err" title=${run.error}>${run.error}</span>`}
     </div>
     ${!run && html`<p class="small muted" style="margin:8px 0 0">Run this combo to watch each agent answer, debate, then hand off to the judge.</p>`}
-    ${open && run && html`<${SwarmTranscript} data=${data} run=${run} combo=${combo} onClose=${() => setOpen(false)} />`}
+    ${tr && html`<${SwarmTranscript} data=${data} run=${tr} combo=${combo} onClose=${() => setTr(null)} />`}
+    ${histOpen && html`<${SwarmHistory} history=${myHistory} onClose=${() => setHistOpen(false)} onOpen=${openHistory} />`}
   </div>`;
+}
+
+// SwarmHistory lists persisted debates; opening one fetches its full transcript.
+function SwarmHistory({ history, onClose, onOpen }) {
+  return html`<${Modal} title="Past debates" icon="history" onClose=${onClose}
+    foot=${html`<button class="btn ghost" onClick=${onClose}>Close</button>`}>
+    ${history.length === 0 ? html`<p class="small muted">No finished debates yet.</p>`
+      : html`<div class="swarm-hist">${history.map((h) => html`<button class="swarm-hist-row" key=${h.id} onClick=${() => onOpen(h.id)}>
+          <span class="strong grow">${h.combo}</span>
+          <span class="small muted">${new Date(h.started).toLocaleString()}</span>
+          <span class=${"chip " + (h.status === "done" ? "ok" : "bad")}>${h.status}</span>
+          ${h.consensus && html`<span class="chip ok">consensus</span>`}
+        </button>`)}</div>`}
+  </${Modal}>`;
 }
 function CombosPage({ data, reload }) {
   const [modal, setModal] = useState(null);
   const [vm, setVm] = useState(null);
   const [swarmRuns, setSwarmRuns] = useState([]);
+  const [swarmHistory, setSwarmHistory] = useState([]);
   const hasSwarm = data.combos.some((c) => c.strategy === "swarm");
   useEffect(() => {
     if (!hasSwarm) return;
@@ -1701,7 +1732,7 @@ function CombosPage({ data, reload }) {
     const load = async () => {
       try {
         const r = await api("GET", "/api/admin/swarm");
-        if (live) setSwarmRuns(r.runs || []);
+        if (live) { setSwarmRuns(r.runs || []); setSwarmHistory(r.history || []); }
       } catch (e) { /* a failed poll keeps the last diagram */ }
     };
     load();
@@ -1728,7 +1759,7 @@ function CombosPage({ data, reload }) {
           ${c.strategy === "fusion" && html`<div class="small muted" style="margin-top:10px"><${Icon} n="gavel" style="font-size:14px;vertical-align:-2px" /> Judge: ${c.judgeModel ? html`<${ModelTag} data=${data} id=${c.judgeModel} />` : "model 1"}</div>`}
           ${c.strategy === "smart" && html`<div class="small muted" style="margin-top:10px"><${Icon} n="alt_route" style="font-size:14px;vertical-align:-2px" /> Router: ${c.routerEngine === "decision" ? html`<span class="mono">${c.decisionModel || "decision engine"}</span>` : c.routerModel ? html`<${ModelTag} data=${data} id=${c.routerModel} />` : "model 1"}</div>`}
           ${c.strategy === "cascade" && html`<div class="small muted" style="margin-top:10px"><${Icon} n="arrow_downward" style="font-size:14px;vertical-align:-2px" /> Decision: <span class="mono">${c.decisionModel || "auto"}</span></div>`}
-          ${c.strategy === "swarm" && html`<${SwarmDiagram} data=${data} combo=${c} run=${swarmRuns.find((r) => r.combo === c.name)} />`}
+          ${c.strategy === "swarm" && html`<${SwarmDiagram} data=${data} combo=${c} run=${swarmRuns.find((r) => r.combo === c.name)} history=${swarmHistory} />`}
         </div>`)}</div>`}
     <div class="card">
       <div class="card-title"><div><h2><${Icon} n="image" />Vision adapter</h2><p>When a request carries images and the chosen model can't read them, FastRouter tries these vision models first.</p></div>

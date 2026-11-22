@@ -31,7 +31,7 @@ import (
 // Version is the build's version. It defaults to the release the source is on;
 // -ldflags "-X .../server.Version=..." overrides it when the toolchain honours
 // it (main.commit and main.date come from the VCS stamps instead).
-var Version = "0.7.1"
+var Version = "0.7.2"
 
 // Server routes client requests to upstreams.
 type Server struct {
@@ -143,6 +143,7 @@ func New(cfg config.Config, snap *store.Snapshot, st *store.Store) *Server {
 	if st != nil {
 		s.refresher.Store = st
 		s.oauthRefresher.Store = st
+		s.swarms.onFinish = s.persistSwarmRun
 	}
 	s.Reload(snap)
 	return s
@@ -230,6 +231,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("POST /api/auth/password", s.adminWrite(s.handleSetPassword))
 	mux.Handle("GET /api/admin/state", s.adminRead(s.handleAdminState))
 	mux.Handle("GET /api/admin/swarm", s.adminRead(http.HandlerFunc(s.handleSwarmRuns)))
+	mux.Handle("GET /api/admin/swarm/{id}", s.adminRead(http.HandlerFunc(s.handleSwarmRun)))
 	mux.Handle("GET /api/update", s.dashAuth(http.HandlerFunc(s.handleUpdate)))
 	mux.Handle("POST /api/admin/accounts", s.adminWrite(s.handleAccountCreate))
 	mux.Handle("POST /api/admin/accounts/reorder", s.adminWrite(s.handleAccountReorder))

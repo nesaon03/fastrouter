@@ -91,8 +91,8 @@ npm i -g @zenpo/fastrouter@latest
 2. Commit, then tag and push:
 
    ```sh
-   git tag v0.7.0
-   git push origin v0.7.0
+   git tag v0.7.2
+   git push origin v0.7.2
    ```
 
 3. `.github/workflows/release.yml` runs the tests, verifies the tag against both

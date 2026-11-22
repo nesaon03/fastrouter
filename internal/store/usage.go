@@ -38,6 +38,9 @@ var migrations = []string{
 		status TEXT, source TEXT, misses INTEGER DEFAULT 0, caps TEXT DEFAULT '',
 		PRIMARY KEY (provider, model))`,
 	`CREATE INDEX IF NOT EXISTS discovered_provider ON discovered_models(provider)`,
+	`CREATE TABLE IF NOT EXISTS swarm_runs (id TEXT PRIMARY KEY, combo TEXT, started TEXT, status TEXT,
+		consensus INTEGER DEFAULT 0, doc BLOB)`,
+	`CREATE INDEX IF NOT EXISTS swarm_runs_started ON swarm_runs(started)`,
 }
 
 func migrate(db *sql.DB) error {
