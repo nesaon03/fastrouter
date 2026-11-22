@@ -24,6 +24,8 @@ func TestModelUnsupported(t *testing.T) {
 		{404, `{"error":{"message":"model_not_found"}}`, true},
 		{404, `{"error":{"message":"models/gemini-x is not found for API version v1beta"}}`, true},
 		{404, `{"error":{"message":"Deployment not found"}}`, true},
+		// Google Code Assist: no "model" word, but it is a model/account gap.
+		{404, `{"error":{"message":"Requested entity was not found."}}`, true},
 		{400, `{"error":{"message":"unsupported model: foo"}}`, true},
 		{400, `{"error":{"message":"invalid model name"}}`, true},
 		{422, `{"error":{"message":"no such model"}}`, true},
@@ -192,5 +194,41 @@ func TestGeneric404StillCoolsTheAccount(t *testing.T) {
 	}
 	if s.blocks.blocked("a", "whatever", time.Now()) || s.blocks.blocked("a", "another", time.Now()) {
 		t.Fatal("generic 404 must not record a model gap")
+	}
+}
+
+// Antigravity's "Requested entity was not found." is a model gap, not a broken
+// account: the account is skipped for that model after the first 404.
+func TestModelGapGoogleEntity(t *testing.T) {
+	var aHits atomic.Int32
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		key := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+		if key == "key-a" {
+			aHits.Add(1)
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusNotFound)
+			_, _ = io.WriteString(w, `{"error":{"message":"Requested entity was not found."}}`)
+			return
+		}
+		writeOK(w, "any", key)
+	}))
+	defer up.Close()
+	snap := &store.Snapshot{
+		Nodes: []store.Node{node("fk", "fk", up.URL)},
+		Connections: []store.Connection{
+			conn("a", "fk", "key-a", 1),
+			conn("b", "fk", "key-b", 2),
+		},
+	}
+	_, hs := newTestServer(t, snap)
+	body := `{"model":"fk/ag-model","messages":[{"role":"user","content":"hi"}]}`
+	if resp, out := post(t, hs.URL, body); resp.StatusCode != http.StatusOK || !strings.Contains(out, "key-b") {
+		t.Fatalf("first call: %d %s", resp.StatusCode, out)
+	}
+	if resp, out := post(t, hs.URL, body); resp.StatusCode != http.StatusOK || !strings.Contains(out, "key-b") {
+		t.Fatalf("second call: %d %s", resp.StatusCode, out)
+	}
+	if aHits.Load() != 1 {
+		t.Fatalf("Google entity-404 account was retried: %d hits", aHits.Load())
 	}
 }

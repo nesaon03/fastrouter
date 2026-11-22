@@ -86,7 +86,11 @@ func (b *modelBlock) prune(now time.Time) {
 // account-cooldown behaviour.
 func modelUnsupported(status int, msg string) bool {
 	m := strings.ToLower(msg)
-	if !strings.Contains(m, "model") && !strings.Contains(m, "deployment") && !strings.Contains(m, "api version") {
+	// Google Code Assist (Antigravity, Gemini CLI) answers a model the account
+	// cannot use with "Requested entity was not found." - no "model" word, so
+	// the generic guard would miss it and retry the account forever.
+	entityNotFound := strings.Contains(m, "requested entity was not found")
+	if !entityNotFound && !strings.Contains(m, "model") && !strings.Contains(m, "deployment") && !strings.Contains(m, "api version") {
 		return false
 	}
 	switch status {
