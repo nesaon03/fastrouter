@@ -276,3 +276,80 @@ func TestDashboardAssetsServedWithCSP(t *testing.T) {
 		t.Fatal("path escape")
 	}
 }
+
+func TestEnsureDefaultPassword(t *testing.T) {
+	s := newDiscoveryServer(t, "http://127.0.0.1:1/unused")
+	set, err := s.EnsureDefaultPassword()
+	if err != nil || !set {
+		t.Fatalf("ensure: set=%v err=%v", set, err)
+	}
+	sn := s.state.Load().Snap
+	if bcrypt.CompareHashAndPassword([]byte(sn.DashboardPassword), []byte("1234")) != nil {
+		t.Fatalf("hash does not match 1234")
+	}
+	if !defaultPasswordActive(sn) {
+		t.Fatal("default password flag not set")
+	}
+	if set, _ := s.EnsureDefaultPassword(); set {
+		t.Fatal("default password set twice")
+	}
+	// Clearing the password later is a deliberate choice, not a fresh install.
+	if err := s.mutate(func(sn *store.Snapshot) error { sn.DashboardPassword = ""; return nil }); err != nil {
+		t.Fatal(err)
+	}
+	if set, _ := s.EnsureDefaultPassword(); set {
+		t.Fatal("cleared password was reset to the default")
+	}
+	if s.state.Load().Snap.DashboardPassword != "" {
+		t.Fatal("password changed after clear")
+	}
+}
+
+func TestEnsureDefaultPasswordKeepsImported(t *testing.T) {
+	s := newDiscoveryServer(t, "http://127.0.0.1:1/unused")
+	h, _ := bcrypt.GenerateFromPassword([]byte("imported-password"), bcrypt.MinCost)
+	if err := s.mutate(func(sn *store.Snapshot) error { sn.DashboardPassword = string(h); return nil }); err != nil {
+		t.Fatal(err)
+	}
+	set, err := s.EnsureDefaultPassword()
+	if err != nil || set {
+		t.Fatalf("ensure: set=%v err=%v", set, err)
+	}
+	sn := s.state.Load().Snap
+	if bcrypt.CompareHashAndPassword([]byte(sn.DashboardPassword), []byte("imported-password")) != nil {
+		t.Fatal("imported password was replaced")
+	}
+	if defaultPasswordActive(sn) {
+		t.Fatal("imported password marked as default")
+	}
+}
+
+func TestDefaultPasswordLoginAndChange(t *testing.T) {
+	s := newDiscoveryServer(t, "http://127.0.0.1:1/unused")
+	if set, err := s.EnsureDefaultPassword(); err != nil || !set {
+		t.Fatalf("ensure: set=%v err=%v", set, err)
+	}
+	hs := httptest.NewServer(s.Handler())
+	defer hs.Close()
+	hdr := adminSession(t, hs.URL, "1234")
+	_, body := do(t, "GET", hs.URL+"/api/auth/session", "", hdr)
+	var sess map[string]any
+	_ = json.Unmarshal([]byte(body), &sess)
+	if sess["defaultPassword"] != true {
+		t.Fatalf("session default flag = %v", sess["defaultPassword"])
+	}
+	resp, out := do(t, "POST", hs.URL+"/api/auth/password", `{"current":"1234","new":"abcd"}`, hdr)
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("change: %d %s", resp.StatusCode, out)
+	}
+	if r, _ := do(t, "POST", hs.URL+"/api/auth/login", `{"password":"1234"}`, map[string]string{"Content-Type": "application/json"}); r.StatusCode != http.StatusUnauthorized {
+		t.Fatalf("old password still works: %d", r.StatusCode)
+	}
+	hdr = adminSession(t, hs.URL, "abcd")
+	_, body = do(t, "GET", hs.URL+"/api/auth/session", "", hdr)
+	sess = map[string]any{}
+	_ = json.Unmarshal([]byte(body), &sess)
+	if sess["defaultPassword"] != false {
+		t.Fatalf("default flag after change = %v", sess["defaultPassword"])
+	}
+}

@@ -422,6 +422,7 @@ textarea.input { height:auto; padding:8px 12px; resize:vertical; }
 .auth-card .brand-tile .ms { font-size:30px; }
 .auth-card h1 { font-size:24px; font-weight:600; letter-spacing:-.02em; }
 .auth-card form { margin-top:24px; text-align:left; display:flex; flex-direction:column; gap:14px; }
+.auth-card .notice { text-align:left; }
 
 .spin { animation:spin 1s linear infinite; } @keyframes spin { to { transform:rotate(360deg); } }
 .skeleton { background:linear-gradient(90deg,var(--surface-2),var(--surface-3),var(--surface-2)); background-size:200% 100%; animation:sk 1.2s infinite; border-radius:14px; height:120px; }

@@ -180,6 +180,57 @@ func (s *Server) openDashboardOK(r *http.Request) bool {
 	return isLoopback(r.RemoteAddr) && s.openModeRefusal(r) == ""
 }
 
+// Fresh installs start with a known dashboard password and a one-time marker.
+// An imported 9Router password always wins; clearing the password later is not
+// undone by a restart.
+const defaultDashboardPassword = "1234"
+
+const (
+	passwordInitKey    = "dashboardPasswordInitialized"
+	passwordDefaultKey = "dashboardPasswordDefault"
+)
+
+func defaultPasswordActive(sn *store.Snapshot) bool {
+	raw, ok := sn.Settings[passwordDefaultKey]
+	return ok && strings.TrimSpace(string(raw)) == "true"
+}
+
+// EnsureDefaultPassword gives a fresh install the 1234 starting password once.
+// It returns true when it set that password.
+func (s *Server) EnsureDefaultPassword() (bool, error) {
+	if s.st == nil {
+		return false, nil
+	}
+	sn := s.state.Load().Snap
+	if raw, ok := sn.Settings[passwordInitKey]; ok && strings.TrimSpace(string(raw)) == "true" {
+		return false, nil
+	}
+	if sn.DashboardPassword != "" {
+		return false, s.mutate(func(sn *store.Snapshot) error {
+			sn.Settings[passwordInitKey] = json.RawMessage("true")
+			sn.Settings[passwordDefaultKey] = json.RawMessage("false")
+			return nil
+		})
+	}
+	h, err := bcrypt.GenerateFromPassword([]byte(defaultDashboardPassword), bcrypt.DefaultCost)
+	if err != nil {
+		return false, err
+	}
+	set := false
+	err = s.mutate(func(sn *store.Snapshot) error {
+		if sn.DashboardPassword == "" {
+			sn.DashboardPassword = string(h)
+			sn.Settings[passwordDefaultKey] = json.RawMessage("true")
+			set = true
+		} else {
+			sn.Settings[passwordDefaultKey] = json.RawMessage("false")
+		}
+		sn.Settings[passwordInitKey] = json.RawMessage("true")
+		return nil
+	})
+	return set, err
+}
+
 func adminJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.Header().Set("Cache-Control", "no-store")
@@ -238,8 +289,9 @@ func decodeStrict(w http.ResponseWriter, r *http.Request, v any) bool {
 // ---- auth endpoints ----
 
 func (s *Server) handleSession(w http.ResponseWriter, r *http.Request) {
-	pwSet := s.state.Load().Snap.DashboardPassword != ""
-	out := map[string]any{"passwordSet": pwSet, "authenticated": false, "version": Version}
+	sn := s.state.Load().Snap
+	pwSet := sn.DashboardPassword != ""
+	out := map[string]any{"passwordSet": pwSet, "defaultPassword": defaultPasswordActive(sn), "authenticated": false, "version": Version}
 	if se := s.sessionFrom(r); se != nil && (pwSet || s.openDashboardOK(r)) {
 		out["authenticated"], out["csrf"] = true, se.csrf
 	} else if !pwSet {
@@ -305,8 +357,8 @@ func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request) {
 	if !decodeStrict(w, r, &in) {
 		return
 	}
-	if l := len(in.New); l < 8 || l > 200 {
-		adminErr(w, http.StatusBadRequest, "new password must be 8 to 200 characters")
+	if l := len(in.New); l < 4 || l > 200 {
+		adminErr(w, http.StatusBadRequest, "new password must be 4 to 200 characters")
 		return
 	}
 	ip := clientIP(r)
@@ -324,7 +376,12 @@ func (s *Server) handleSetPassword(w http.ResponseWriter, r *http.Request) {
 		adminErr(w, http.StatusInternalServerError, "could not hash password")
 		return
 	}
-	if err := s.mutate(func(sn *store.Snapshot) error { sn.DashboardPassword = string(h); return nil }); err != nil {
+	if err := s.mutate(func(sn *store.Snapshot) error {
+		sn.DashboardPassword = string(h)
+		sn.Settings[passwordInitKey] = json.RawMessage("true")
+		sn.Settings[passwordDefaultKey] = json.RawMessage("false")
+		return nil
+	}); err != nil {
 		adminErr(w, http.StatusInternalServerError, err.Error())
 		return
 	}
@@ -771,20 +828,21 @@ func (s *Server) handleAdminState(w http.ResponseWriter, r *http.Request) {
 	}
 	sort.Slice(others, func(i, j int) bool { return others[i].Name < others[j].Name })
 	adminJSON(w, http.StatusOK, map[string]any{
-		"version":     Version,
-		"uptimeSec":   int(time.Since(s.start).Seconds()),
-		"passwordSet": sn.DashboardPassword != "",
-		"providers":   provs,
-		"combos":      combos,
-		"keys":        keys,
-		"models":      models,
-		"modelGroups": groups,
-		"others":      others,
-		"settings":    s.settingsView(sn),
-		"warnings":    maskWarnings(sn.Warnings),
-		"savers":      s.saverRunsView(),
-		"savings":     s.saverSavingsView(),
-		"autostart":   s.autostartState(),
+		"version":         Version,
+		"uptimeSec":       int(time.Since(s.start).Seconds()),
+		"passwordSet":     sn.DashboardPassword != "",
+		"defaultPassword": defaultPasswordActive(sn),
+		"providers":       provs,
+		"combos":          combos,
+		"keys":            keys,
+		"models":          models,
+		"modelGroups":     groups,
+		"others":          others,
+		"settings":        s.settingsView(sn),
+		"warnings":        maskWarnings(sn.Warnings),
+		"savers":          s.saverRunsView(),
+		"savings":         s.saverSavingsView(),
+		"autostart":       s.autostartState(),
 	})
 }
 

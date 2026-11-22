@@ -2,6 +2,8 @@
 // Structure and look follow 9Router's dashboard (MIT, decolua/9router).
 import { html, render, useState, useEffect, useCallback, useRef, useMemo } from "./vendor/preact-htm.js";
 
+const DEFAULT_DASHBOARD_PASSWORD = "1234";
+
 /* ------------------------------------------------------------------ api */
 let csrf = "";
 let onUnauthorized = () => {};
@@ -641,7 +643,7 @@ function Header({ meta, dark, toggleTheme, onLogout, passwordSet }) {
 }
 
 /* --------------------------------------------------------------- login */
-function Login({ onDone, error }) {
+function Login({ onDone, error, defaultPassword }) {
   const [pw, setPw] = useState("");
   const [err, setErr] = useState(error || "");
   const [busy, setBusy] = useState(false);
@@ -654,7 +656,8 @@ function Login({ onDone, error }) {
     <div class="card auth-card" style="padding:36px">
       <div class="brand-tile"><${Icon} n="bolt" fill /></div>
       <h1>Welcome to FastRouter</h1>
-      <p class="muted" style="margin-top:6px">Sign in with your dashboard password (the same one as your 9Router dashboard).</p>
+      <p class="muted" style="margin-top:6px">Sign in with your dashboard password.</p>
+      ${defaultPassword && html`<div class="notice warn" style="margin-top:10px"><${Icon} n="key" /><span>Default password: <b>${DEFAULT_DASHBOARD_PASSWORD}</b>. Change it in Settings after signing in.</span></div>`}
       <form onSubmit=${submit}>
         <${Field} label="Password"><${SecretInput} value=${pw} onInput=${setPw} placeholder="Dashboard password" autofocus /></${Field}>
         ${err && html`<div class="notice err"><${Icon} n="error" />${err}</div>`}
@@ -2692,7 +2695,7 @@ function SettingsPage({ data, reload, relogin }) {
     </div>
     <${DecisionCard} data=${data} save=${save} />
     <${AutostartCard} data=${data} reload=${reload} />
-    <${PasswordCard} passwordSet=${data.passwordSet} relogin=${relogin} />`;
+    <${PasswordCard} passwordSet=${data.passwordSet} defaultPassword=${data.defaultPassword} relogin=${relogin} />`;
 }
 
 /* Start with the PC: a per-user Startup shortcut (Windows), a systemd user unit
@@ -2760,21 +2763,22 @@ function DecisionCard({ data, save }) {
   </div>`;
 }
 
-function PasswordCard({ passwordSet, relogin }) {
+function PasswordCard({ passwordSet, defaultPassword, relogin }) {
   const [cur, setCur] = useState(""), [pw, setPw] = useState(""), [pw2, setPw2] = useState("");
   const [busy, setBusy] = useState(false);
-  const ok = pw.length >= 8 && pw === pw2 && (!passwordSet || cur);
+  const ok = pw.length >= 4 && pw === pw2 && (!passwordSet || cur);
   const submit = async () => {
     setBusy(true);
-    try { await run(() => api("POST", "/api/auth/password", { current: cur, new: pw }), "Password saved — sign in again"); relogin(); }
+    try { await run(() => api("POST", "/api/auth/password", { current: cur, new: pw }), "Password saved"); relogin(); }
     catch (e) { setBusy(false); }
   };
   return html`<div class="card">
-    <div class="card-title"><div><h2><${Icon} n="lock" />Dashboard password</h2><p>${passwordSet ? "Changing it signs out every session." : "No password yet: the dashboard only opens from this machine. Set one before exposing it."}</p></div>
+    <div class="card-title"><div><h2><${Icon} n="lock" />Dashboard password</h2><p>${passwordSet ? "Changing it signs out every other session." : "No password yet: the dashboard only opens from this machine. Set one before exposing it."}</p></div>
       <${Badge} kind=${passwordSet ? "success" : "warning"} dot>${passwordSet ? "Protected" : "Local only"}</${Badge}></div>
+    ${defaultPassword && html`<div class="notice warn" style="margin-bottom:14px"><${Icon} n="warning" /><span>The default password <b>${DEFAULT_DASHBOARD_PASSWORD}</b> is still active. Change it before exposing the dashboard.</span></div>`}
     <div class="grid g3">
       ${passwordSet && html`<${Field} label="Current password"><${SecretInput} value=${cur} onInput=${setCur} /></${Field}>`}
-      <${Field} label="New password" hint="At least 8 characters."><${SecretInput} value=${pw} onInput=${setPw} /></${Field}>
+      <${Field} label="New password" hint="At least 4 characters (8+ recommended)."><${SecretInput} value=${pw} onInput=${setPw} /></${Field}>
       <${Field} label="Confirm" hint=${pw2 && pw !== pw2 ? "Doesn't match." : ""}><${SecretInput} value=${pw2} onInput=${setPw2} /></${Field}>
     </div>
     <div class="row" style="justify-content:flex-end;margin-top:14px"><button class="btn primary" disabled=${!ok || busy} onClick=${submit}><${Icon} n="save" />${passwordSet ? "Change password" : "Set password"}</button></div>
@@ -2801,7 +2805,7 @@ function App() {
     try {
       const s = await api("GET", "/api/auth/session");
       if (s.authenticated) { csrf = s.csrf; setAuth({ ok: true }); await reload(); }
-      else { setData(null); setAuth({ ok: false, error: s.error || "" }); }
+      else { setData(null); setAuth({ ok: false, error: s.error || "", defaultPassword: !!s.defaultPassword }); }
     } catch (e) { setAuth({ ok: false, error: e.message }); }
   }, []);
   useEffect(() => { onUnauthorized = check; check(); }, []);
@@ -2809,7 +2813,7 @@ function App() {
   const go = (p) => { location.hash = "#/" + p; };
 
   if (!auth) return html`<div class="auth"><div class="grid-bg"></div></div>`;
-  if (!auth.ok) return html`<${Login} error=${auth.error} onDone=${check} /><${Toasts} />`;
+  if (!auth.ok) return html`<${Login} error=${auth.error} defaultPassword=${auth.defaultPassword} onDone=${check} /><${Toasts} />`;
   const [path, query = ""] = hash.split("?");
   const [page, sub] = path.split("/");
   const meta = [...NAV, ...SYSTEM].find((x) => x.id === page) || NAV[0];

@@ -362,7 +362,7 @@ func (s *Server) dashAuth(next http.Handler) http.Handler {
 			return
 		}
 		w.Header().Set("WWW-Authenticate", `Basic realm="FastRouter", charset="UTF-8"`)
-		http.Error(w, "password required (same as your 9Router dashboard; any username)", http.StatusUnauthorized)
+		http.Error(w, "dashboard password required (any username)", http.StatusUnauthorized)
 	})
 }
 

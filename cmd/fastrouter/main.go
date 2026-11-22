@@ -242,6 +242,11 @@ func serve(cfgPath, host string, port int) error {
 	}
 	srv := server.New(cfg, snap, st)
 	defer srv.Close()
+	if set, err := srv.EnsureDefaultPassword(); err != nil {
+		log.Printf("dashboard password setup skipped: %v", err)
+	} else if set {
+		log.Printf("dashboard password set to 1234 (change it in Settings)")
+	}
 	bg, stopBG := context.WithCancel(context.Background())
 	defer stopBG()
 	go srv.RunTokenRefresh(bg, time.Minute) // Codex accounts signed in through FastRouter
