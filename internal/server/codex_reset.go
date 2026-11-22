@@ -28,6 +28,9 @@ import (
 //   - auto-ping: start the next 5h window with a tiny request, on reset or on
 //     a fixed daily schedule
 //
+// Antigravity shares the auto-ping scheduler (it has no reset credits); its
+// 5h rows come from the Code Assist quota summary.
+//
 // The URLs are variables so tests point them at a mock; nothing here runs
 // unless the user presses a button or turns auto-ping on.
 var (
@@ -35,6 +38,7 @@ var (
 	codexResetCreditsURL  = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
 	codexResetConsumeURL  = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits/consume"
 	codexPingModel        = "gpt-5.6-terra" // 9Router's lightweight auto-ping model
+	antigravityPingModel  = "gemini-3.8-flash-low"
 	codexAutoPingInterval = time.Minute
 )
 
@@ -451,7 +455,7 @@ func (s *Server) autoPingConfig() (autoPingCfg, map[string]autoPingState) {
 }
 
 func (s *Server) autoPingFor(c store.Connection) *autoPingView {
-	if c.Provider != "codex" || !login.Handles(c.Provider) {
+	if c.Provider != "codex" && c.Provider != "antigravity" {
 		return nil
 	}
 	cfg, st := s.autoPingConfig()
@@ -577,8 +581,8 @@ func (s *Server) handleAutoPingSave(w http.ResponseWriter, r *http.Request) {
 			conn = &c
 		}
 	}
-	if conn == nil || conn.Provider != "codex" {
-		adminErr(w, http.StatusNotFound, "Codex account not found")
+	if conn == nil || (conn.Provider != "codex" && conn.Provider != "antigravity") {
+		adminErr(w, http.StatusNotFound, "account not found")
 		return
 	}
 	switch in.Mode {
@@ -656,7 +660,8 @@ const (
 	resetDrift          = 30 * time.Second
 )
 
-// RunAutoPing checks opted-in Codex accounts every minute until ctx ends.
+// RunAutoPing checks opted-in Codex and Antigravity accounts every minute
+// until ctx ends.
 func (s *Server) RunAutoPing(ctx context.Context) {
 	t := time.NewTicker(codexAutoPingInterval)
 	defer t.Stop()
@@ -686,7 +691,7 @@ func (s *Server) autoPingTick(ctx context.Context, now time.Time) {
 
 	cfg, states := s.autoPingConfig()
 	for _, c := range s.state.Load().Snap.Connections {
-		if c.Provider != "codex" || !c.Active {
+		if !c.Active || (c.Provider != "codex" && c.Provider != "antigravity") {
 			continue
 		}
 		sc := normalizeSchedule(cfg.Schedules[c.ID])
@@ -717,17 +722,9 @@ func (s *Server) autoPingOne(ctx context.Context, c store.Connection, sc *pingSc
 		return
 	}
 	quotas.put(c.ID, res)
-	var session *quotaRow
-	for i := range res.Quotas {
-		q := &res.Quotas[i]
-		if q.Name == "Session (5h)" {
-			session = q
-		} else if q.RemainingPct == 0 && !strings.Contains(strings.ToLower(q.Name), "review") && !strings.Contains(strings.ToLower(q.Name), "spark") {
-			return // weekly limit used up: a ping cannot start a new window
-		}
-	}
-	if session == nil || session.RemainingPct <= 0 {
-		return
+	session, blocked := pingWindow(c.Provider, res.Quotas)
+	if blocked || session == nil || session.RemainingPct <= 0 {
+		return // nothing to start: the window or its weekly cap is used up
 	}
 	resetAt, _ := time.Parse(time.RFC3339, session.ResetAt)
 	if !resetAt.IsZero() {
@@ -756,13 +753,13 @@ func (s *Server) autoPingOne(ctx context.Context, c store.Connection, sc *pingSc
 		}
 	}
 	pctx, pcancel := context.WithTimeout(ctx, 2*time.Minute)
-	ok, msg := s.codexPing(pctx, c.ID)
+	ok, msg := s.pingAccount(pctx, c)
 	pcancel()
 	if !ok {
 		ap.mu.Lock()
 		ap.failedAt[c.ID] = now
 		ap.mu.Unlock()
-		log.Printf("[auto-ping] codex %s: %s", maskEmail(c.Name), msg)
+		log.Printf("[auto-ping] %s %s: %s", c.Provider, maskEmail(c.Name), msg)
 		s.saveAutoPingState(c.ID, func(x *autoPingState) { x.LastError, x.LastErrorAt = msg, now.UTC().Format(time.RFC3339) })
 		return
 	}
@@ -770,7 +767,7 @@ func (s *Server) autoPingOne(ctx context.Context, c store.Connection, sc *pingSc
 	delete(ap.failedAt, c.ID)
 	ap.mu.Unlock()
 	quotas.drop(c.ID)
-	log.Printf("[auto-ping] codex %s: ping sent (%s)", maskEmail(c.Name), firstNonEmpty(slotKey, "reset "+resetKey))
+	log.Printf("[auto-ping] %s %s: ping sent (%s)", c.Provider, maskEmail(c.Name), firstNonEmpty(slotKey, "reset "+resetKey))
 	s.saveAutoPingState(c.ID, func(x *autoPingState) {
 		x.LastPingAt, x.LastError, x.LastErrorAt = now.UTC().Format(time.RFC3339), "", ""
 		if slotKey != "" {
@@ -782,13 +779,66 @@ func (s *Server) autoPingOne(ctx context.Context, c store.Connection, sc *pingSc
 	})
 }
 
-// codexPing sends one tiny request through the normal pipeline to this
-// account only (the Providers page's "Test" path).
-func (s *Server) codexPing(ctx context.Context, id string) (bool, string) {
-	if s.pinger.send != nil {
-		return s.pinger.send(ctx, id)
+// pingWindow returns the rolling-window row a ping should start, and whether
+// an exhausted limit makes a ping pointless.
+func pingWindow(provider string, rows []quotaRow) (*quotaRow, bool) {
+	if provider == "antigravity" {
+		return antigravityPingWindow(rows)
 	}
-	out := s.LiveTest(ctx, LiveOptions{Provider: "codex", Account: id, Models: map[string]string{"codex": codexPingModel}})
+	var session *quotaRow
+	for i := range rows {
+		q := &rows[i]
+		if q.Name == "Session (5h)" {
+			session = q
+		} else if q.RemainingPct == 0 && !strings.Contains(strings.ToLower(q.Name), "review") && !strings.Contains(strings.ToLower(q.Name), "spark") {
+			return nil, true
+		}
+	}
+	return session, false
+}
+
+// antigravityPingWindow picks the Gemini family window, because the ping model
+// is a Gemini flash. A used-up Gemini weekly cap blocks the ping; if the plan
+// has no plain Gemini window, Argon is the fallback.
+func antigravityPingWindow(rows []quotaRow) (*quotaRow, bool) {
+	session := map[string]*quotaRow{}
+	weekly := map[string]*quotaRow{}
+	for i := range rows {
+		q := &rows[i]
+		switch {
+		case strings.HasSuffix(q.Name, " (Weekly)"):
+			weekly[strings.TrimSuffix(q.Name, " (Weekly)")] = q
+		case strings.HasSuffix(q.Name, " (5h)"):
+			session[strings.TrimSuffix(q.Name, " (5h)")] = q
+		}
+	}
+	for _, fam := range []string{"Gemini", "Gemini 4 Argon"} {
+		s := session[fam]
+		if s == nil {
+			continue
+		}
+		if w := weekly[fam]; w != nil && w.RemainingPct <= 0 {
+			return nil, true
+		}
+		if s.RemainingPct <= 0 {
+			return nil, false
+		}
+		return s, false
+	}
+	return nil, false
+}
+
+// pingAccount sends one tiny request through the normal pipeline to this
+// account only (the Providers page's "Test" path).
+func (s *Server) pingAccount(ctx context.Context, c store.Connection) (bool, string) {
+	if s.pinger.send != nil {
+		return s.pinger.send(ctx, c.ID)
+	}
+	model := codexPingModel
+	if c.Provider == "antigravity" {
+		model = antigravityPingModel
+	}
+	out := s.LiveTest(ctx, LiveOptions{Provider: c.Provider, Account: c.ID, Models: map[string]string{c.Provider: model}})
 	if len(out) == 1 && out[0].OK {
 		return true, ""
 	}

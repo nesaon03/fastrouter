@@ -1208,7 +1208,7 @@ function ProviderDetail({ data, id, reload, go, query }) {
               : a.lastError && html`<${ErrText} text=${(a.status === "banned" ? "Banned until you sign in again or a manual test passes. " : "") + a.lastError} />`}
           </div>
           <div class="row" style="gap:2px">
-            ${cq[a.id] && html`<div class="row cx-acts"><${CodexActions} a=${cq[a.id]} onChanged=${() => loadCq(true)} /></div>`}
+            ${cq[a.id] && cq[a.id].autoPing && html`<div class="row cx-acts"><${QuotaActions} a=${cq[a.id]} onChanged=${() => loadCq(true)} /></div>`}
             ${isLogin && html`<button class="act" onClick=${() => setModal({ t: "signin", conn: a.id })}><${Icon} n="login" /><span>Re-auth</span></button>`}
             <button class="act" onClick=${() => testOne(a)} disabled=${tests[a.id] && tests[a.id].running}><${Icon} n="science" /><span>Test</span></button>
             <button class="act" onClick=${() => setModal({ t: "edit", a })}><${Icon} n="edit" /><span>Edit</span></button>
@@ -2015,9 +2015,9 @@ function AutoPingModal({ a, onClose, onSaved }) {
     ${ap.lastError && html`<div class="qmsg err" style="margin-top:8px"><${Icon} n="error" />Last ping failed: ${ap.lastError}</div>`}
   </${Modal}>`;
 }
-// CodexActions: the reset-credit button (with its count), the expiry clock and
-// the auto-ping bolt, as on 9Router's Codex card.
-function CodexActions({ a, onChanged, disabled }) {
+// QuotaActions: Codex reset-credit controls plus the auto-ping bolt shared by
+// Codex and Antigravity.
+function QuotaActions({ a, onChanged, disabled }) {
   const [modal, setModal] = useState("");
   const [resetting, setResetting] = useState(false);
   const n = a.resetCredits || 0;
@@ -2025,7 +2025,7 @@ function CodexActions({ a, onChanged, disabled }) {
   const apOn = ap && ap.mode !== "off";
   const apTip = !ap ? "" : ap.mode === "reset" ? "Auto-ping active: On reset. Click to configure."
     : ap.mode === "schedule" ? `Auto-ping active: Scheduled (${slotLabels(ap.schedule.anchor, ap.schedule.windowHours, ap.schedule.slotsPerDay).join(" / ")}). Click to configure.`
-    : "Auto-starts the next 5h Codex window after reset or on schedule. Click to configure.";
+    : `Auto-starts the next 5h ${a.provider === "codex" ? "Codex" : "quota"} window after reset or on schedule. Click to configure.`;
   const consume = async () => {
     setResetting(true);
     try { const r = await api("POST", `/api/admin/quota/${a.id}/codex-reset-credits`, {}); toast(r.demo ? "Demo: no credit was spent" : "Codex limit reset"); }
@@ -2065,7 +2065,7 @@ function QuotaCard({ a, p, now, hidden, toggleHide, busy, onRefresh, onEdit, onD
     <div class="qcard-head"><${Logo} p=${p} />
       <div class="grow" style="min-width:0"><div class="row" style="gap:6px"><span class="strong truncate">${provMeta(p).name}</span>${a.plan && html`<${Badge} kind="info">${a.plan}</${Badge}>`}</div>
         <div class="small muted truncate">${a.name}</div></div>
-      ${a.provider === "codex" && html`<${CodexActions} a=${a} disabled=${busy} onChanged=${onChanged} />`}
+      ${a.autoPing && html`<${QuotaActions} a=${a} disabled=${busy} onChanged=${onChanged} />`}
       <button class="icon-btn" title="Refresh quota" disabled=${busy || !a.supported} onClick=${onRefresh}><${Icon} n="refresh" cls=${busy ? "spin" : ""} /></button>
       <button class="icon-btn" title="Edit connection" onClick=${onEdit}><${Icon} n="edit" /></button>
       <button class="icon-btn danger" title="Delete connection" onClick=${onDelete}><${Icon} n="delete" /></button>
