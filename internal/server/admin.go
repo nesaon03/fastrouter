@@ -932,6 +932,7 @@ func (s *Server) settingsView(sn *store.Snapshot) map[string]any {
 		"compactEnabled":         b("compactEnabled", false),
 		"compactKeepToolResults": compactKeep,
 		"dedupeEnabled":          b("dedupeEnabled", false),
+		"swarmLearning":          b("swarmLearning", true),
 		"headroomEnabled":        b("headroomEnabled", false),
 		"headroomUrl":            str("headroomUrl", "http://localhost:8787"),
 		"headroomCodeAware":      b("headroomCodeAware", false),
@@ -1675,6 +1676,7 @@ type settingsIn struct {
 	CompactEnabled         *bool                   `json:"compactEnabled"`
 	CompactKeepToolResults *int                    `json:"compactKeepToolResults"`
 	DedupeEnabled          *bool                   `json:"dedupeEnabled"`
+	SwarmLearning          *bool                   `json:"swarmLearning"`
 	HeadroomEnabled        *bool                   `json:"headroomEnabled"`
 	HeadroomURL            *string                 `json:"headroomUrl"`
 	HeadroomCodeAware      *bool                   `json:"headroomCodeAware"`
@@ -1713,7 +1715,7 @@ func (s *Server) handleSettingsUpdate(w http.ResponseWriter, r *http.Request) {
 			sn.Settings[k] = b
 		}
 		for k, v := range map[string]*bool{"rtkEnabled": in.RTKEnabled, "cavemanEnabled": in.CavemanEnabled, "ponytailEnabled": in.PonytailEnabled,
-			"compactEnabled": in.CompactEnabled, "dedupeEnabled": in.DedupeEnabled,
+			"compactEnabled": in.CompactEnabled, "dedupeEnabled": in.DedupeEnabled, "swarmLearning": in.SwarmLearning,
 			"headroomEnabled": in.HeadroomEnabled, "headroomCodeAware": in.HeadroomCodeAware, "headroomKompress": in.HeadroomKompress,
 			"customPromptEnabled": in.CustomPromptEnabled} {
 			if v != nil {

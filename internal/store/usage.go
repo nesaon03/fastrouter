@@ -41,6 +41,8 @@ var migrations = []string{
 	`CREATE TABLE IF NOT EXISTS swarm_runs (id TEXT PRIMARY KEY, combo TEXT, started TEXT, status TEXT,
 		consensus INTEGER DEFAULT 0, doc BLOB)`,
 	`CREATE INDEX IF NOT EXISTS swarm_runs_started ON swarm_runs(started)`,
+	`CREATE TABLE IF NOT EXISTS swarm_memory (owner TEXT, class TEXT, doc BLOB,
+		PRIMARY KEY (owner,class))`,
 }
 
 func migrate(db *sql.DB) error {

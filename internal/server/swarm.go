@@ -241,8 +241,6 @@ func swarmJudgePrompt(rounds int, answers []string) string {
 // swarm runs one request through the agent team.
 func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *router.Combo) {
 	agents := swarmAgents(c.Models)
-	judge := firstNonEmpty(c.JudgeModel, agents[0])
-	rounds := swarmRounds(c.Rounds)
 	if len(agents) == 1 {
 		s.routeModel(w, p, st, agents[0])
 		return
@@ -255,12 +253,29 @@ func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *
 	base := *ir
 	base.Tools, base.ToolChoice, base.ParallelToolCalls = nil, nil, nil
 	base.Messages = flattenTools(ir.Messages)
-	log.Printf("SWARM %s: %d agents, %d rounds, judge %s", c.Name, len(agents), rounds, judge)
+
+	owner := "local"
+	if k := keyFrom(p.r.Context()); k != nil {
+		owner = k.ID
+	}
+	class := swarmTaskClass(base.Messages)
+	learn := swarmLearningOn(s.state.Load().Snap.Settings, p.r)
+	lesson := s.loadSwarmLesson(owner, class)
+	if learn {
+		agents = swarmAgentsLearned(c.Models, lesson)
+	}
+	judge := firstNonEmpty(c.JudgeModel, agents[0])
+	rounds := swarmRounds(c.Rounds)
+	bg := ""
+	if learn && lesson.Runs >= swarmLearnMinRuns {
+		bg = swarmBackgroundPrompt(lesson.Notes)
+	}
+	log.Printf("SWARM %s: %d agents, %d rounds, judge %s, learned %d", c.Name, len(agents), rounds, judge, lesson.Runs)
 
 	ctx, cancel := context.WithTimeout(p.r.Context(), swarmHardLimit)
 	defer cancel()
 
-	runID := s.swarms.start(c.Name, agents, judge, rounds)
+	runID := s.swarms.start(c.Name, agents, judge, rounds, owner, class, lesson.Runs, learn)
 	consensus := false
 	// Safety net: a path that returns without an explicit finish still ends the
 	// run instead of leaving a spinner in the dashboard forever.
@@ -295,9 +310,18 @@ func (s *Server) swarm(w http.ResponseWriter, p *proxyReq, st *router.State, c *
 			if q.MaxTokens <= 0 || q.MaxTokens > swarmAgentMaxTokens {
 				q.MaxTokens = swarmAgentMaxTokens
 			}
-			if round == 0 && c.Roles {
-				if lens := swarmRoleLens(i); lens != "" {
-					q.System = append(append([]tr.Part{}, base.System...), tr.Part{Type: tr.PartText, Text: lens})
+			if round == 0 {
+				var extra []tr.Part
+				if c.Roles {
+					if lens := swarmRoleLens(i); lens != "" {
+						extra = append(extra, tr.Part{Type: tr.PartText, Text: lens})
+					}
+				}
+				if bg != "" {
+					extra = append(extra, tr.Part{Type: tr.PartText, Text: bg})
+				}
+				if len(extra) > 0 {
+					q.System = append(append([]tr.Part{}, base.System...), extra...)
 				}
 			} else if round > 0 {
 				var peers []string

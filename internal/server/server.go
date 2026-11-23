@@ -81,7 +81,8 @@ type Server struct {
 	blocks modelBlock
 
 	// swarms keeps live/recent swarm runs for the Combos page diagram.
-	swarms swarmTracker
+	swarms       swarmTracker
+	swarmLearnMu sync.Mutex // serialises read-modify-write of per-user lessons
 
 	// decCache serves repeated decision judgments without a second engine call.
 	decMu    sync.Mutex
@@ -143,7 +144,10 @@ func New(cfg config.Config, snap *store.Snapshot, st *store.Store) *Server {
 	if st != nil {
 		s.refresher.Store = st
 		s.oauthRefresher.Store = st
-		s.swarms.onFinish = s.persistSwarmRun
+		s.swarms.onFinish = func(r *swarmRun) {
+			s.persistSwarmRun(r)
+			s.learnFromSwarmRun(r)
+		}
 	}
 	s.Reload(snap)
 	return s
@@ -232,6 +236,7 @@ func (s *Server) Handler() http.Handler {
 	mux.Handle("GET /api/admin/state", s.adminRead(s.handleAdminState))
 	mux.Handle("GET /api/admin/swarm", s.adminRead(http.HandlerFunc(s.handleSwarmRuns)))
 	mux.Handle("GET /api/admin/swarm/{id}", s.adminRead(http.HandlerFunc(s.handleSwarmRun)))
+	mux.Handle("POST /api/admin/swarm/memory/clear", s.adminWrite(http.HandlerFunc(s.handleSwarmMemoryClear)))
 	mux.Handle("GET /api/update", s.dashAuth(http.HandlerFunc(s.handleUpdate)))
 	mux.Handle("POST /api/admin/accounts", s.adminWrite(s.handleAccountCreate))
 	mux.Handle("POST /api/admin/accounts/reorder", s.adminWrite(s.handleAccountReorder))

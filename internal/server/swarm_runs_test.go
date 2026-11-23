@@ -39,7 +39,7 @@ func TestSwarmFinishPersistsOnce(t *testing.T) {
 			t.Errorf("persisted run = %+v", r)
 		}
 	}
-	id := tr.start("team", []string{"a"}, "r", 1)
+	id := tr.start("team", []string{"a"}, "r", 1, "local", "general", 0, true)
 	tr.text(id, 1, 0, "full")
 	tr.judgeText(id, "final")
 	tr.finish(id, swarmDone, false, "")
@@ -52,7 +52,7 @@ func TestSwarmFinishPersistsOnce(t *testing.T) {
 func TestSwarmSnapshotStripsFullTranscript(t *testing.T) {
 	var tr swarmTracker
 	tr.onFinish = func(r *swarmRun) { /* pretend persist */ }
-	id := tr.start("team", []string{"a", "b"}, "r", 2)
+	id := tr.start("team", []string{"a", "b"}, "r", 2, "local", "general", 0, true)
 	tr.text(id, 1, 0, strings.Repeat("full answer ", 100))
 	tr.judgeText(id, "the final answer")
 	tr.judge(id, swarmOK)

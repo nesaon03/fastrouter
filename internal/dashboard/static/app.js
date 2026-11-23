@@ -1650,6 +1650,7 @@ function SwarmDiagram({ data, combo, run, history }) {
           : run ? html`<span class=${"swarm-pill " + (run.status === "error" ? "bad" : "done")}>${run.status === "error" ? "failed" : "last run"}</span>`
           : html`<span class="swarm-pill idle">idle</span>`}
         ${run && run.consensus && html`<span class="swarm-pill consensus"><${Icon} n="check" />consensus · R${run.round}</span>`}
+        ${run && run.learned > 0 && html`<span class="swarm-pill" title="Past debates learned for this API key and task class"><${Icon} n="psychology" />learned ${run.learned}</span>`}
       </div>
       <div class="row" style="gap:8px;align-items:center">
         <span class="swarm-clock">${run ? fmtMs(run.elapsedMs) : `${rounds} round${rounds === 1 ? "" : "s"}`}</span>
@@ -2726,6 +2727,12 @@ function SettingsPage({ data, reload, relogin }) {
     </div>
     <${DecisionCard} data=${data} save=${save} />
     <${AutostartCard} data=${data} reload=${reload} />
+    <div class="card">
+      <div class="set-row"><div class="saver-head"><div class="saver-icon"><${Icon} n="psychology" /></div><div><div class="t">Swarm learning</div>
+        <div class="d">Per API key, FastRouter remembers which agents' answers the judge actually used and carries a few past conclusions into future debates. Nothing is shared between keys. Opt out per request with <span class="mono">X-FastRouter-Swarm-Memory: off</span>.</div></div></div>
+        <${Toggle} on=${s.swarmLearning !== false} onChange=${(v) => save({ swarmLearning: v }, v ? "Swarm learning on" : "Swarm learning off")} /></div>
+      <div class="row" style="justify-content:flex-end;margin-top:10px"><button class="btn outline sm" onClick=${() => run(async () => { await api("POST", "/api/admin/swarm/memory/clear", {}); }, "Swarm memory cleared")}>Reset learning</button></div>
+    </div>
     <${PasswordCard} passwordSet=${data.passwordSet} defaultPassword=${data.defaultPassword} relogin=${relogin} />`;
 }
 

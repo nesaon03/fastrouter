@@ -154,6 +154,11 @@ right one. Swarm lets the right one argue for itself first.
 - Finished debates are stored in SQLite with full agent answers, the judge's
   final reply and its state. The board's **History** button lists past runs;
   **Transcript** fetches the full text on demand, so polling stays small.
+- Per-API-key learning: after 3 debates, FastRouter tracks which agents' answers
+  the judge actually reused (token overlap) and puts those agents first, plus
+  injects up to 3 clipped past conclusions into round 1 as background evidence.
+  Nothing is shared between keys. Opt out per request with
+  `X-FastRouter-Swarm-Memory: off`; Settings has a toggle and a reset button.
 
 `comboStrategies[name].rounds` stores the round count, beside the other combo
 options.

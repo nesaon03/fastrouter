@@ -53,6 +53,10 @@ type swarmRun struct {
 	JudgeText  string     `json:"judgeText,omitempty"` // final answer written by the judge
 	JudgeState string     `json:"judgeState"`
 	Error      string     `json:"error,omitempty"`
+	Owner      string     `json:"owner,omitempty"`   // API key the learning belongs to
+	Class      string     `json:"class,omitempty"`   // task class of this debate
+	Learned    int        `json:"learned,omitempty"` // debates learned before this run
+	Learn      bool       `json:"-"`                 // per-request learning opt-out
 }
 
 type swarmTracker struct {
@@ -62,7 +66,7 @@ type swarmTracker struct {
 	onFinish func(*swarmRun)
 }
 
-func (t *swarmTracker) start(combo string, agents []string, judge string, rounds int) string {
+func (t *swarmTracker) start(combo string, agents []string, judge string, rounds int, owner, class string, learned int, learn bool) string {
 	if rounds < 1 {
 		rounds = 1
 	}
@@ -81,6 +85,10 @@ func (t *swarmTracker) start(combo string, agents []string, judge string, rounds
 		Texts:      make([][]string, rounds),
 		FullTexts:  make([][]string, rounds),
 		JudgeState: swarmWaiting,
+		Owner:      owner,
+		Class:      class,
+		Learned:    learned,
+		Learn:      learn,
 	}
 	for i := range r.States {
 		r.States[i] = make([]string, len(agents))
@@ -448,6 +456,19 @@ func (s *Server) handleSwarmRuns(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	adminJSON(w, http.StatusOK, out)
+}
+
+// handleSwarmMemoryClear drops all learned lessons, per user's request.
+func (s *Server) handleSwarmMemoryClear(w http.ResponseWriter, r *http.Request) {
+	if s.st == nil {
+		adminErr(w, http.StatusServiceUnavailable, "no database")
+		return
+	}
+	if err := s.st.ClearSwarmMemory(""); err != nil {
+		adminErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	adminJSON(w, http.StatusOK, map[string]bool{"ok": true})
 }
 
 // handleSwarmRun returns one persisted debate's full transcript.
